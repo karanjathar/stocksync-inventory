@@ -32,6 +32,10 @@ export function SettingsPage() {
     set('alertRecipients', form.alertRecipients.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const setField = (i: number, patch: Partial<FieldDraft>) => setFields((fs) => fs.map((f, j) => (j === i ? { ...f, ...patch } : f)));
 
+  // Would customers still be able to pay with what is currently in the form? (Online needs the server keys, the switch, and INR.)
+  const onlineUsable = form.payments.onlineEnabled && payConfig.data?.razorpayConfigured === true && form.currency === 'INR';
+  const noPaymentMethod = payConfig.data !== undefined && !onlineUsable && !form.payments.codEnabled;
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setSaved(false);
@@ -80,6 +84,9 @@ export function SettingsPage() {
           {payConfig.data && (payConfig.data.onlineAvailable
             ? <div className="banner ok">✅ Online payments are available.</div>
             : <div className="banner error">⚠️ {payConfig.data.reason ?? 'Online payments are unavailable.'}</div>)}
+          {noPaymentMethod && (
+            <div className="banner error">⚠️ No payment method would be available. Customers won't be able to place orders on the shop or in chat. Turn on cash on delivery, or fix online payments above.</div>
+          )}
           <div className="grid" style={{ gap: 8 }}>
             <label className="row small"><input type="checkbox" style={{ width: 'auto' }} checked={form.payments.onlineEnabled}
               onChange={(e) => set('payments', { ...form.payments, onlineEnabled: e.target.checked })} /> Accept online payments (Razorpay)</label>

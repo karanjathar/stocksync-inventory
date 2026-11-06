@@ -147,3 +147,48 @@ describe('Settings: payments (T40)', () => {
     expect(calls.some((c) => c.method === 'PUT')).toBe(false);
   });
 });
+
+describe('Settings: warns when no payment method would be usable (T55)', () => {
+  const routes = (cfg: ReturnType<typeof config>) => ({ '/settings': settings(), '/warehouses': [], '/channels': [], '/payments/config': cfg });
+  const warning = /no payment method/i;
+
+  it('stays quiet when at least one method works', async () => {
+    mockApi(routes(config()));
+    render(<SettingsPage />);
+    await screen.findByText(/online payments are available/i);
+    expect(screen.queryByText(warning)).not.toBeInTheDocument();
+  });
+
+  it('warns as soon as unticking cash on delivery leaves only an unconfigured online option, and clears when fixed', async () => {
+    mockApi(routes(config({ razorpayConfigured: false, onlineAvailable: false, reason: 'Razorpay keys are not configured on the server.' })));
+    render(<SettingsPage />);
+    await screen.findByText(/keys are not configured on the server/i);
+    expect(screen.queryByText(warning)).not.toBeInTheDocument(); // COD still on
+    fireEvent.click(screen.getByLabelText(/accept cash on delivery/i));
+    expect(screen.getByText(warning)).toBeInTheDocument();
+    expect(screen.getByText(warning)).toHaveTextContent(/won't be able to place orders/i);
+    fireEvent.click(screen.getByLabelText(/accept cash on delivery/i));
+    expect(screen.queryByText(warning)).not.toBeInTheDocument();
+  });
+
+  it('counts the shop currency: online needs INR, so switching to USD with COD off warns', async () => {
+    mockApi(routes(config())); // Razorpay configured, currently INR
+    render(<SettingsPage />);
+    await screen.findByText(/online payments are available/i);
+    fireEvent.click(screen.getByLabelText(/accept cash on delivery/i));
+    expect(screen.queryByText(warning)).not.toBeInTheDocument(); // online still works
+    fireEvent.change(screen.getByLabelText('Currency'), { target: { value: 'USD' } });
+    expect(screen.getByText(warning)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Currency'), { target: { value: 'INR' } });
+    expect(screen.queryByText(warning)).not.toBeInTheDocument();
+  });
+
+  it('warns when both switches are off even though Razorpay is configured', async () => {
+    mockApi(routes(config()));
+    render(<SettingsPage />);
+    await screen.findByText(/online payments are available/i);
+    fireEvent.click(screen.getByLabelText(/accept online payments/i));
+    fireEvent.click(screen.getByLabelText(/accept cash on delivery/i));
+    expect(screen.getByText(warning)).toBeInTheDocument();
+  });
+});
