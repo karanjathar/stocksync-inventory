@@ -78,7 +78,7 @@ export class BotService {
         const n = Number(args[0]?.replace('#', ''));
         const order = Number.isInteger(n) && n > 0 ? await this.orders.getByNumber(n) : undefined;
         const customer = await this.customers.findOrCreateByChannel(msg.channel, msg.from, msg.senderName);
-        if (!order || order.customerId !== customer.id) return `Sorry, we couldn't find order ${args[0] ?? ''} for you.`;
+        if (!order || order.customerId !== customer.id) return `Sorry, we couldn't find order ${(args[0] ?? '').slice(0, 20)} for you.`;
         return describeOrder(order, money);
       }
       default:
