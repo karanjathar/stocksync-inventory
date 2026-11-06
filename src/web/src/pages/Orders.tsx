@@ -10,8 +10,8 @@ import type { Customer, Order, OrderStatus, PaymentsConfig, Product, Warehouse }
 
 const CHAT_CHANNELS: readonly string[] = ['whatsapp', 'messenger', 'instagram', 'telegram'];
 const METHOD_LABEL = { COD: 'Cash on delivery', ONLINE: 'Online' } as const;
-const PAY_LABEL = { UNPAID: 'unpaid', PAID: 'paid', REFUND_DUE: 'Refund due' } as const;
-const PAY_TONE = { UNPAID: 'neutral', PAID: 'good', REFUND_DUE: 'bad' } as const;
+const PAY_LABEL = { UNPAID: 'unpaid', PAID: 'paid', REFUND_DUE: 'Refund due', REFUNDED: 'refunded' } as const;
+const PAY_TONE = { UNPAID: 'neutral', PAID: 'good', REFUND_DUE: 'bad', REFUNDED: 'info' } as const;
 
 interface LinkInfo { number: number; url: string; notified: boolean; copied: boolean; sent: boolean }
 
@@ -34,6 +34,12 @@ export function Orders() {
   useEffect(() => subscribeEvents((e) => {
     if (e.type === 'payment.updated' || e.type === 'order.created' || e.type === 'order.updated') reload();
   }), [reload]);
+
+  const markRefunded = async (o: Order) => {
+    if (!window.confirm(`Have you already refunded ${money(o.totalCents, settings.currency)} to ${o.customerName} in the Razorpay dashboard?\n\nThis clears the refund flag and tells the customer the refund was issued.`)) return;
+    const ok = await action.run(() => api(`/orders/${o.id}/refunded`, { body: {} }));
+    if (ok) orders.reload();
+  };
 
   const paymentLink = async (o: Order, notify: boolean) => {
     const res = await action.run(() => api<{ url: string; expiresAt: string; notified: boolean }>(`/orders/${o.id}/payment-link`, { body: { notify } }));
@@ -108,6 +114,7 @@ export function Orders() {
                         )}
                         {o.status === 'CONFIRMED' && <button className="small primary" disabled={action.busy} onClick={() => void transition(o, 'fulfill')}>Fulfil</button>}
                         {(o.status === 'PENDING' || o.status === 'CONFIRMED') && <button className="small danger" disabled={action.busy} onClick={() => void transition(o, 'cancel')}>Cancel</button>}
+                        {o.paymentStatus === 'REFUND_DUE' && <button className="small primary" disabled={action.busy} onClick={() => void markRefunded(o)}>Mark refunded</button>}
                         {payConfig.data?.onlineAvailable && o.paymentStatus === 'UNPAID' && o.status !== 'CANCELLED' && (
                           <>
                             {CHAT_CHANNELS.includes(o.channel) && <button className="small" disabled={action.busy} onClick={() => void paymentLink(o, true)}>Send link</button>}

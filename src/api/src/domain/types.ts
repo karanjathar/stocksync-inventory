@@ -3,7 +3,7 @@ export type ChannelName = 'whatsapp' | 'messenger' | 'instagram' | 'telegram';
 export type OrderChannel = ChannelName | 'web' | 'manual';
 export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'FULFILLED' | 'CANCELLED';
 export type PaymentMethod = 'COD' | 'ONLINE';
-export type PaymentStatus = 'UNPAID' | 'PAID' | 'REFUND_DUE';
+export type PaymentStatus = 'UNPAID' | 'PAID' | 'REFUND_DUE' | 'REFUNDED';
 export type MovementType = 'IN' | 'OUT' | 'ADJUST' | 'TRANSFER_IN' | 'TRANSFER_OUT';
 export interface User { id: string; email: string; name: string; role: Role; createdAt: string }
 export interface AuthUser { id: string; email: string; role: Role }

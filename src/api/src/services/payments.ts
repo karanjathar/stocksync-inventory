@@ -56,7 +56,10 @@ export class PaymentService {
     const order = await this.orders.get(orderId);
     if (!order) throw new NotFoundError('Order');
     if (order.status === 'CANCELLED') throw new ConflictError('Order is cancelled');
-    if (order.paymentStatus !== 'UNPAID') throw new ConflictError(`Order is already ${order.paymentStatus === 'PAID' ? 'paid' : 'awaiting a refund'}`);
+    if (order.paymentStatus !== 'UNPAID') {
+      const state = { PAID: 'paid', REFUND_DUE: 'awaiting a refund', REFUNDED: 'refunded' }[order.paymentStatus];
+      throw new ConflictError(`Order is already ${state}`);
+    }
     const cfg = await this.config();
     if (!cfg.onlineAvailable) throw new NotConfiguredError(`Online payments (${cfg.reason ?? 'unavailable'})`);
     const s = await this.settings.get();
@@ -154,6 +157,19 @@ export class PaymentService {
     this.events.publish({ type: 'payment.updated', orderId: order.id, number: order.number, paymentStatus: 'REFUND_DUE' });
     const money = formatMoney(order.totalCents, (await this.settings.get()).currency);
     await this.alertStaff(`⚠️ Paid order #${order.number} (${money}) was cancelled — refund the customer in Razorpay.`);
+  }
+
+  /** Staff finished the refund in Razorpay: clear the flag exactly once and tell the customer. */
+  async markRefunded(orderId: string): Promise<Order> {
+    // Atomic transition: concurrent clicks cannot both win, so the customer is told once.
+    const moved = await this.pool.query("UPDATE orders SET payment_status = 'REFUNDED', updated_at = now() WHERE id = $1 AND payment_status = 'REFUND_DUE' RETURNING id", [orderId]);
+    const order = await this.orders.get(orderId);
+    if (!order) throw new NotFoundError('Order');
+    if (!moved.rowCount) throw new ConflictError('Only orders awaiting a refund can be marked as refunded');
+    this.events.publish({ type: 'payment.updated', orderId: order.id, number: order.number, paymentStatus: 'REFUNDED' });
+    const money = formatMoney(order.totalCents, (await this.settings.get()).currency);
+    await this.sendToCustomer(order, { text: `💸 Your refund of ${money} for order #${order.number} has been issued. It can take a few days to show up in your account.` });
+    return order;
   }
 
   /** Pay-link message for a customer: amount, validity, and a URL button. */

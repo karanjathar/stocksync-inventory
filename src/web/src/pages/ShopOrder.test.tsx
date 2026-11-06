@@ -82,8 +82,13 @@ describe('ShopOrder status page (T39)', () => {
     expect(await screen.findByText(/refund is on its way/i)).toBeInTheDocument();
     b.unmount();
     mockApi({ '/public/orders/tok-1': { ...base, status: 'CANCELLED' } });
-    renderOrder();
+    const c = renderOrder();
     expect(await screen.findByText(/this order was cancelled/i)).toBeInTheDocument();
+    expect(screen.queryByText(/refund/i)).not.toBeInTheDocument();
+    mockApi({ '/public/orders/tok-1': { ...base, status: 'CANCELLED', paymentStatus: 'REFUNDED' } });
+    c.unmount();
+    renderOrder();
+    expect(await screen.findByText(/payment has been refunded/i)).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /pay ₹/i })).not.toBeInTheDocument();
   });
 

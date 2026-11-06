@@ -24,7 +24,7 @@ afterAll(async () => {
   await main.end();
 });
 
-describe('migration 003 on an existing Release 1 database (T29)', () => {
+describe('migrations 003–004 on an existing Release 1 database (T29, T58)', () => {
   it('upgrades in place, keeps data, adds defaults and constraints', async () => {
     const v1 = mkdtempSync(path.join(tmpdir(), 'mig-'));
     for (const f of ['001_init.sql', '002_reply_options.sql']) copyFileSync(path.join(MIGRATIONS, f), path.join(v1, f));
@@ -32,7 +32,7 @@ describe('migration 003 on an existing Release 1 database (T29)', () => {
     const cust = await pool.query<{ id: string }>("INSERT INTO customers (name) VALUES ('Legacy') RETURNING id");
     await pool.query("INSERT INTO orders (customer_id, channel, status, total_cents) VALUES ($1, 'manual', 'PENDING', 500), ($1, 'web', 'FULFILLED', 900)", [cust.rows[0]!.id]);
 
-    expect(await migrate(pool)).toEqual(['003_payments_chat.sql']);
+    expect(await migrate(pool)).toEqual(['003_payments_chat.sql', '004_refunded.sql']);
     expect(await migrate(pool)).toEqual([]);
 
     const { rows } = await pool.query<{ payment_method: string; payment_status: string; public_token: string }>('SELECT payment_method, payment_status, public_token FROM orders ORDER BY number');
@@ -52,6 +52,8 @@ describe('migration 003 on an existing Release 1 database (T29)', () => {
     await pay('plink_2');
     await expect(pay('plink_3', 'BOGUS')).rejects.toMatchObject({ code: '23514' });
     await expect(pool.query("UPDATE orders SET payment_status = 'MAYBE' WHERE id = $1", [o!.id])).rejects.toMatchObject({ code: '23514' });
+    await pool.query("UPDATE orders SET payment_status = 'REFUNDED' WHERE id = $1", [o!.id]); // allowed since migration 004
+    await pool.query("UPDATE orders SET payment_status = 'UNPAID' WHERE id = $1", [o!.id]);
     await expect(pool.query("INSERT INTO webhook_events (provider, event_id) VALUES ('razorpay', 'evt_1'), ('razorpay', 'evt_1')")).rejects.toMatchObject({ code: '23505' });
   });
 });

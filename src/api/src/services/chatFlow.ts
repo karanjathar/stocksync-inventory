@@ -220,7 +220,7 @@ export class ChatFlow {
 
   private static readonly STATUS: Record<Order['status'], string> = { PENDING: 'Pending', CONFIRMED: 'Confirmed', FULFILLED: 'Fulfilled', CANCELLED: 'Cancelled' };
   private static readonly METHOD: Record<PaymentMethod, string> = { COD: 'Cash on delivery', ONLINE: 'Online' };
-  private static readonly PAYMENT: Record<Order['paymentStatus'], string> = { UNPAID: 'unpaid', PAID: 'paid ✅', REFUND_DUE: 'refund due' };
+  private static readonly PAYMENT: Record<Order['paymentStatus'], string> = { UNPAID: 'unpaid', PAID: 'paid ✅', REFUND_DUE: 'refund due', REFUNDED: 'refunded' };
 
   private async myOrders(msg: InboundMessage, money: (c: number) => string): Promise<BotReply> {
     const customer = await this.customers.findOrCreateByChannel(msg.channel, msg.from, msg.senderName);
@@ -261,6 +261,7 @@ export class ChatFlow {
     if (order.status === 'CANCELLED') return { text: `Order #${order.number} was cancelled, so there is nothing to pay.`, buttons: back };
     if (order.paymentStatus === 'PAID') return { text: `✅ Order #${order.number} is already paid. Thank you!`, buttons: back };
     if (order.paymentStatus === 'REFUND_DUE') return { text: `We received a payment for order #${order.number} and a refund is being arranged.`, buttons: back };
+    if (order.paymentStatus === 'REFUNDED') return { text: `Your payment for order #${order.number} has been refunded.`, buttons: back };
     if (order.paymentMethod === 'COD') return { text: `Order #${order.number} is cash on delivery — nothing to pay online.`, buttons: back };
     return this.payments.resendLink(order, msg);
   }

@@ -106,7 +106,11 @@ function Shell({ children }: { children: React.ReactNode }) {
 
 function Message({ order, gaveUp, redirectedAsPaid }: { order: PublicOrderStatus; gaveUp: boolean; redirectedAsPaid: boolean }) {
   if (order.status === 'CANCELLED') {
-    return <div className="banner error">This order was cancelled.{order.paymentStatus === 'REFUND_DUE' ? ' Your payment will be refunded.' : ''}</div>;
+    const refundNote = order.paymentStatus === 'REFUND_DUE' ? ' Your payment will be refunded.' : order.paymentStatus === 'REFUNDED' ? ' Your payment has been refunded.' : '';
+    return <div className="banner error">This order was cancelled.{refundNote}</div>;
+  }
+  if (order.paymentStatus === 'REFUNDED') {
+    return <div className="banner ok">Your payment has been refunded. It can take a few days to show up in your account.</div>;
   }
   if (order.paymentStatus === 'REFUND_DUE') {
     return <div className="banner error">We received your payment but couldn't complete the order. A refund is on its way — sorry for the trouble.</div>;

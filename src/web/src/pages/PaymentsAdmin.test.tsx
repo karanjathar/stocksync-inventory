@@ -192,3 +192,47 @@ describe('Settings: warns when no payment method would be usable (T55)', () => {
     expect(screen.getByText(warning)).toBeInTheDocument();
   });
 });
+
+describe('Orders: marking refunds as done (T58)', () => {
+  const routes = (orders: object[]) => ({ '/orders': orders, '/warehouses': [], '/customers': [], '/products': [], '/payments/config': config(), '/settings': settings() });
+
+  it('refund-due orders offer "Mark refunded"; other orders do not', async () => {
+    mockApi(routes([
+      mk({ id: 'a', number: 1, paymentStatus: 'REFUND_DUE', status: 'CANCELLED' }),
+      mk({ id: 'b', number: 2, paymentStatus: 'PAID', status: 'CONFIRMED' }),
+      mk({ id: 'c', number: 3, paymentStatus: 'REFUNDED', status: 'CANCELLED' }),
+      mk({ id: 'd', number: 4 }),
+    ]));
+    renderOrders();
+    expect(within(await rowOf(1)).getByRole('button', { name: 'Mark refunded' })).toBeInTheDocument();
+    for (const n of [2, 3, 4]) expect(within(await rowOf(n)).queryByRole('button', { name: 'Mark refunded' })).not.toBeInTheDocument();
+    const done = await rowOf(3);
+    expect(within(done).getByText('refunded')).toBeInTheDocument();
+    expect(done).not.toHaveClass('row-alert');
+    expect(within(done).queryByText(/refund the customer in razorpay/i)).not.toBeInTheDocument();
+  });
+
+  it('asks for confirmation, then records the refund and refreshes', async () => {
+    let refunded = false;
+    const calls = mockApi({
+      ...routes([]),
+      '/orders': () => [mk({ paymentStatus: refunded ? 'REFUNDED' : 'REFUND_DUE', status: 'CANCELLED' })],
+      'POST /orders/o1/refunded': () => { refunded = true; return mk({ paymentStatus: 'REFUNDED', status: 'CANCELLED' }); },
+    });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderOrders();
+    fireEvent.click(within(await rowOf(42)).getByRole('button', { name: 'Mark refunded' }));
+    await waitFor(() => expect(within(screen.getByText('#42').closest('tr')!).getByText('refunded')).toBeInTheDocument());
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/30\.00.*Asha.*Razorpay/s));
+    expect(calls.filter((c) => c.method === 'POST' && c.path === '/orders/o1/refunded')).toHaveLength(1);
+    expect(within(screen.getByText('#42').closest('tr')!).queryByRole('button', { name: 'Mark refunded' })).not.toBeInTheDocument();
+  });
+
+  it('does nothing if staff decline the confirmation', async () => {
+    const calls = mockApi({ ...routes([mk({ paymentStatus: 'REFUND_DUE', status: 'CANCELLED' })]), 'POST /orders/o1/refunded': mk({}) });
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderOrders();
+    fireEvent.click(within(await rowOf(42)).getByRole('button', { name: 'Mark refunded' }));
+    expect(calls.some((c) => c.method === 'POST')).toBe(false);
+  });
+});
