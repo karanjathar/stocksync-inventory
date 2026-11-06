@@ -113,3 +113,9 @@ the WhatsApp Commerce/Catalog API (Meta-hosted product catalogs), saved cards, i
 ### Credentials needed (human)
 Razorpay **test-mode** Key ID + Key Secret + Webhook Secret (free; dashboard → Test Mode → API Keys / Webhooks), later live keys after KYC.
 WhatsApp Cloud API access as in v1. Until keys exist, everything is verified with contract tests and a local fake Razorpay, and labelled unverified against the real service.
+
+### 1.8.1 Additions discovered while building and reviewing Release 2
+- **FR-R2-10 Resume payment.** A web shopper whose payment link expired or who backed out can get a fresh link from the order page; the shop remembers the last unpaid online order ("Continue payment").
+- **FR-R2-11 Refund handling.** `REFUND_DUE` (paid but unfulfillable, duplicate, or cancelled-after-paid) alerts staff and tells the customer; staff refund in Razorpay and press **Mark refunded** (`REFUNDED`).
+- **FR-R2-12 Abuse limits.** At most 15 open orders per customer (chat and web); public endpoints rate limited.
+- **FR-R2-13 Configuration safety.** Settings warns when no payment method would be usable; production refuses non-https provider URLs.

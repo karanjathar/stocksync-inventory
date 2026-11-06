@@ -44,7 +44,7 @@ param adminPassword string
 param whatsappPhoneNumberId string = ''
 
 @secure()
-@description('Optional channel secrets, keys are env var names: META_APP_SECRET, META_VERIFY_TOKEN, WHATSAPP_TOKEN, MESSENGER_PAGE_TOKEN, INSTAGRAM_PAGE_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET.')
+@description('Optional channel and payment secrets, keys are env var names: META_APP_SECRET, META_VERIFY_TOKEN, WHATSAPP_TOKEN, MESSENGER_PAGE_TOKEN, INSTAGRAM_PAGE_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET. All are stored in Key Vault.')
 param channelSecrets object = {}
 
 var suffix = uniqueString(resourceGroup().id, prefix)
@@ -60,6 +60,9 @@ var allowedChannelKeys = [
   'INSTAGRAM_PAGE_TOKEN'
   'TELEGRAM_BOT_TOKEN'
   'TELEGRAM_WEBHOOK_SECRET'
+  'RAZORPAY_KEY_ID'
+  'RAZORPAY_KEY_SECRET'
+  'RAZORPAY_WEBHOOK_SECRET'
 ]
 var channelKeys = filter(objectKeys(channelSecrets), k => contains(allowedChannelKeys, k) && !empty(channelSecrets[k]))
 

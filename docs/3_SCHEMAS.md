@@ -182,7 +182,7 @@ CREATE TABLE chat_carts (customer_id uuid PRIMARY KEY REFERENCES customers(id) O
 ## 3.7 Release 2 Types — additions to `src/api/src/domain/types.ts`
 ```ts
 export type PaymentMethod = 'COD' | 'ONLINE';
-export type PaymentStatus = 'UNPAID' | 'PAID' | 'REFUND_DUE';
+export type PaymentStatus = 'UNPAID' | 'PAID' | 'REFUND_DUE' | 'REFUNDED';   // REFUNDED added by migration 004 (T58)
 // Order gains: paymentMethod: PaymentMethod; paymentStatus: PaymentStatus; publicToken: string
 export interface Payment { id: string; orderId: string; provider: 'razorpay'; providerRef: string; referenceId: string;
   status: 'CREATED' | 'PAID' | 'EXPIRED' | 'CANCELLED'; amountCents: number; currency: string; shortUrl: string;
@@ -286,3 +286,15 @@ export interface BotReply {
 | GET /api/public/orders/:token | public | – | `{number, status, paymentMethod, paymentStatus, totalCents, currency, items:[{name,quantity}]}` |
 | GET /api/public/catalog | public | – | `settings` gains `paymentMethods: ('ONLINE'\|'COD')[]` |
 | PUT /api/settings | admin | + `payments: PaymentSettings` | Settings |
+
+## 3.14 Release 2 REST API — additions made during the build
+| Method & Path | Role | Notes |
+|---|---|---|
+| POST /api/public/orders/:token/payment-link | token | Returns `{paymentUrl}`: the open link, or a fresh one after expiry. 409 unless the order is ONLINE, UNPAID and not cancelled. Rate limited (30 / 15 min) |
+| POST /api/orders/:id/refunded | staff | REFUND_DUE → REFUNDED exactly once (409 otherwise). Publishes `payment.updated` and messages the chat customer |
+| POST /api/orders/:id/payment-link | staff | Body `{notify?: boolean}` → `{url, expiresAt, notified}` |
+| GET /api/payments/config | any | `{razorpayConfigured, onlineAvailable, codEnabled, reason?}` |
+| POST /api/public/orders | public | Errors: 409 method unavailable, **429 `TOO_MANY_OPEN_ORDERS`** (15 open orders per customer, staff-entered orders exempt), 502 `PAYMENT_PROVIDER_ERROR` (the web order is cancelled again) |
+
+Migrations: `002_reply_options.sql` (options shown with each reply), `003_payments_chat.sql` (payments, webhook events, chat carts, order payment columns), `004_refunded.sql` (REFUNDED status).
+Production configuration rule (T56): `RAZORPAY_API_BASE` and `META_GRAPH_BASE` must be `https` (loopback `http` allowed for local fakes).

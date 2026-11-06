@@ -47,9 +47,46 @@ jobs:
       - name: Validate infrastructure (Bicep)
         run: az bicep build --file infra/main.bicep --stdout > /dev/null
 
+  e2e:
+    name: End-to-end (real browser, fake Razorpay & WhatsApp)
+    needs: test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      E2E_DATABASE_URL: postgres://postgres:postgres@localhost:5432/inventory_e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Install Playwright + Chromium (test-only; not saved to the lockfile)
+        run: |
+          npm install --no-save playwright@1.63.0
+          npx playwright install --with-deps chromium
+      - name: Payments & chat end-to-end test
+        run: npm run e2e
+      - name: Keep failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failures
+          path: scripts/e2e/out/
+          if-no-files-found: ignore
+
   deploy:
     name: Build image & deploy to Azure Container Apps
-    needs: test
+    needs: [test, e2e]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: production
