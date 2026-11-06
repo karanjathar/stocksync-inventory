@@ -110,7 +110,7 @@ All reproduced before fixing; every fix has a regression test.
 | R2-11 | Medium | A web shopper's typed phone number (with a guessed `+`) was sent to Razorpay as `customer.contact` | T54 (WhatsApp numbers only) |
 | R2-12 | Low | Settings let an admin leave customers with no usable payment method | T55 (warning) |
 | R2-13 | Low | `status <text>` reflected arbitrary typed text back unbounded | fixed in T42 (20 chars) |
-| R2-14 | Low | Production config accepted a plain-`http` provider base URL (credentials in clear text) | **T56 — open until merged** |
+| R2-14 | Low | Production config accepted a plain-`http` provider base URL (credentials in clear text) | T56 (production refuses non-https provider URLs; loopback allowed for the local E2E) |
 | R2-15 | Medium | One chat or web customer could create unlimited open orders (40 in a probe) | **T57 — open until merged** |
 
 ## 7.R2.5 Accepted risks and recommendations

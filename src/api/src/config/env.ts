@@ -45,7 +45,19 @@ const schema = z.object({
   RAZORPAY_WEBHOOK_SECRET: optional,
   // Only overridden by tests / the E2E fake Razorpay.
   RAZORPAY_API_BASE: z.string().url().default('https://api.razorpay.com'),
-});
+})
+  // Credentials travel to these hosts in the Authorization header: never over plain http in production.
+  // (Loopback is allowed so the local E2E can point the app at its fake providers.)
+  .superRefine((env, ctx) => {
+    if (env.NODE_ENV !== 'production') return;
+    for (const key of ['RAZORPAY_API_BASE', 'META_GRAPH_BASE'] as const) {
+      const url = new URL(env[key]);
+      const loopback = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(url.hostname);
+      if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
+        ctx.addIssue({ code: 'custom', path: [key], message: 'must use https in production (plain http is only allowed for localhost)' });
+      }
+    }
+  });
 
 export type Env = z.infer<typeof schema>;
 
