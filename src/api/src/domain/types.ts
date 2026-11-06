@@ -45,3 +45,9 @@ export type PurchaseStatus = 'DRAFT' | 'SENT' | 'PARTIALLY_RECEIVED' | 'RECEIVED
 export interface PurchaseOrderItem { id: string; productId: string; sku: string; name: string; quantity: number; receivedQuantity: number; unitCostCents: number }
 export interface PurchaseOrder { id: string; number: number; supplierId: string; supplierName: string; status: PurchaseStatus; warehouseId: string;
   expectedDate: string | null; notes: string; totalCents: number; items: PurchaseOrderItem[]; createdBy: string | null; createdAt: string; updatedAt: string }
+export type BillStatus = 'UNPAID' | 'PARTIAL' | 'PAID' | 'VOID';
+export interface BillPayment { id: string; amountCents: number; requestId: string; method: string; paidAt: string }
+export interface Bill { id: string; number: number; supplierId: string; supplierName: string; purchaseOrderId: string | null; status: BillStatus;
+  totalCents: number; paidCents: number; dueDate: string; createdAt: string; payments: BillPayment[] }
+export interface PayablesRow { supplierId: string; supplierName: string; openCents: number; overdueCents: number; billCount: number }
+export interface Payables { suppliers: PayablesRow[]; totalOpenCents: number; totalOverdueCents: number }
