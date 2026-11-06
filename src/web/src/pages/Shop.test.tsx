@@ -132,3 +132,73 @@ describe('Shop checkout with payment choice (T39)', () => {
     expect(redirectTo).not.toHaveBeenCalled();
   });
 });
+
+describe('resuming an unpaid online order (T53)', () => {
+  const KEY = 'stocksync.lastOnlineOrder';
+  const status = (over: object = {}) => ({ number: 9, status: 'PENDING', paymentMethod: 'ONLINE', paymentStatus: 'UNPAID', totalCents: 1500, currency: 'USD', items: [{ name: 'T-Shirt', quantity: 1 }], ...over });
+
+  it('remembers an online order before sending the shopper to the payment page — but not a cash-on-delivery one', async () => {
+    mockApi({
+      '/public/catalog': catalog(),
+      'POST /public/orders': { number: 9, status: 'PENDING', totalCents: 1500, paymentMethod: 'ONLINE', token: 'tok-9', paymentUrl: 'https://rzp.io/i/abc' },
+    });
+    const a = renderShop();
+    await fillCheckout();
+    fireEvent.click(screen.getByRole('button', { name: 'Place order' }));
+    await waitFor(() => expect(redirectTo).toHaveBeenCalled());
+    expect(JSON.parse(localStorage.getItem(KEY)!)).toEqual({ token: 'tok-9' });
+    a.unmount();
+    localStorage.clear();
+    mockApi({
+      '/public/catalog': catalog(),
+      'POST /public/orders': { number: 10, status: 'PENDING', totalCents: 1500, paymentMethod: 'COD', token: 'tok-10' },
+    });
+    renderShop();
+    await fillCheckout();
+    fireEvent.click(screen.getByLabelText(/cash on delivery/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Place order' }));
+    await screen.findByText('Order page for token');
+    expect(localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it('shows "Continue payment" while the remembered order is still unpaid', async () => {
+    localStorage.setItem(KEY, JSON.stringify({ token: 'tok-9' }));
+    mockApi({ '/public/catalog': catalog(), '/public/orders/tok-9': status() });
+    renderShop();
+    const link = await screen.findByRole('link', { name: /continue payment for order #9/i });
+    expect(link).toHaveAttribute('href', '/shop/order/tok-9');
+  });
+
+  it.each([
+    ['paid', { paymentStatus: 'PAID', status: 'CONFIRMED' }],
+    ['cancelled', { status: 'CANCELLED' }],
+  ])('forgets the order once it is %s', async (_name, over) => {
+    localStorage.setItem(KEY, JSON.stringify({ token: 'tok-9' }));
+    mockApi({ '/public/catalog': catalog(), '/public/orders/tok-9': status(over) });
+    renderShop();
+    await screen.findByRole('heading', { name: 'Corner Shop' });
+    await waitFor(() => expect(localStorage.getItem(KEY)).toBeNull());
+    expect(screen.queryByRole('link', { name: /continue payment/i })).not.toBeInTheDocument();
+  });
+
+  it('forgets an order the server no longer knows, but keeps it through a temporary server error', async () => {
+    localStorage.setItem(KEY, JSON.stringify({ token: 'tok-9' }));
+    mockApi({ '/public/catalog': catalog(), '/public/orders/tok-9': new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'Order not found' } }), { status: 404 }) });
+    const a = renderShop();
+    await waitFor(() => expect(localStorage.getItem(KEY)).toBeNull());
+    a.unmount();
+    localStorage.setItem(KEY, JSON.stringify({ token: 'tok-9' }));
+    mockApi({ '/public/catalog': catalog(), '/public/orders/tok-9': new Response('{}', { status: 500 }) });
+    renderShop();
+    await screen.findByRole('heading', { name: 'Corner Shop' });
+    expect(localStorage.getItem(KEY)).not.toBeNull();
+    expect(screen.queryByRole('link', { name: /continue payment/i })).not.toBeInTheDocument();
+  });
+
+  it('ignores corrupt stored data', async () => {
+    localStorage.setItem(KEY, '{not json');
+    mockApi({ '/public/catalog': catalog() });
+    renderShop();
+    expect(await screen.findByRole('heading', { name: 'Corner Shop' })).toBeInTheDocument();
+  });
+});

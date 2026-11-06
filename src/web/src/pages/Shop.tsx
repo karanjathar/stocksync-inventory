@@ -1,17 +1,26 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router';
-import { api, errorText } from '../api/client';
+import { Link, useNavigate } from 'react-router';
+import { api, ApiError, errorText } from '../api/client';
 import { money, whatsappLink } from '../format';
 import { Badge, Empty, ErrorBanner, Field } from '../components/ui';
 import { isSafePaymentUrl, redirectTo } from '../redirect';
-import type { PaymentMethod, PlacedOrder, PublicCatalog, PublicProduct } from '../api/types';
+import type { PaymentMethod, PlacedOrder, PublicCatalog, PublicOrderStatus, PublicProduct } from '../api/types';
 
 const CART_KEY = 'stocksync.cart';
+const LAST_ONLINE_KEY = 'stocksync.lastOnlineOrder'; // the shopper may back out of the payment page; let them resume
 type Cart = Record<string, number>;
 
 function loadCart(): Cart {
   try { return JSON.parse(localStorage.getItem(CART_KEY) ?? '{}') as Cart; } catch { return {}; }
 }
+
+function readLastOnline(): { token: string } | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(LAST_ONLINE_KEY) ?? 'null') as { token?: unknown } | null;
+    return v && typeof v.token === 'string' ? { token: v.token } : null;
+  } catch { return null; }
+}
+const forgetLastOnline = () => { try { localStorage.removeItem(LAST_ONLINE_KEY); } catch { /* ignore */ } };
 
 /** Public storefront: browse, cart, checkout on the website or hand the cart to WhatsApp. */
 export function Shop() {
@@ -24,9 +33,20 @@ export function Shop() {
   const [busy, setBusy] = useState(false);
   const [chosen, setChosen] = useState<PaymentMethod | null>(null);
   const navigate = useNavigate();
+  const [resume, setResume] = useState<{ token: string; number: number } | null>(null);
 
   useEffect(() => {
     api<PublicCatalog>('/public/catalog').then(setCatalog, (e: unknown) => setError(errorText(e)));
+  }, []);
+  useEffect(() => {
+    const last = readLastOnline();
+    if (!last) return;
+    api<PublicOrderStatus>(`/public/orders/${encodeURIComponent(last.token)}`).then((o) => {
+      if (o.paymentMethod === 'ONLINE' && o.paymentStatus === 'UNPAID' && o.status !== 'CANCELLED') setResume({ token: last.token, number: o.number });
+      else forgetLastOnline(); // paid or cancelled: nothing left to resume
+    }, (err: unknown) => {
+      if (err instanceof ApiError && err.status === 404) forgetLastOnline(); // unknown order; other errors are temporary
+    });
   }, []);
   useEffect(() => {
     try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch { /* ignore */ }
@@ -68,6 +88,9 @@ export function Shop() {
         body: { name: name.trim(), phone: phone.trim(), paymentMethod: method, items: lines.map((l) => ({ productId: l.product.id, quantity: l.qty })) },
       });
       setCart({}); // the order exists now; the cart is only emptied after the server accepted it
+      if (res.paymentMethod === 'ONLINE') {
+        try { localStorage.setItem(LAST_ONLINE_KEY, JSON.stringify({ token: res.token })); } catch { /* storage unavailable */ }
+      }
       if (res.paymentUrl && isSafePaymentUrl(res.paymentUrl)) redirectTo(res.paymentUrl);
       else navigate(`/shop/order/${res.token}`);
     } catch (err) {
@@ -88,6 +111,11 @@ export function Shop() {
       <div className="shop-layout">
         <div className="grid">
           <ErrorBanner error={error} />
+          {resume && (
+            <div className="banner ok">
+              ⏳ You have an unpaid order. <Link to={`/shop/order/${resume.token}`}>Continue payment for order #{resume.number}</Link>
+            </div>
+          )}
           {catalog && !visible.length && <Empty>No products found.</Empty>}
           <div className="shop-grid">
             {visible.map((p) => (
