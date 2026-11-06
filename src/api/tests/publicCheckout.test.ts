@@ -123,3 +123,60 @@ describe('GET /api/public/orders/:token (T38)', () => {
     expect((await request(t.app).get(`/api/public/orders/${cod.body.number}`)).status).toBe(404); // numbers are guessable, tokens are not
   });
 });
+
+describe('POST /api/public/orders/:token/payment-link (T52)', () => {
+  const pending = async () => {
+    const placed = await place({ paymentMethod: 'ONLINE' });
+    return { token: placed.body.token as string, url: placed.body.paymentUrl as string, number: placed.body.number as number };
+  };
+  const renew = (token: string) => request(t.app).post(`/api/public/orders/${token}/payment-link`).send({});
+
+  it('returns the same open link while it is still valid (no duplicates)', async () => {
+    const o = await pending();
+    const res = await renew(o.token);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ paymentUrl: o.url });
+    expect(res.headers['cache-control']).toContain('no-store');
+    const open = await t.pool.query("SELECT count(*)::int AS n FROM payments p JOIN orders o ON o.id = p.order_id WHERE o.public_token = $1 AND p.status = 'CREATED'", [o.token]);
+    expect(open.rows[0].n).toBe(1);
+  });
+
+  it('creates a fresh link after the first one expired, and the status page then shows it', async () => {
+    const o = await pending();
+    await t.pool.query("UPDATE payments SET expires_at = now() - interval '1 hour' WHERE order_id = (SELECT id FROM orders WHERE public_token = $1)", [o.token]);
+    expect((await request(t.app).get(`/api/public/orders/${o.token}`)).body).not.toHaveProperty('paymentUrl'); // expired links are not offered
+    const res = await renew(o.token);
+    expect(res.status).toBe(200);
+    expect(res.body.paymentUrl).toMatch(/^https:\/\/rzp\.io\/i\/link\d+$/);
+    expect(res.body.paymentUrl).not.toBe(o.url);
+    expect((await request(t.app).get(`/api/public/orders/${o.token}`)).body.paymentUrl).toBe(res.body.paymentUrl);
+    const states = await t.pool.query("SELECT status FROM payments WHERE order_id = (SELECT id FROM orders WHERE public_token = $1) ORDER BY created_at", [o.token]);
+    expect(states.rows.map((r) => r.status)).toEqual(['EXPIRED', 'CREATED']);
+  });
+
+  it('is refused for cash-on-delivery, paid and cancelled orders (409) and unknown tokens (404)', async () => {
+    const cod = await place();
+    expect((await renew(cod.body.token)).status).toBe(409);
+    const paid = await pending();
+    const plink = (await t.pool.query('SELECT p.provider_ref FROM payments p JOIN orders o ON o.id = p.order_id WHERE o.public_token = $1', [paid.token])).rows[0].provider_ref as string;
+    await signedRazorpayWebhook(t.app, paidLinkEvent(plink, 3000), { eventId: 'evt_t52_paid' });
+    expect((await renew(paid.token)).status).toBe(409);
+    const cancelled = await pending();
+    await t.c.orders.cancel((await t.c.orders.getByPublicToken(cancelled.token))!.id, null);
+    expect((await renew(cancelled.token)).status).toBe(409);
+    expect((await renew('00000000-0000-4000-8000-000000000000')).status).toBe(404);
+    expect((await renew('nope')).status).toBe(404);
+  });
+
+  it('maps a payment-provider outage to 502 and keeps the order as it was', async () => {
+    const o = await pending();
+    await t.pool.query("UPDATE payments SET expires_at = now() - interval '1 hour' WHERE order_id = (SELECT id FROM orders WHERE public_token = $1)", [o.token]);
+    rz.setFailing(true);
+    const res = await renew(o.token);
+    rz.setFailing(false);
+    expect(res.status).toBe(502);
+    expect(res.body.error.code).toBe('PAYMENT_PROVIDER_ERROR');
+    expect((await request(t.app).get(`/api/public/orders/${o.token}`)).body).toMatchObject({ status: 'PENDING', paymentStatus: 'UNPAID' });
+    expect((await renew(o.token)).status).toBe(200); // and a later retry works
+  });
+});

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { api, ApiError, errorText } from '../api/client';
 import { money } from '../format';
-import { isSafePaymentUrl } from '../redirect';
+import { isSafePaymentUrl, redirectTo } from '../redirect';
 import { Badge, Card, ErrorBanner } from '../components/ui';
 import type { PublicOrderStatus } from '../api/types';
 
@@ -19,6 +19,7 @@ export function ShopOrder() {
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [gaveUp, setGaveUp] = useState(false);
+  const [renewing, setRenewing] = useState(false);
   // The redirect query is only a hint for the wording — payment state always comes from the server (webhook).
   const redirectedAsPaid = search.get('razorpay_payment_link_status') === 'paid';
 
@@ -48,6 +49,21 @@ export function ShopOrder() {
     return () => { stopped = true; if (timer) clearTimeout(timer); };
   }, [token]);
 
+  /** The first link expired or was abandoned: ask for an open link (or a fresh one) and go pay. */
+  const renew = async () => {
+    setRenewing(true);
+    setError(null);
+    try {
+      const res = await api<{ paymentUrl: string }>(`/public/orders/${encodeURIComponent(token)}/payment-link`, { body: {} });
+      if (isSafePaymentUrl(res.paymentUrl)) redirectTo(res.paymentUrl);
+      else setError('Could not open the payment page. Please try again.');
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setRenewing(false);
+    }
+  };
+
   if (notFound) {
     return <Shell><Card><p>We couldn't find that order. Check the link you were given, or <Link to="/shop">go back to the shop</Link>.</p></Card></Shell>;
   }
@@ -65,9 +81,11 @@ export function ShopOrder() {
         </div>
         <ErrorBanner error={error} />
         <Message order={order} gaveUp={gaveUp} redirectedAsPaid={redirectedAsPaid} />
-        {payUrl && waiting(order) && (
+        {waiting(order) && (payUrl ? (
           <p><a className="primary" role="link" href={payUrl} style={{ display: 'inline-block', padding: '8px 14px', borderRadius: 8, textDecoration: 'none' }}>💳 Pay {total} now</a></p>
-        )}
+        ) : (
+          <p><button className="primary" disabled={renewing} onClick={() => void renew()}>{renewing ? 'Creating link…' : `💳 Get a new payment link (${total})`}</button></p>
+        ))}
         <ul className="feed">
           {order.items.map((i) => <li key={i.name}>{i.quantity} × {i.name}</li>)}
         </ul>

@@ -21,6 +21,8 @@ export function publicRoutes(c: Container): Router {
   const r = Router();
   const orderLimiter = rateLimit({ windowMs: 15 * 60_000, limit: c.env.NODE_ENV === 'test' ? 1000 : 10, standardHeaders: true, legacyHeaders: false });
 
+  const payLinkLimiter = rateLimit({ windowMs: 15 * 60_000, limit: c.env.NODE_ENV === 'test' ? 1000 : 30, standardHeaders: true, legacyHeaders: false });
+
   r.get('/catalog', async (_req, res) => {
     const s = await c.settings.get();
     const products = await c.repos.products.list({ activeOnly: true, limit: 1000 });
@@ -67,6 +69,22 @@ export function publicRoutes(c: Container): Router {
       number: order.number, status: order.status, totalCents: order.totalCents, paymentMethod: method,
       token: order.publicToken, ...(paymentUrl ? { paymentUrl } : {}),
     });
+  });
+
+  /**
+   * Resume payment: an open link, or a fresh one when the first expired / was abandoned. Authenticated only by the
+   * unguessable order token (like the status page); the amount always comes from the order.
+   */
+  r.post('/orders/:token/payment-link', payLinkLimiter, async (req, res) => {
+    const token = z.string().uuid().safeParse(req.params.token);
+    const order = token.success ? await c.orders.getByPublicToken(token.data) : undefined;
+    if (!order) throw new NotFoundError('Order');
+    if (order.paymentMethod !== 'ONLINE' || order.paymentStatus !== 'UNPAID' || order.status === 'CANCELLED') {
+      throw new ConflictError('This order cannot be paid online');
+    }
+    const payment = await c.payments.linkForOrder(order.id);
+    res.set('Cache-Control', 'no-store');
+    res.json({ paymentUrl: payment.shortUrl });
   });
 
   /** Shop order-status page: found by the unguessable token, exposes only what the shopper needs. */
