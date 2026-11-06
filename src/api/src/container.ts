@@ -28,6 +28,7 @@ import { RazorpayClient } from './payments/razorpay.js';
 import { PaymentService } from './services/payments.js';
 import { PurchasesService } from './services/purchases.js';
 import { BillsService } from './services/bills.js';
+import { ReorderService } from './services/reorder.js';
 
 export interface ContainerOverrides {
   logger?: Logger;
@@ -83,7 +84,8 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   orders.onStatusChange((order, previous) => payments.onOrderStatusChange(order, previous));
   const purchases = new PurchasesService(pool, stock);
   const bills = new BillsService(pool);
-  return { env, pool, logger, repos, purchases, bills, auth, stock, customers, settings, events, orders, alerts, messages, hub, messenger, bot, inbox, images, carts, chatFlow, razorpay, payments };
+  const reorder = new ReorderService(pool, purchases, settings);
+  return { env, pool, logger, repos, purchases, bills, reorder, auth, stock, customers, settings, events, orders, alerts, messages, hub, messenger, bot, inbox, images, carts, chatFlow, razorpay, payments };
 }
 
 export type Container = ReturnType<typeof createContainer>;

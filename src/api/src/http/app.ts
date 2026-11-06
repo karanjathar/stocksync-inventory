@@ -22,6 +22,7 @@ import { paymentRoutes } from './routes/payments.js';
 import { purchaseRoutes } from './routes/purchases.js';
 import { billRoutes } from './routes/bills.js';
 import { reportRoutes } from './routes/reports.js';
+import { reorderRoutes } from './routes/reorder.js';
 import { categoryRoutes, customerRoutes, productRoutes, supplierRoutes, warehouseRoutes } from './routes/catalog.js';
 
 export interface AppOptions {
@@ -91,6 +92,7 @@ export function createApp(c: Container, opts: AppOptions = {}): Express {
   api.use('/purchase-orders', secure, purchaseRoutes(c));
   api.use('/bills', secure, billRoutes(c));
   api.use('/reports', secure, reportRoutes(c));
+  api.use('/reorder-suggestions', secure, reorderRoutes(c));
   api.get('/dashboard', secure, async (_req, res) => { res.json(await dashboardStats(pool)); });
 
   app.use('/api', api);

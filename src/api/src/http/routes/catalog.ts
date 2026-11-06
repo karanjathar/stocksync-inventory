@@ -22,6 +22,8 @@ const productBase = z.object({
   unit: z.string().trim().min(1).max(20).optional(),
   priceCents: z.number().int().min(0).max(1_000_000_000),
   reorderLevel: z.number().int().min(0).max(1_000_000).optional(),
+  reorderQuantity: z.number().int().min(0).max(1_000_000).optional(),
+  preferredSupplierId: z.string().uuid().nullable().optional(),
   imageUrl: z.string().url().max(2000).refine((u) => /^(https:\/\/|http:\/\/(localhost|127\.0\.0\.1)[:/])/.test(u), 'must be an https URL').nullable().optional(),
   attributes: z.record(z.string().trim().min(1).max(64), z.string().max(500))
     .refine((a) => Object.keys(a).length <= 50, 'at most 50 attributes').optional(),

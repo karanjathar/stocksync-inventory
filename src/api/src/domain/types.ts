@@ -9,7 +9,7 @@ export interface User { id: string; email: string; name: string; role: Role; cre
 export interface AuthUser { id: string; email: string; role: Role }
 export interface Category { id: string; name: string }
 export interface Product { id: string; sku: string; name: string; description: string; categoryId: string | null;
-  unit: string; priceCents: number; reorderLevel: number; imageUrl: string | null;
+  unit: string; priceCents: number; reorderLevel: number; reorderQuantity: number; preferredSupplierId: string | null; imageUrl: string | null;
   attributes: Record<string, string>; isActive: boolean; totalQuantity: number; createdAt: string; updatedAt: string }
 export interface Warehouse { id: string; code: string; name: string; address: string }
 export interface StockLevel { productId: string; sku: string; productName: string; warehouseId: string; warehouseCode: string; quantity: number }
