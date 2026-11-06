@@ -3,10 +3,12 @@ import { api } from '../api/client';
 import { useAuth } from '../auth';
 import { useAction, useApi } from '../hooks';
 import { useSettings } from '../settings';
-import { dateTime, money } from '../format';
+import { dateTime, money, parseDiscount } from '../format';
+import { openDocument } from '../documents';
+import { ReturnForm } from './ReturnForm';
 import { Badge, Card, Empty, ErrorBanner, Field, Page, STATUS_TONE } from '../components/ui';
 import { subscribeEvents } from '../api/events';
-import type { Customer, Order, OrderStatus, PaymentsConfig, Product, Warehouse } from '../api/types';
+import type { Customer, Invoice, Order, OrderStatus, PaymentsConfig, Product, SalesReturn, Warehouse } from '../api/types';
 
 const CHAT_CHANNELS: readonly string[] = ['whatsapp', 'messenger', 'instagram', 'telegram'];
 const METHOD_LABEL = { COD: 'Cash on delivery', ONLINE: 'Online' } as const;
@@ -29,6 +31,9 @@ export function Orders() {
   const action = useAction();
   const canWrite = can('staff');
   const [linkInfo, setLinkInfo] = useState<LinkInfo | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [returning, setReturning] = useState<Order | null>(null);
+  const [returned, setReturned] = useState<SalesReturn | null>(null);
   const { reload } = orders;
   // Live: payments and orders change while this page is open (Razorpay webhooks, chat orders).
   useEffect(() => subscribeEvents((e) => {
@@ -52,6 +57,14 @@ export function Orders() {
     orders.reload(); // a COD order becomes ONLINE when a link is requested
   };
 
+  const toggleSelected = (id: string) => setSelected((cur) => { const next = new Set(cur); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const printInvoice = (o: Order) => action.run(async () => {
+    const found = await api<Invoice[]>(`/invoices?orderId=${o.id}`);
+    if (!found[0]) throw new Error('This order has no invoice yet (an invoice is issued when an order is confirmed).');
+    await openDocument(`/invoices/${found[0].id}/print`);
+  });
+  const printPickList = () => action.run(() => openDocument(`/picklists?orderIds=${[...selected].join(',')}`));
+
   const transition = async (o: Order, verb: 'confirm' | 'fulfill' | 'cancel') => {
     if (verb === 'cancel' && !window.confirm(`Cancel order #${o.number}?${o.status === 'CONFIRMED' ? ' Stock will be returned.' : ''}`)) return;
     const wh = warehouseFor[o.id];
@@ -61,7 +74,12 @@ export function Orders() {
   };
 
   return (
-    <Page title="Orders" actions={canWrite && <button className="primary" onClick={() => setCreating(true)}>+ New order</button>}>
+    <Page title="Orders" actions={canWrite && (
+      <>
+        <button disabled={action.busy || selected.size === 0} onClick={() => void printPickList()}>Print pick list</button>
+        <button className="primary" onClick={() => setCreating(true)}>+ New order</button>
+      </>
+    )}>
       <ErrorBanner error={orders.error ?? action.error} />
       {linkInfo && (
         <div className="banner ok" role="status">
@@ -73,6 +91,14 @@ export function Orders() {
           {' '}<button className="ghost small" onClick={() => setLinkInfo(null)}>Dismiss</button>
         </div>
       )}
+      {returned && (
+        <div className="banner ok" role="status">
+          <strong>Return #{returned.number} recorded.</strong> <span>Credit note {returned.creditNote.number} for {money(returned.creditTotalCents, settings.currency)}.</span>
+          {returned.refundStatus === 'REFUND_DUE' && <div>Refund {money(returned.refundCents, settings.currency)} to the customer in Razorpay, then press Mark refunded on the Returns page.</div>}
+          {' '}<button className="ghost small" onClick={() => setReturned(null)}>Dismiss</button>
+        </div>
+      )}
+      {returning && <ReturnForm order={returning} onCancel={() => setReturning(null)} onDone={(r) => { setReturning(null); setReturned(r); orders.reload(); }} />}
       {creating && <NewOrder onDone={() => { setCreating(false); orders.reload(); }} onCancel={() => setCreating(false)} />}
       <div className="row" role="tablist">
         {FILTERS.map((f) => (
@@ -83,14 +109,20 @@ export function Orders() {
         {orders.data?.length ? (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Order</th><th>Customer</th><th>Items</th><th className="num">Total</th><th>Status</th><th /></tr></thead>
+              <thead><tr><th /><th>Order</th><th>Customer</th><th>Items</th><th className="num">Total</th><th>Status</th><th /></tr></thead>
               <tbody>
                 {orders.data.map((o) => (
                   <tr key={o.id} className={o.paymentStatus === 'REFUND_DUE' ? 'row-alert' : undefined}>
+                    <td>{canWrite && (o.status === 'PENDING' || o.status === 'CONFIRMED') && (
+                      <input type="checkbox" aria-label={`Select order #${o.number}`} checked={selected.has(o.id)} onChange={() => toggleSelected(o.id)} />
+                    )}</td>
                     <td><strong>#{o.number}</strong><div className="muted small">{dateTime(o.createdAt)}</div></td>
                     <td>{o.customerName}<div><Badge tone="info">{o.channel}</Badge></div></td>
                     <td>{o.items.map((i) => <div key={i.productId}>{i.quantity} × {i.name}</div>)}{o.notes && <div className="muted small">{o.notes}</div>}</td>
-                    <td className="num">{money(o.totalCents, settings.currency)}</td>
+                    <td className="num">{money(o.totalCents, settings.currency)}
+                      {o.taxCents > 0 && <div className="muted small">Tax {money(o.taxCents, settings.currency)}</div>}
+                      {o.discountCents > 0 && <div className="muted small">Discount {money(o.discountCents, settings.currency)}</div>}
+                    </td>
                     <td>
                       <Badge tone={STATUS_TONE[o.status]}>{o.status}</Badge>
                       <div className="row" style={{ marginTop: 4 }}>
@@ -113,6 +145,9 @@ export function Orders() {
                           </>
                         )}
                         {o.status === 'CONFIRMED' && <button className="small primary" disabled={action.busy} onClick={() => void transition(o, 'fulfill')}>Fulfil</button>}
+                        {(o.status === 'CONFIRMED' || o.status === 'FULFILLED') && <button className="small" disabled={action.busy} onClick={() => void printInvoice(o)}>Invoice</button>}
+                        {o.status !== 'CANCELLED' && <button className="small" disabled={action.busy} onClick={() => void action.run(() => openDocument(`/orders/${o.id}/packing-slip`))}>Packing slip</button>}
+                        {(o.status === 'CONFIRMED' || o.status === 'FULFILLED') && <button className="small" disabled={action.busy} onClick={() => setReturning(o)}>Return</button>}
                         {(o.status === 'PENDING' || o.status === 'CONFIRMED') && <button className="small danger" disabled={action.busy} onClick={() => void transition(o, 'cancel')}>Cancel</button>}
                         {o.paymentStatus === 'REFUND_DUE' && <button className="small primary" disabled={action.busy} onClick={() => void markRefunded(o)}>Mark refunded</button>}
                         {payConfig.data?.onlineAvailable && o.paymentStatus === 'UNPAID' && o.status !== 'CANCELLED' && (
@@ -138,24 +173,35 @@ function NewOrder({ onDone, onCancel }: { onDone: () => void; onCancel: () => vo
   const customers = useApi<Customer[]>('/customers');
   const products = useApi<Product[]>('/products');
   const [customerId, setCustomerId] = useState('');
-  const [lines, setLines] = useState<{ productId: string; quantity: string }[]>([{ productId: '', quantity: '1' }]);
+  const [lines, setLines] = useState<{ productId: string; quantity: string; discount: string }[]>([{ productId: '', quantity: '1', discount: '' }]);
+  const [orderDiscount, setOrderDiscount] = useState('');
   const [notes, setNotes] = useState('');
+  const [localError, setLocalError] = useState<string | null>(null);
   const { busy, error, run } = useAction();
 
-  const setLine = (i: number, patch: Partial<{ productId: string; quantity: string }>) =>
+  const setLine = (i: number, patch: Partial<{ productId: string; quantity: string; discount: string }>) =>
     setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const items = lines.filter((l) => l.productId).map((l) => ({ productId: l.productId, quantity: Number(l.quantity) }));
-    const ok = await run(() => api('/orders', { body: { customerId, items, notes: notes || undefined } }));
+    setLocalError(null);
+    const items: { productId: string; quantity: number; discount?: NonNullable<ReturnType<typeof parseDiscount>> }[] = [];
+    for (const [i, l] of lines.entries()) {
+      if (!l.productId) continue;
+      const discount = parseDiscount(l.discount);
+      if (discount === undefined) { setLocalError(`Discount for item ${i + 1} must be a percentage like 10% or an amount like 5.00`); return; }
+      items.push({ productId: l.productId, quantity: Number(l.quantity), ...(discount ? { discount } : {}) });
+    }
+    const whole = parseDiscount(orderDiscount);
+    if (whole === undefined) { setLocalError('Order discount must be a percentage like 10% or an amount like 5.00'); return; }
+    const ok = await run(() => api('/orders', { body: { customerId, items, ...(whole ? { discount: whole } : {}), notes: notes || undefined } }));
     if (ok) onDone();
   };
 
   return (
     <form className="card grid" onSubmit={submit} aria-label="New order">
       <h2>New order</h2>
-      <ErrorBanner error={error} />
+      <ErrorBanner error={localError ?? error} />
       <Field label="Customer">
         <select required value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
           <option value="">Select… (add customers on the Customers page)</option>
@@ -171,9 +217,11 @@ function NewOrder({ onDone, onCancel }: { onDone: () => void; onCancel: () => vo
             </select>
           </Field>
           <Field label="Qty"><input type="number" min={1} value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} /></Field>
+          <Field label={`Discount ${i + 1}`}><input value={l.discount} onChange={(e) => setLine(i, { discount: e.target.value })} placeholder="10% or 5.00" /></Field>
         </div>
       ))}
-      <div><button type="button" className="small" onClick={() => setLines((ls) => [...ls, { productId: '', quantity: '1' }])}>+ Add item</button></div>
+      <div><button type="button" className="small" onClick={() => setLines((ls) => [...ls, { productId: '', quantity: '1', discount: '' }])}>+ Add item</button></div>
+      <Field label="Order discount" hint="Optional: 10% or an amount like 5.00, shared across the items"><input value={orderDiscount} onChange={(e) => setOrderDiscount(e.target.value)} /></Field>
       <Field label="Notes"><input value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
       <div className="row">
         <button className="primary" type="submit" disabled={busy}>Create order</button>

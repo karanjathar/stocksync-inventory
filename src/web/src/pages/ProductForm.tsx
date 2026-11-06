@@ -3,12 +3,14 @@ import { api } from '../api/client';
 import { useAction } from '../hooks';
 import { toCents } from '../format';
 import { ErrorBanner, Field } from '../components/ui';
-import type { Category, CustomFieldDef, Product } from '../api/types';
+import type { Category, CustomFieldDef, Product, TaxRate } from '../api/types';
 
 interface Props {
   product?: Product;
   categories: Category[];
   customFields: CustomFieldDef[];
+  /** Tax rates to choose from; the product's current rate stays selectable even if it was deactivated. */
+  taxRates?: TaxRate[];
   canUpload: boolean;
   onSaved: (p: Product) => void;
   onCancel: () => void;
@@ -24,7 +26,7 @@ async function uploadImage(file: File): Promise<string> {
   return blobUrl;
 }
 
-export function ProductForm({ product, categories, customFields, canUpload, onSaved, onCancel }: Props) {
+export function ProductForm({ product, categories, customFields, taxRates = [], canUpload, onSaved, onCancel }: Props) {
   const [sku, setSku] = useState(product?.sku ?? '');
   const [name, setName] = useState(product?.name ?? '');
   const [description, setDescription] = useState(product?.description ?? '');
@@ -32,6 +34,7 @@ export function ProductForm({ product, categories, customFields, canUpload, onSa
   const [price, setPrice] = useState(product ? (product.priceCents / 100).toFixed(2) : '');
   const [reorderLevel, setReorderLevel] = useState(String(product?.reorderLevel ?? 0));
   const [categoryId, setCategoryId] = useState(product?.categoryId ?? '');
+  const [taxRateId, setTaxRateId] = useState(product?.taxRateId ?? '');
   const [imageUrl, setImageUrl] = useState<string | null>(product?.imageUrl ?? null);
   const [isActive, setIsActive] = useState(product?.isActive ?? true);
   const [attributes, setAttributes] = useState<Record<string, string>>(product?.attributes ?? {});
@@ -49,7 +52,7 @@ export function ProductForm({ product, categories, customFields, canUpload, onSa
     const cleaned = Object.fromEntries(Object.entries(attributes).filter(([, v]) => v.trim() !== ''));
     const body = {
       sku: sku.trim().toUpperCase(), name: name.trim(), description, unit: unit.trim() || 'pcs', priceCents,
-      reorderLevel: Number(reorderLevel) || 0, categoryId: categoryId || null, imageUrl, isActive, attributes: cleaned,
+      reorderLevel: Number(reorderLevel) || 0, categoryId: categoryId || null, taxRateId: taxRateId || null, imageUrl, isActive, attributes: cleaned,
     };
     const saved = await run(() => product
       ? api<Product>(`/products/${product.id}`, { method: 'PATCH', body })
@@ -79,6 +82,12 @@ export function ProductForm({ product, categories, customFields, canUpload, onSa
           <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
             <option value="">— none —</option>
             {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Tax rate" hint="Added to or included in the price, depending on Settings">
+          <select value={taxRateId} onChange={(e) => setTaxRateId(e.target.value)}>
+            <option value="">— none —</option>
+            {taxRates.filter((r) => r.active || r.id === taxRateId).map((r) => <option key={r.id} value={r.id}>{r.name}{r.active ? '' : ' (inactive)'}</option>)}
           </select>
         </Field>
         {customFields.map((f) => (

@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import { useAction, useApi } from '../hooks';
 import { useSettings } from '../settings';
 import { Badge, Card, ErrorBanner, Field, Page } from '../components/ui';
+import { TaxRatesCard } from './TaxRatesCard';
 import type { AlertRecipient, ChannelName, ChannelStatus, CustomFieldDef, PaymentsConfig, Settings, Warehouse } from '../api/types';
 
 const CHANNELS: ChannelName[] = ['whatsapp', 'messenger', 'instagram', 'telegram'];
@@ -64,6 +65,9 @@ export function SettingsPage() {
             <Field label="Public WhatsApp number" hint="Shown on the shop as “Order on WhatsApp” (international format, digits only)">
               <input inputMode="tel" value={form.whatsappNumber} onChange={(e) => set('whatsappNumber', e.target.value)} placeholder="15551234567" />
             </Field>
+            <Field label="Tax ID (GSTIN)" hint="Printed on invoices"><input value={form.taxId} onChange={(e) => set('taxId', e.target.value)} placeholder="29ABCDE1234F1Z5" /></Field>
+            <Field label="Business address" hint="Printed on invoices"><textarea rows={2} value={form.businessAddress} onChange={(e) => set('businessAddress', e.target.value)} /></Field>
+            <label className="row small"><input type="checkbox" style={{ width: 'auto' }} checked={form.pricesIncludeTax} onChange={(e) => set('pricesIncludeTax', e.target.checked)} /> Prices already include tax (the tax is shown inside the price instead of added on top)</label>
             <Field label="Default warehouse" hint="Used when confirming chat & web orders">
               <select value={form.defaultWarehouseId ?? ''} onChange={(e) => set('defaultWarehouseId', e.target.value || null)}>
                 <option value="">— none —</option>
@@ -140,6 +144,7 @@ export function SettingsPage() {
         </Card>
         <div><button className="primary" type="submit" disabled={busy}>Save settings</button></div>
       </form>
+      <TaxRatesCard />
     </Page>
   );
 }

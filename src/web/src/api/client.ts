@@ -54,6 +54,17 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
   return json as T;
 }
 
+/** GETs a text/HTML document (printable invoices etc.) with the session token. Errors are reported like JSON API errors. */
+export async function apiText(path: string): Promise<string> {
+  const res = await fetch(`/api${path}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) {
+    const json: unknown = await res.json().catch(() => ({}));
+    const err = (json as { error?: { code?: string; message?: string } }).error;
+    throw new ApiError(res.status, err?.code ?? 'ERROR', err?.message ?? `Request failed (${res.status})`);
+  }
+  return res.text();
+}
+
 /** Field-level messages from a 400 VALIDATION_ERROR, joined for display. */
 export function errorText(err: unknown): string {
   if (err instanceof ApiError) {

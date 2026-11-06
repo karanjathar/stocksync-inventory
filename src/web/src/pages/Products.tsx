@@ -6,7 +6,7 @@ import { useSettings } from '../settings';
 import { money } from '../format';
 import { Badge, Card, Empty, ErrorBanner, Page } from '../components/ui';
 import { ProductForm } from './ProductForm';
-import type { Category, Product } from '../api/types';
+import type { Category, Product, TaxRate } from '../api/types';
 
 export function Products() {
   const { can } = useAuth();
@@ -18,6 +18,7 @@ export function Products() {
   const [newCategory, setNewCategory] = useState('');
   const qs = new URLSearchParams({ ...(search && { search }), ...(categoryId && { categoryId }), ...(lowOnly && { lowStock: 'true' }) }).toString();
   const products = useApi<Product[]>(`/products${qs ? `?${qs}` : ''}`);
+  const taxRates = useApi<TaxRate[]>('/tax-rates');
   const categories = useApi<Category[]>('/categories');
   const uploads = useApi<{ configured: boolean }>(can('staff') ? '/uploads/status' : null);
   const action = useAction();
@@ -43,6 +44,7 @@ export function Products() {
           product={editing === 'new' ? undefined : editing}
           categories={categories.data ?? []}
           customFields={settings.customFields}
+          taxRates={taxRates.data ?? []}
           canUpload={uploads.data?.configured === true}
           onSaved={() => { setEditing(null); products.reload(); }}
           onCancel={() => setEditing(null)}

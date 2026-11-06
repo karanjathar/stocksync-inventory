@@ -191,7 +191,7 @@ export class OrdersService {
     const { rows } = await this.pool.query<OrderRow>(`${ORDER_SELECT} ${where} ORDER BY o.number DESC LIMIT $${values.length}`, values);
     if (!rows.length) return [];
     const { rows: items } = await this.pool.query<OrderItem & { orderId: string }>(
-      `SELECT oi.order_id AS "orderId", oi.product_id AS "productId", p.sku, p.name, oi.quantity, oi.unit_price_cents AS "unitPriceCents",
+      `SELECT oi.order_id AS "orderId", oi.id, oi.product_id AS "productId", p.sku, p.name, oi.quantity, oi.unit_price_cents AS "unitPriceCents",
               oi.tax_rate_bp AS "taxRateBp", oi.discount_cents AS "discountCents"
        FROM order_items oi JOIN products p ON p.id = oi.product_id WHERE oi.order_id = ANY($1::uuid[]) ORDER BY p.sku`,
       [rows.map((r) => r.id)]);
@@ -228,7 +228,7 @@ export class OrdersService {
 
   private async items(c: Pick<pg.Pool, 'query'>, orderId: string): Promise<OrderItem[]> {
     const { rows } = await c.query<OrderItem>(
-      `SELECT oi.product_id AS "productId", p.sku, p.name, oi.quantity, oi.unit_price_cents AS "unitPriceCents",
+      `SELECT oi.id, oi.product_id AS "productId", p.sku, p.name, oi.quantity, oi.unit_price_cents AS "unitPriceCents",
               oi.tax_rate_bp AS "taxRateBp", oi.discount_cents AS "discountCents"
        FROM order_items oi JOIN products p ON p.id = oi.product_id WHERE oi.order_id = $1 ORDER BY p.sku`, [orderId]);
     return rows;

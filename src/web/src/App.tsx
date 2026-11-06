@@ -13,6 +13,7 @@ import { Orders } from './pages/Orders';
 import { PurchaseOrders } from './pages/PurchaseOrders';
 import { Bills } from './pages/Bills';
 import { Reorder } from './pages/Reorder';
+import { Returns } from './pages/Returns';
 import { Inbox } from './pages/Inbox';
 import { SettingsPage } from './pages/SettingsPage';
 import { Users } from './pages/Users';
@@ -48,6 +49,7 @@ export function App() {
         <Route path="purchase-orders" element={<PurchaseOrders />} />
         <Route path="bills" element={<RequireAuth role="staff"><Bills /></RequireAuth>} />
         <Route path="reorder" element={<Reorder />} />
+        <Route path="returns" element={<RequireAuth role="staff"><Returns /></RequireAuth>} />
         <Route path="inbox" element={<RequireAuth role="staff"><Inbox /></RequireAuth>} />
         <Route path="account" element={<Account />} />
         <Route path="settings" element={<RequireAuth role="admin"><SettingsPage /></RequireAuth>} />

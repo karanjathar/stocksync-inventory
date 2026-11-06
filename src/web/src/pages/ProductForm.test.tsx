@@ -25,7 +25,7 @@ describe('ProductForm', () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(calls[0]!.body).toEqual({
       sku: 'TEE-RED', name: 'Red Tee', description: '', unit: 'pcs', priceCents: 1999, reorderLevel: 4,
-      categoryId: 'c1', imageUrl: null, isActive: true, attributes: { color: 'red', weight: '180' },
+      categoryId: 'c1', taxRateId: null, imageUrl: null, isActive: true, attributes: { color: 'red', weight: '180' },
     });
   });
 

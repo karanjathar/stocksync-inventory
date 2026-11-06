@@ -18,7 +18,7 @@ export interface StockMovement { id: string; productId: string; sku: string; war
   userId: string | null; createdAt: string }
 export interface Supplier { id: string; name: string; email: string | null; phone: string | null; notes: string }
 export interface Customer { id: string; name: string; phone: string | null; email: string | null; channel: OrderChannel | string; channelUserId: string | null }
-export interface OrderItem { productId: string; sku: string; name: string; quantity: number; unitPriceCents: number; taxRateBp: number; discountCents: number }
+export interface OrderItem { id: string; productId: string; sku: string; name: string; quantity: number; unitPriceCents: number; taxRateBp: number; discountCents: number }
 export interface TaxRate { id: string; name: string; rateBp: number; active: boolean }
 export interface Order { id: string; number: number; customerId: string; customerName: string; channel: OrderChannel;
   status: OrderStatus; warehouseId: string | null; totalCents: number; subtotalCents: number; taxCents: number; discountCents: number; notes: string; items: OrderItem[]; createdAt: string; updatedAt: string;
