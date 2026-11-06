@@ -9,7 +9,7 @@ export interface User { id: string; email: string; name: string; role: Role; cre
 export interface AuthUser { id: string; email: string; role: Role }
 export interface Category { id: string; name: string }
 export interface Product { id: string; sku: string; name: string; description: string; categoryId: string | null;
-  unit: string; priceCents: number; reorderLevel: number; imageUrl: string | null;
+  unit: string; priceCents: number; reorderLevel: number; reorderQuantity: number; preferredSupplierId: string | null; imageUrl: string | null;
   attributes: Record<string, string>; isActive: boolean; totalQuantity: number; createdAt: string; updatedAt: string }
 export interface Warehouse { id: string; code: string; name: string; address: string }
 export interface StockLevel { productId: string; sku: string; productName: string; warehouseId: string; warehouseCode: string; quantity: number }
@@ -41,3 +41,14 @@ export interface Payment { id: string; orderId: string; provider: 'razorpay'; pr
   status: 'CREATED' | 'PAID' | 'EXPIRED' | 'CANCELLED'; amountCents: number; currency: string; shortUrl: string;
   providerPaymentId: string | null; expiresAt: string; createdAt: string }
 export interface PaymentSettings { onlineEnabled: boolean; codEnabled: boolean; linkExpiryMinutes: number }
+/** CLOSED = closed short: partly received and the rest will not arrive. */
+export type PurchaseStatus = 'DRAFT' | 'SENT' | 'PARTIALLY_RECEIVED' | 'RECEIVED' | 'CLOSED' | 'CANCELLED';
+export interface PurchaseOrderItem { id: string; productId: string; sku: string; name: string; quantity: number; receivedQuantity: number; unitCostCents: number }
+export interface PurchaseOrder { id: string; number: number; supplierId: string; supplierName: string; status: PurchaseStatus; warehouseId: string;
+  expectedDate: string | null; notes: string; totalCents: number; items: PurchaseOrderItem[]; createdBy: string | null; createdAt: string; updatedAt: string }
+export type BillStatus = 'UNPAID' | 'PARTIAL' | 'PAID' | 'VOID';
+export interface BillPayment { id: string; amountCents: number; requestId: string; method: string; paidAt: string }
+export interface Bill { id: string; number: number; supplierId: string; supplierName: string; purchaseOrderId: string | null; status: BillStatus;
+  totalCents: number; paidCents: number; dueDate: string; createdAt: string; payments: BillPayment[] }
+export interface PayablesRow { supplierId: string; supplierName: string; openCents: number; overdueCents: number; billCount: number }
+export interface Payables { suppliers: PayablesRow[]; totalOpenCents: number; totalOverdueCents: number }

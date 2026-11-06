@@ -321,9 +321,10 @@ CREATE TABLE bill_payments (id uuid PK, bill_id uuid NOT NULL REFERENCES bills(i
 | GET/POST /api/purchase-orders, GET/PATCH /api/purchase-orders/:id | staff (GET: any) | PATCH only while DRAFT; totals server-side |
 | POST /api/purchase-orders/:id/send, /cancel | staff | DRAFT→SENT; cancel unless something was received; else 409 |
 | POST /api/purchase-orders/:id/receive | staff | `{lines:[{itemId,quantity,warehouseId?}]}`; never above ordered; ledger rows carry `reference='PO-<n>'` |
-| GET/POST /api/bills, POST /api/bills/:id/payments | staff | payment body needs `requestId` (idempotent); overpay → 409 |
+| GET/POST /api/bills, GET /api/bills/:id, POST /api/bills/:id/payments, POST /api/bills/:id/void | staff (reads too: supplier finances) | payment body needs `requestId` (replay must match amount, method and bill, else 409); overpay → 409 |
 | GET /api/reports/payables | staff | open balance per supplier |
-| GET/POST /api/reorder-suggestions | staff | POST `{productIds[]}` → one DRAFT PO per preferred supplier |
+| GET /api/reorder-suggestions (any role), POST (staff) | | POST `{productIds[]}` → one DRAFT PO per preferred supplier, in one transaction; suppliers whose total would exceed 32 bits are skipped with a reason |
+| POST /api/purchase-orders/:id/close | staff | PARTIALLY_RECEIVED → CLOSED (closed short); the receive endpoint is not idempotent beyond the remaining-quantity limit |
 
 ## 3.16 Release 3 Sales documents — `src/api/migrations/006_tax_discount.sql`
 ```sql
@@ -400,7 +401,9 @@ Razorpay UPI QR (verify against test keys before enabling): `POST /v1/payments/q
 
 ## 3.20 Release 3 Catalogue depth — `src/api/migrations/010_catalogue.sql`
 ```sql
-ALTER TABLE products ADD COLUMN unit text NOT NULL DEFAULT 'pcs' CHECK (unit IN ('pcs','kg','g','l','ml','pack')),
+-- products.unit already exists (free text since 001). The migration first maps unknown values to 'pcs', then constrains it.
+UPDATE products SET unit = 'pcs' WHERE unit NOT IN ('pcs','kg','g','l','ml','pack');
+ALTER TABLE products ADD CONSTRAINT products_unit_chk CHECK (unit IN ('pcs','kg','g','l','ml','pack')),
   ADD COLUMN unit_scale integer NOT NULL DEFAULT 1 CHECK (unit_scale IN (1,10,100,1000)), ADD COLUMN item_group_id uuid REFERENCES item_groups(id), ADD COLUMN variant_values jsonb;
 CREATE TABLE item_groups (id uuid PK, name text NOT NULL UNIQUE, attributes jsonb NOT NULL, -- {"size":["S","M"],"colour":["Red"]}
   category_id uuid REFERENCES categories(id), description text NOT NULL DEFAULT '');

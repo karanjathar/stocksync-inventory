@@ -4,7 +4,8 @@ import { escapeLike } from './simple.js';
 
 export const PRODUCT_SELECT = `
   SELECT p.id, p.sku, p.name, p.description, p.category_id AS "categoryId", p.unit,
-         p.price_cents AS "priceCents", p.reorder_level AS "reorderLevel", p.image_url AS "imageUrl",
+         p.price_cents AS "priceCents", p.reorder_level AS "reorderLevel", p.reorder_quantity AS "reorderQuantity",
+         p.preferred_supplier_id AS "preferredSupplierId", p.image_url AS "imageUrl",
          p.attributes, p.is_active AS "isActive", COALESCE(s.total, 0)::int AS "totalQuantity",
          p.created_at AS "createdAt", p.updated_at AS "updatedAt"
   FROM products p
@@ -12,11 +13,12 @@ export const PRODUCT_SELECT = `
 
 export interface ProductFilter { search?: string; categoryId?: string; lowStock?: boolean; activeOnly?: boolean; limit?: number }
 export type ProductInput = Partial<Pick<Product, 'sku' | 'name' | 'description' | 'categoryId' | 'unit' | 'priceCents' |
-  'reorderLevel' | 'imageUrl' | 'attributes' | 'isActive'>>;
+  'reorderLevel' | 'reorderQuantity' | 'preferredSupplierId' | 'imageUrl' | 'attributes' | 'isActive'>>;
 
 const COLUMN: Record<keyof ProductInput, string> = {
   sku: 'sku', name: 'name', description: 'description', categoryId: 'category_id', unit: 'unit',
-  priceCents: 'price_cents', reorderLevel: 'reorder_level', imageUrl: 'image_url', attributes: 'attributes', isActive: 'is_active',
+  priceCents: 'price_cents', reorderLevel: 'reorder_level', reorderQuantity: 'reorder_quantity',
+  preferredSupplierId: 'preferred_supplier_id', imageUrl: 'image_url', attributes: 'attributes', isActive: 'is_active',
 };
 
 /** Low stock = tracked (reorder level > 0) and total quantity at or below the reorder level. */

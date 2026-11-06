@@ -62,3 +62,9 @@ _One entry per significant decision. Newest at the bottom._
 
 ## D-019 GST filing and counter POS are out of scope for Release 3 (2026-11-06)
 **Context:** The owner chose to skip GST return filing and a POS counter mode. **Decision:** Keep tax calculation and invoices (D-011) but build no return filing, e-invoice, e-way bill, receipt-printer or offline billing. **Consequences:** A GST-registered business still files through its accountant using the accounting export (T101). The counter-sale UPI QR (T90) stays as a lightweight option.
+
+## D-020 Release 3 plan approved by the owner (2026-11-06)
+**Context:** The owner reviewed the Release 3 plan (T59-T103, PRD 1.9-1.9.2, schemas 3.15-3.21) and chose "Approve all, in plan order". **Decision:** Build phases 10 to 17 in order, stopping after each phase for review. **Consequences:** Reports (Phase 13) are built after purchasing, costing and invoices because they depend on them.
+
+## D-021 Phase 10 review outcomes (2026-11-06)
+**Context:** A read-only review of Phase 10 found a pool-deadlock risk in reorder creation, partial creation, a weak date check, no way to close a short-shipped order, cancelled and draft orders feeding last cost, and open read access to supplier bills. **Decision:** Fixed as T104-T108. Accepted as known limits: receive has no request id (the remaining-quantity check bounds a double-submit to the ordered quantity) and the New bill list can offer an order that is already fully billed (the server answers with a clear 409). **Consequences:** Supplier finances are staff-only; CLOSED is a final purchase-order status.
