@@ -119,3 +119,25 @@ WhatsApp Cloud API access as in v1. Until keys exist, everything is verified wit
 - **FR-R2-11 Refund handling.** `REFUND_DUE` (paid but unfulfillable, duplicate, or cancelled-after-paid) alerts staff and tells the customer; staff refund in Razorpay and press **Mark refunded** (`REFUNDED`).
 - **FR-R2-12 Abuse limits.** At most 15 open orders per customer (chat and web); public endpoints rate limited.
 - **FR-R2-13 Configuration safety.** Settings warns when no payment method would be usable; production refuses non-https provider URLs.
+
+## 1.9 Release 3 — Inventory standard parity (Zoho Inventory class)
+**Goal.** Close the functional gap between StockSync and mainstream small-business inventory software while keeping its chat and online-payment advantage.
+**Method.** Gap analysis against Zoho Inventory's published feature list. Out of scope for R3: multi-currency, e-commerce marketplace connectors, shipping-carrier integrations, full accounting/GL, payroll, mobile native apps.
+
+| ID | Requirement | Status before R3 |
+|---|---|---|
+| FR-R3-1 | Purchase orders with partial receiving against the PO | missing (suppliers CRUD only) |
+| FR-R3-2 | Vendor bills, supplier payments, payables summary | missing |
+| FR-R3-3 | Reorder suggestions with preferred supplier → draft PO | alerts only |
+| FR-R3-4 | Tax rates (GST) and discounts, computed server-side | missing |
+| FR-R3-5 | Immutable numbered sales invoices; printable invoice, packing slip, picklist | missing |
+| FR-R3-6 | Sales returns with credit notes; purchase returns with debit notes | missing |
+| FR-R3-7 | Composite items (bundles/kits) | missing |
+| FR-R3-8 | Barcode assignment, label generation, scan lookup | missing |
+| FR-R3-9 | Batch/lot with expiry (FEFO) and serial number tracking; expiry alerts | missing |
+| FR-R3-10 | Weighted-average costing and stock valuation | missing |
+| FR-R3-11 | Reports (sales, purchases, margin, movement, low stock, ageing) with CSV export | dashboard only |
+| FR-R3-12 | CSV import of products and opening stock with dry-run | missing |
+| FR-R3-13 | Append-only audit log | missing |
+**Already at parity or better:** multi-warehouse, transfers, adjustments and ledger, custom fields, roles, reorder alerts, online payments (Razorpay), WhatsApp/Telegram/Messenger/Instagram ordering, public shop, PWA.
+**Success measure.** A shop owner can run buy → receive → sell → invoice → return → report without leaving StockSync, and every stock and money figure reconciles with the ledger.

@@ -32,3 +32,18 @@ _One entry per significant decision. Newest at the bottom._
 
 ## D-009 Persist the options shown with each outbound reply (2026-11-06)
 **Context:** Channels without rich UI show numbered options, and the user answers "2". Mapping that back needs the options last shown to that user, and must work across restarts and replicas. **Decision:** Migration `002_reply_options.sql` adds `channel_messages.options jsonb`. The hub stores the options it rendered, and the inbox resolves a bare number against the latest outbound message to that user. The payments/chat migration becomes `003_payments_chat.sql`. **Consequences:** No in-memory session state. The criterion moved from T27 to T28.
+
+## D-010 Release 3 targets Zoho-Inventory-class parity, not full accounting (2026-11-06)
+**Context:** The owner asked that StockSync meet mainstream inventory-software standards. **Decision:** Build purchasing, tax/invoicing, returns, bundles, tracking, costing, reports, import/export and audit (PRD 1.9). Do not build a general ledger, multi-currency or marketplace connectors. **Consequences:** Large but bounded scope (25 tasks, five phases). Accounting export (CSV) is the integration point for external accounting tools.
+
+## D-011 Tax in basis points, rounded per line, invoices immutable (2026-11-06)
+**Context:** GST needs exact, reproducible totals and legally stable documents. **Decision:** Rates are integer basis points; tax is rounded half-up per line and totals are sums of rounded lines. Invoices are snapshots and are never edited; corrections are credit notes. Invoice numbers are gapless per year. **Consequences:** Totals match the customer-visible document and Razorpay amounts. Changing a rate never alters past invoices.
+
+## D-012 Weighted-average costing (2026-11-06)
+**Context:** Valuation and margin need a cost basis. **Decision:** Moving weighted average per product and warehouse; issues use the current average. FIFO layers are not built. **Consequences:** Simple and cheap to maintain. Margin is approximate for products with volatile purchase prices. FIFO can be added later by adding cost layers.
+
+## D-013 Tracking is opt-in per product; bundles hold no stock (2026-11-06)
+**Context:** Most products need no batch or serial data, and forcing it would slow every sale. **Decision:** `products.tracking` is NONE, BATCH or SERIAL. Bundles derive availability from components and deduct components on sale. All paths still go through StockService. **Consequences:** Existing data and flows are unchanged; sums by batch must equal stock levels (tested).
+
+## D-014 No new runtime dependencies for documents and barcodes (2026-11-06)
+**Context:** Every dependency adds supply-chain risk. **Decision:** Invoices, packing slips and picklists are escaped HTML with print CSS (users print to PDF); barcodes are server-generated SVG. **Consequences:** No PDF library. Pixel-perfect PDFs and emailing documents can come later.
