@@ -1,7 +1,8 @@
 import type pg from 'pg';
+import { withTx } from '../db/tx.js';
 import { ConflictError, ValidationError } from '../domain/errors.js';
 import type { PurchaseOrder } from '../domain/types.js';
-import type { PurchasesService } from './purchases.js';
+import { MAX_TOTAL_CENTS, type PurchasesService } from './purchases.js';
 import type { SettingsService } from './settings.js';
 
 export interface ReorderSuggestion {
@@ -42,41 +43,47 @@ export class ReorderService {
     return rows;
   }
 
+  /**
+   * Creates one DRAFT order per preferred supplier in a single transaction. The advisory lock is transaction-scoped and taken on
+   * the same connection that does the work, so concurrent requests queue on it without holding a second pooled connection
+   * and a failure can never leave the lock behind or some suppliers' orders half-created.
+   */
   async createDrafts(productIds: string[], warehouseId: string | undefined, userId: string | null): Promise<ReorderResult> {
     const warehouse = warehouseId ?? (await this.settings.get()).defaultWarehouseId;
     if (!warehouse) throw new ValidationError('A warehouse is required (pass warehouseId or set a default warehouse in Settings)');
-    const client = await this.pool.connect();
-    try {
-      await client.query('SELECT pg_advisory_lock($1)', [ADVISORY_KEY]);
-      try {
-        const wanted = new Set(productIds);
-        const all = (await this.suggestions(client)).filter((s) => wanted.has(s.productId));
-        const known = new Set(all.map((s) => s.productId));
-        const skipped: ReorderResult['skipped'] = [];
-        const { rows: exist } = await client.query<{ id: string }>('SELECT id FROM products WHERE id = ANY($1::uuid[])', [[...wanted]]);
-        const existing = new Set(exist.map((r) => r.id));
-        for (const id of wanted) {
-          if (!known.has(id)) skipped.push({ productId: id, reason: existing.has(id) ? 'Not below its reorder level (or already on order, inactive or untracked)' : 'Product not found' });
-        }
-        const bySupplier = new Map<string, ReorderSuggestion[]>();
-        for (const s of all) {
-          if (!s.supplierId) { skipped.push({ productId: s.productId, reason: 'No preferred supplier set' }); continue; }
-          bySupplier.set(s.supplierId, [...(bySupplier.get(s.supplierId) ?? []), s]);
-        }
-        const orders: PurchaseOrder[] = [];
-        for (const [supplierId, lines] of bySupplier) {
-          orders.push(await this.purchases.create({
-            supplierId, warehouseId: warehouse, userId, notes: 'Created from reorder suggestions',
-            items: lines.map((l) => ({ productId: l.productId, quantity: l.suggestedQuantity, unitCostCents: l.lastCostCents })),
-          }));
-        }
-        if (!orders.length) throw new ConflictError('Nothing to order', { skipped });
-        return { orders, skipped };
-      } finally {
-        await client.query('SELECT pg_advisory_unlock($1)', [ADVISORY_KEY]);
+    const wanted = new Set(productIds);
+    const { orderIds, skipped } = await withTx(this.pool, async (c) => {
+      await c.query('SELECT pg_advisory_xact_lock($1)', [ADVISORY_KEY]);
+      const all = (await this.suggestions(c)).filter((s) => wanted.has(s.productId));
+      const known = new Set(all.map((s) => s.productId));
+      const skipped: ReorderResult['skipped'] = [];
+      const { rows: exist } = await c.query<{ id: string }>('SELECT id FROM products WHERE id = ANY($1::uuid[])', [[...wanted]]);
+      const existing = new Set(exist.map((r) => r.id));
+      for (const id of wanted) {
+        if (!known.has(id)) skipped.push({ productId: id, reason: existing.has(id) ? 'Not below its reorder level (or already on order, inactive or untracked)' : 'Product not found' });
       }
-    } finally {
-      client.release();
-    }
+      const bySupplier = new Map<string, ReorderSuggestion[]>();
+      for (const s of all) {
+        if (!s.supplierId) { skipped.push({ productId: s.productId, reason: 'No preferred supplier set' }); continue; }
+        bySupplier.set(s.supplierId, [...(bySupplier.get(s.supplierId) ?? []), s]);
+      }
+      const orderIds: string[] = [];
+      for (const [supplierId, lines] of bySupplier) {
+        const total = lines.reduce((n, l) => n + l.suggestedQuantity * l.lastCostCents, 0);
+        if (total > MAX_TOTAL_CENTS) {
+          for (const l of lines) skipped.push({ productId: l.productId, reason: 'Order total too large: lower the reorder quantity or order manually' });
+          continue;
+        }
+        orderIds.push(await this.purchases.createWith(c, {
+          supplierId, warehouseId: warehouse, userId, notes: 'Created from reorder suggestions',
+          items: lines.map((l) => ({ productId: l.productId, quantity: l.suggestedQuantity, unitCostCents: l.lastCostCents })),
+        }));
+      }
+      if (!orderIds.length) throw new ConflictError('Nothing to order', { skipped });
+      return { orderIds, skipped };
+    });
+    const orders = [];
+    for (const id of orderIds) orders.push((await this.purchases.get(id))!);
+    return { orders, skipped };
   }
 }

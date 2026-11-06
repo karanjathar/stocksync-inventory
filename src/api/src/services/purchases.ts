@@ -22,7 +22,8 @@ export interface PurchasePatch {
   items?: PurchaseLineInput[];
 }
 
-const MAX_TOTAL_CENTS = 2_147_483_647; // the total_cents column is a 32-bit integer
+/** The total_cents column is a 32-bit integer. */
+export const MAX_TOTAL_CENTS = 2_147_483_647;
 
 const PO_SELECT = `
   SELECT po.id, po.number, po.supplier_id AS "supplierId", s.name AS "supplierName", po.status, po.warehouse_id AS "warehouseId",
@@ -37,17 +38,20 @@ export class PurchasesService {
   constructor(private readonly pool: pg.Pool, private readonly stock: StockService) {}
 
   async create(input: NewPurchaseOrder): Promise<PurchaseOrder> {
-    const total = this.total(input.items);
-    const id = await withTx(this.pool, async (c) => {
-      await this.assertRefs(c, input.supplierId, input.warehouseId, input.items);
-      const { rows } = await c.query<{ id: string }>(
-        `INSERT INTO purchase_orders (supplier_id, warehouse_id, expected_date, notes, total_cents, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        [input.supplierId, input.warehouseId, input.expectedDate ?? null, input.notes ?? '', total, input.userId]);
-      await this.insertItems(c, rows[0]!.id, input.items);
-      return rows[0]!.id;
-    });
+    const id = await withTx(this.pool, (c) => this.createWith(c, input));
     return (await this.get(id))!;
+  }
+
+  /** Inserts a DRAFT inside the caller's transaction (used to create several orders atomically). Returns the new id. */
+  async createWith(c: pg.PoolClient, input: NewPurchaseOrder): Promise<string> {
+    const total = this.total(input.items);
+    await this.assertRefs(c, input.supplierId, input.warehouseId, input.items);
+    const { rows } = await c.query<{ id: string }>(
+      `INSERT INTO purchase_orders (supplier_id, warehouse_id, expected_date, notes, total_cents, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [input.supplierId, input.warehouseId, input.expectedDate ?? null, input.notes ?? '', total, input.userId]);
+    await this.insertItems(c, rows[0]!.id, input.items);
+    return rows[0]!.id;
   }
 
   async update(id: string, patch: PurchasePatch): Promise<PurchaseOrder> {

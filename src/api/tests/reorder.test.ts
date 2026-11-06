@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
+import pg from 'pg';
 import { buildTestApp, type TestApp } from './helpers/app.js';
+import { TEST_DATABASE_URL } from './helpers/db.js';
+import { PurchasesService } from '../src/services/purchases.js';
+import { ReorderService } from '../src/services/reorder.js';
 
 let t: TestApp;
 let staff: string;
@@ -158,4 +162,44 @@ describe('creating draft purchase orders from suggestions (T62)', () => {
     expect((await get('/api/reorder-suggestions', viewer)).status).toBe(200);
     expect((await request(t.app).get('/api/reorder-suggestions')).status).toBe(401);
   });
+});
+
+describe('reorder draft creation is atomic and pool-safe (T104)', () => {
+  it('skips a supplier whose order total would overflow, but still creates the others', async () => {
+    const huge = await product({ level: 10, onHand: 0, reorderQuantity: 1_000_000, supplierId: acme });
+    const normal = await product({ level: 10, onHand: 0, reorderQuantity: 5, supplierId: globex });
+    // a prior sent order gives the huge product a last cost of 10,000,000.00
+    const prior = (await post('/api/purchase-orders', { supplierId: acme, warehouseId: main, items: [{ productId: huge.id, quantity: 1, unitCostCents: 1_000_000_000 }] })).body;
+    await post(`/api/purchase-orders/${prior.id}/send`, {});
+    const res = await post('/api/reorder-suggestions', { productIds: [huge.id, normal.id] });
+    expect(res.status).toBe(201);
+    expect(res.body.orders).toHaveLength(1);
+    expect(res.body.orders[0].supplierId).toBe(globex);
+    expect(res.body.skipped).toEqual([{ productId: huge.id, reason: expect.stringMatching(/too large/i) }]);
+  });
+
+  it('creates every supplier\'s order or none (rolls back as one unit)', async () => {
+    const a = await product({ level: 10, onHand: 0, supplierId: acme });
+    const g = await product({ level: 10, onHand: 0, supplierId: globex });
+    const before = (await t.pool.query('SELECT count(*)::int AS n FROM purchase_orders')).rows[0].n;
+    // make the second supplier's insert fail inside the transaction by deleting the supplier row mid-way is not possible,
+    // so use an unknown warehouse: nothing may be created for either supplier.
+    const bad = await post('/api/reorder-suggestions', { productIds: [a.id, g.id], warehouseId: '00000000-0000-4000-8000-000000000000' });
+    expect(bad.status).toBe(404);
+    const after = (await t.pool.query('SELECT count(*)::int AS n FROM purchase_orders')).rows[0].n;
+    expect(after).toBe(before);
+  });
+
+  it('does not hang or duplicate with 30 concurrent requests on a pool of 5', async () => {
+    const small = new pg.Pool({ connectionString: TEST_DATABASE_URL, max: 5 });
+    try {
+      const svc = new ReorderService(small, new PurchasesService(small, t.c.stock), t.c.settings);
+      const p = await product({ level: 10, onHand: 0, supplierId: acme });
+      const results = await Promise.allSettled(Array.from({ length: 30 }, () => svc.createDrafts([p.id], undefined, null)));
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(results.filter((r) => r.status === 'rejected' && (r.reason as { status?: number }).status === 409)).toHaveLength(29);
+      const open = await t.pool.query("SELECT count(*)::int AS n FROM purchase_order_items i JOIN purchase_orders o ON o.id = i.purchase_order_id WHERE i.product_id = $1 AND o.status = 'DRAFT'", [p.id]);
+      expect(open.rows[0].n).toBe(1);
+    } finally { await small.end(); }
+  }, 20_000);
 });
