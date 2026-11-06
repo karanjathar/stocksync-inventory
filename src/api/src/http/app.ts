@@ -27,6 +27,7 @@ import { taxRateRoutes } from './routes/taxRates.js';
 import { invoiceRoutes } from './routes/invoices.js';
 import { picklistRoutes } from './routes/documents.js';
 import { creditNoteRoutes, returnRoutes } from './routes/returns.js';
+import { purchaseReturnRoutes } from './routes/purchaseReturns.js';
 import { categoryRoutes, customerRoutes, productRoutes, supplierRoutes, warehouseRoutes } from './routes/catalog.js';
 
 export interface AppOptions {
@@ -100,6 +101,7 @@ export function createApp(c: Container, opts: AppOptions = {}): Express {
   api.use('/tax-rates', secure, taxRateRoutes(c));
   api.use('/picklists', secure, picklistRoutes(c));
   api.use('/returns', secure, returnRoutes(c));
+  api.use('/purchase-returns', secure, purchaseReturnRoutes(c));
   api.use('/credit-notes', secure, creditNoteRoutes(c));
   api.use('/invoices', secure, requireRole('staff'), invoiceRoutes(c));
   api.get('/dashboard', secure, async (_req, res) => { res.json(await dashboardStats(pool)); });

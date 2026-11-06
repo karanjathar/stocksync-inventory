@@ -122,3 +122,45 @@ BEGIN
   RAISE EXCEPTION 'credit notes are immutable once issued' USING ERRCODE = '23000';
 END $$;
 CREATE TRIGGER credit_notes_immutable BEFORE UPDATE OR DELETE ON credit_notes FOR EACH ROW EXECUTE FUNCTION credit_notes_immutable();
+
+-- Purchase returns and debit notes (T68). A debit lowers what is owed on a bill without rewriting the bill's total.
+ALTER TABLE bills ADD COLUMN debit_cents integer NOT NULL DEFAULT 0 CHECK (debit_cents >= 0);
+ALTER TABLE bills ADD CONSTRAINT bills_covered CHECK (paid_cents + debit_cents <= total_cents);
+
+CREATE TABLE debit_note_counters (year integer PRIMARY KEY, last integer NOT NULL CHECK (last >= 0));
+
+CREATE TABLE purchase_returns (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  number serial UNIQUE,
+  debit_note_number text NOT NULL UNIQUE,
+  purchase_order_id uuid NOT NULL REFERENCES purchase_orders(id),
+  supplier_id uuid NOT NULL REFERENCES suppliers(id),
+  warehouse_id uuid NOT NULL REFERENCES warehouses(id),
+  debit_total_cents integer NOT NULL CHECK (debit_total_cents >= 0),
+  applied_cents integer NOT NULL CHECK (applied_cents >= 0),     -- taken off supplier bills
+  unapplied_cents integer NOT NULL CHECK (unapplied_cents >= 0), -- bills already paid: the supplier owes us this
+  request_id text NOT NULL UNIQUE,
+  reason text NOT NULL DEFAULT '',
+  snapshot jsonb NOT NULL,
+  created_by uuid REFERENCES users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX purchase_returns_po_idx ON purchase_returns (purchase_order_id);
+
+CREATE TABLE purchase_return_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  purchase_return_id uuid NOT NULL REFERENCES purchase_returns(id) ON DELETE CASCADE,
+  purchase_order_item_id uuid NOT NULL REFERENCES purchase_order_items(id),
+  quantity integer NOT NULL CHECK (quantity > 0),
+  debit_cents integer NOT NULL CHECK (debit_cents >= 0),
+  UNIQUE (purchase_return_id, purchase_order_item_id)
+);
+
+CREATE FUNCTION purchase_returns_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'purchase returns cannot be deleted' USING ERRCODE = '23000';
+  END IF;
+  RAISE EXCEPTION 'purchase returns are immutable once issued' USING ERRCODE = '23000';
+END $$;
+CREATE TRIGGER purchase_returns_immutable BEFORE UPDATE OR DELETE ON purchase_returns FOR EACH ROW EXECUTE FUNCTION purchase_returns_immutable();

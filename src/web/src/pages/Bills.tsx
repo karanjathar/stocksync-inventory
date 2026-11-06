@@ -74,7 +74,7 @@ export function Bills() {
                     <td><strong>#{b.number}</strong></td>
                     <td>{b.supplierName}</td>
                     <td>{b.dueDate}</td>
-                    <td className="num">{money(b.totalCents, settings.currency)}<div className="muted small">{money(b.totalCents - b.paidCents, settings.currency)} due</div></td>
+                    <td className="num">{money(b.totalCents, settings.currency)}<div className="muted small">{money(b.totalCents - b.paidCents - b.debitCents, settings.currency)} due</div></td>
                     <td><Badge tone={TONE[b.status]}>{b.status}</Badge></td>
                     <td>{canWrite && (
                       <div className="row" style={{ justifyContent: 'flex-end' }}>

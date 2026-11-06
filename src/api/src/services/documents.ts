@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import { ConflictError, NotFoundError, ValidationError } from '../domain/errors.js';
-import type { CreditNote, Invoice, Order } from '../domain/types.js';
+import type { CreditNote, Invoice, Order, PurchaseReturn } from '../domain/types.js';
 import { formatMoney } from './money.js';
 import type { OrdersService } from './orders.js';
 import type { SettingsService } from './settings.js';
@@ -76,6 +76,25 @@ export function renderCreditNote(cn: CreditNote): string {
       <tr><td>Tax reversed</td><td class="num">${m(cn.taxCents)}</td></tr>
       <tr class="grand"><td>Total credit</td><td class="num">${m(cn.totalCents)}</td></tr></tbody></table>
     ${cn.inclusive ? '<p class="muted">Prices include tax.</p>' : ''}`);
+}
+
+export function renderDebitNote(r: PurchaseReturn): string {
+  const m = (c: number) => esc(formatMoney(c, r.snapshot.currency));
+  const rows = r.items.map((l) => `<tr><td>${esc(l.sku)}</td><td>${esc(l.name)}</td><td class="num">${l.quantity}</td><td class="num">${m(l.unitCostCents)}</td><td class="num">${m(l.debitCents)}</td></tr>`).join('');
+  return page(`Debit note ${r.debitNoteNumber}`, `
+    <div class="row"><div><h1>${esc(r.snapshot.business.businessName)}</h1>
+      <div class="muted">${esc(r.snapshot.business.address).replace(/\n/g, '<br>')}</div>
+      ${r.snapshot.business.taxId ? `<div>Tax ID: ${esc(r.snapshot.business.taxId)}</div>` : ''}</div>
+      <div style="text-align:right"><h1>DEBIT NOTE</h1><div><strong>${esc(r.debitNoteNumber)}</strong></div>
+      <div>Date: ${day(r.createdAt)}</div><div class="muted">Purchase order #${r.snapshot.purchaseOrderNumber}</div></div></div>
+    <h2>Supplier</h2><div>${esc(r.snapshot.supplier.name)}</div>
+    ${r.snapshot.supplier.email ? `<div class="muted">${esc(r.snapshot.supplier.email)}</div>` : ''}${r.snapshot.supplier.phone ? `<div class="muted">${esc(r.snapshot.supplier.phone)}</div>` : ''}
+    ${r.reason ? `<h2>Reason for return</h2><div>${esc(r.reason)}</div>` : ''}
+    <table><thead><tr><th>SKU</th><th>Item</th><th class="num">Qty returned</th><th class="num">Unit cost</th><th class="num">Debit</th></tr></thead><tbody>${rows}</tbody></table>
+    <table class="totals"><tbody>
+      <tr class="grand"><td>Total debit</td><td class="num">${m(r.debitTotalCents)}</td></tr>
+      ${r.appliedCents ? `<tr><td>Taken off your bills</td><td class="num">${m(r.appliedCents)}</td></tr>` : ''}
+      ${r.unappliedCents ? `<tr><td>To be refunded to us</td><td class="num">${m(r.unappliedCents)}</td></tr>` : ''}</tbody></table>`);
 }
 
 export function renderPackingSlip(order: Order, warehouseCode: string | null, businessName: string): string {

@@ -14,7 +14,7 @@ export interface NewBillPayment { requestId: string; amountCents: number; method
 
 const BILL_SELECT = `
   SELECT b.id, b.number, b.supplier_id AS "supplierId", s.name AS "supplierName", b.purchase_order_id AS "purchaseOrderId", b.status,
-         b.total_cents AS "totalCents", b.paid_cents AS "paidCents", to_char(b.due_date, 'YYYY-MM-DD') AS "dueDate", b.created_at AS "createdAt"
+         b.total_cents AS "totalCents", b.paid_cents AS "paidCents", b.debit_cents AS "debitCents", to_char(b.due_date, 'YYYY-MM-DD') AS "dueDate", b.created_at AS "createdAt"
   FROM bills b JOIN suppliers s ON s.id = b.supplier_id`;
 const PAYMENT_SELECT = `
   SELECT bill_id AS "billId", id, amount_cents AS "amountCents", request_id AS "requestId", method, paid_at AS "paidAt"
@@ -39,7 +39,12 @@ export class BillsService {
         const po = await c.query<{ supplierId: string }>('SELECT supplier_id AS "supplierId" FROM purchase_orders WHERE id = $1 FOR UPDATE', [input.purchaseOrderId]);
         if (!po.rows[0]) throw new NotFoundError('Purchase order');
         supplierId = po.rows[0].supplierId;
-        const received = await c.query<{ v: string }>('SELECT coalesce(sum(received_quantity::bigint * unit_cost_cents), 0)::text AS v FROM purchase_order_items WHERE purchase_order_id = $1', [input.purchaseOrderId]);
+        // Goods already sent back to the supplier are not billable.
+        const received = await c.query<{ v: string }>(
+          `SELECT coalesce(sum((poi.received_quantity - coalesce(r.qty, 0))::bigint * poi.unit_cost_cents), 0)::text AS v
+           FROM purchase_order_items poi
+           LEFT JOIN (SELECT purchase_order_item_id, sum(quantity) AS qty FROM purchase_return_items GROUP BY purchase_order_item_id) r ON r.purchase_order_item_id = poi.id
+           WHERE poi.purchase_order_id = $1`, [input.purchaseOrderId]);
         const billed = await c.query<{ v: string }>("SELECT coalesce(sum(total_cents::bigint), 0)::text AS v FROM bills WHERE purchase_order_id = $1 AND status <> 'VOID'", [input.purchaseOrderId]);
         const billable = Number(received.rows[0]!.v) - Number(billed.rows[0]!.v);
         if (billable <= 0) throw new ConflictError('Nothing left to bill: bill only received goods that are not already billed');
@@ -70,11 +75,11 @@ export class BillsService {
         throw new ConflictError('This request id was already used for a different payment');
       }
       if (bill.status === 'VOID') throw new ConflictError('A void bill cannot be paid');
-      const due = bill.totalCents - bill.paidCents;
+      const due = bill.totalCents - bill.paidCents - bill.debitCents;
       if (p.amountCents > due) throw new ConflictError(`Payment of ${p.amountCents} exceeds the ${due} still owed`);
       const paid = bill.paidCents + p.amountCents;
       await c.query('INSERT INTO bill_payments (bill_id, amount_cents, request_id, method) VALUES ($1, $2, $3, $4)', [id, p.amountCents, p.requestId, p.method]);
-      await c.query('UPDATE bills SET paid_cents = $2, status = $3 WHERE id = $1', [id, paid, paid === bill.totalCents ? 'PAID' : 'PARTIAL']);
+      await c.query('UPDATE bills SET paid_cents = $2, status = $3 WHERE id = $1', [id, paid, paid + bill.debitCents === bill.totalCents ? 'PAID' : 'PARTIAL']);
     });
     return (await this.get(id))!;
   }
@@ -84,6 +89,7 @@ export class BillsService {
       const bill = await this.lock(c, id);
       if (bill.status === 'VOID') throw new ConflictError('This bill is already void');
       if (bill.paidCents > 0) throw new ConflictError('A bill with payments cannot be voided');
+      if (bill.debitCents > 0) throw new ConflictError('A bill with a debit note applied cannot be voided');
       await c.query("UPDATE bills SET status = 'VOID' WHERE id = $1", [id]);
     });
     return (await this.get(id))!;
@@ -110,8 +116,8 @@ export class BillsService {
   async payables(): Promise<Payables> {
     const { rows } = await this.pool.query<{ supplierId: string; supplierName: string; open: string; overdue: string; n: number }>(
       `SELECT b.supplier_id AS "supplierId", s.name AS "supplierName",
-              sum(b.total_cents - b.paid_cents)::text AS open,
-              coalesce(sum(b.total_cents - b.paid_cents) FILTER (WHERE b.due_date < current_date), 0)::text AS overdue,
+              sum(b.total_cents - b.paid_cents - b.debit_cents)::text AS open,
+              coalesce(sum(b.total_cents - b.paid_cents - b.debit_cents) FILTER (WHERE b.due_date < current_date), 0)::text AS overdue,
               count(*)::int AS n
        FROM bills b JOIN suppliers s ON s.id = b.supplier_id
        WHERE b.status IN ('UNPAID', 'PARTIAL') GROUP BY b.supplier_id, s.name ORDER BY s.name`);
@@ -132,8 +138,8 @@ export class BillsService {
   }
 
   private async lock(c: pg.PoolClient, id: string) {
-    const { rows } = await c.query<{ status: BillStatus; totalCents: number; paidCents: number }>(
-      'SELECT status, total_cents AS "totalCents", paid_cents AS "paidCents" FROM bills WHERE id = $1 FOR UPDATE', [id]);
+    const { rows } = await c.query<{ status: BillStatus; totalCents: number; paidCents: number; debitCents: number }>(
+      'SELECT status, total_cents AS "totalCents", paid_cents AS "paidCents", debit_cents AS "debitCents" FROM bills WHERE id = $1 FOR UPDATE', [id]);
     if (!rows[0]) throw new NotFoundError('Bill');
     return rows[0];
   }

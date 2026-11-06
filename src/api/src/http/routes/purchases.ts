@@ -5,6 +5,7 @@ import { NotFoundError } from '../../domain/errors.js';
 import { currentUser, requireRole } from '../middleware/auth.js';
 import { idParam } from '../params.js';
 import { isoDate, parse } from '../validate.js';
+import { purchaseReturnBodySchema } from './purchaseReturns.js';
 
 const line = z.object({
   productId: z.string().uuid(),
@@ -50,6 +51,10 @@ export function purchaseRoutes(c: Container): Router {
     res.json(await c.purchases.receive(idParam(req), parse(receiveSchema, req.body).lines, currentUser(req).id));
   });
   r.post('/:id/close', write, async (req, res) => { res.json(await c.purchases.close(idParam(req))); });
+  r.post('/:id/returns', write, async (req, res) => {
+    const { purchaseReturn, created } = await c.purchaseReturns.create(idParam(req), parse(purchaseReturnBodySchema, req.body), currentUser(req).id);
+    res.status(created ? 201 : 200).json(purchaseReturn);
+  });
   r.post('/:id/cancel', write, async (req, res) => { res.json(await c.purchases.cancel(idParam(req))); });
   return r;
 }

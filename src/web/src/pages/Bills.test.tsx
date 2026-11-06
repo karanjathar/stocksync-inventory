@@ -8,7 +8,7 @@ const auth = vi.hoisted(() => ({ role: 'staff' as 'staff' | 'viewer' }));
 vi.mock('../auth', () => ({ useAuth: () => ({ can: (r: string) => r === 'viewer' || auth.role === 'staff', user: { id: 'u', role: auth.role } }) }));
 
 const bill = (over: object = {}) => ({
-  id: 'b1', number: 3, supplierId: 's1', supplierName: 'Acme', purchaseOrderId: null, status: 'UNPAID', totalCents: 10000, paidCents: 2500,
+  id: 'b1', number: 3, supplierId: 's1', supplierName: 'Acme', purchaseOrderId: null, status: 'UNPAID', totalCents: 10000, paidCents: 2500, debitCents: 0,
   dueDate: '2026-12-01', createdAt: '2026-11-06T10:00:00Z', payments: [], ...over,
 });
 const base = (bills: object[]) => ({

@@ -50,7 +50,7 @@ export interface PurchaseOrder { id: string; number: number; supplierId: string;
 export type BillStatus = 'UNPAID' | 'PARTIAL' | 'PAID' | 'VOID';
 export interface BillPayment { id: string; amountCents: number; requestId: string; method: string; paidAt: string }
 export interface Bill { id: string; number: number; supplierId: string; supplierName: string; purchaseOrderId: string | null; status: BillStatus;
-  totalCents: number; paidCents: number; dueDate: string; createdAt: string; payments: BillPayment[] }
+  totalCents: number; paidCents: number; debitCents: number; dueDate: string; createdAt: string; payments: BillPayment[] }
 export interface PayablesRow { supplierId: string; supplierName: string; openCents: number; overdueCents: number; billCount: number }
 export interface Payables { suppliers: PayablesRow[]; totalOpenCents: number; totalOverdueCents: number }
 export type InvoiceStatus = 'ISSUED' | 'VOID';
@@ -69,3 +69,9 @@ export interface CreditNoteLine { sku: string; name: string; quantity: number; u
 export interface CreditNote { id: string; number: string; salesReturnId: string; orderId: string; orderNumber: number; invoiceNumber: string | null;
   currency: string; inclusive: boolean; seller: Invoice['seller']; customer: Invoice['customer']; lines: CreditNoteLine[]; reason: string;
   subtotalCents: number; taxCents: number; totalCents: number; issuedAt: string }
+export interface PurchaseReturnItem { purchaseOrderItemId: string; sku: string; name: string; quantity: number; unitCostCents: number; debitCents: number }
+export interface PurchaseReturn { id: string; number: number; debitNoteNumber: string; purchaseOrderId: string; purchaseOrderNumber: number;
+  supplierId: string; supplierName: string; warehouseId: string; debitTotalCents: number; appliedCents: number; unappliedCents: number;
+  reason: string; requestId: string; createdAt: string; items: PurchaseReturnItem[]; snapshot: DebitNoteSnapshot }
+export interface DebitNoteSnapshot { currency: string; business: { businessName: string; taxId: string; address: string };
+  supplier: { name: string; email: string | null; phone: string | null }; purchaseOrderNumber: number }
