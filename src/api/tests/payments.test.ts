@@ -120,8 +120,14 @@ describe('payment links for orders (T35)', () => {
 });
 
 describe('link creation holds no database connection while waiting on Razorpay (T51)', () => {
+  const orderOf = async (phoneDigits: string) => t.c.orders.create({
+    customerId: (await t.c.customers.findOrCreateByChannel('web', phoneDigits, 'Shopper')).id,
+    channel: 'web', paymentMethod: 'ONLINE', items: [{ productId: ids.tee.id, quantity: 1 }],
+  });
+
   it('stays responsive when Razorpay is slow and the pool is smaller than the number of requests', async () => {
-    const orders = await Promise.all(Array.from({ length: 15 }, () => order('ONLINE', 1))); // pool max is 10
+    // 15 different shoppers (a single customer is capped at 15 open orders — T57)
+    const orders = await Promise.all(Array.from({ length: 15 }, (_, i) => orderOf(`9199000${String(i).padStart(5, '0')}`))); // pool max is 10
     rz.setDelay(2000);
     const inflight = orders.map((o) => t.c.payments.linkForOrder(o.id));
     await new Promise((r) => setTimeout(r, 400)); // every request is now waiting on Razorpay
@@ -136,7 +142,7 @@ describe('link creation holds no database connection while waiting on Razorpay (
   }, 20000);
 
   it('an order cancelled while its link is being created ends with no payable link', async () => {
-    const o = await order('ONLINE', 1);
+    const o = await orderOf('919900099999');
     const original = t.c.razorpay.createPaymentLink.bind(t.c.razorpay);
     const spy = vi.spyOn(t.c.razorpay, 'createPaymentLink').mockImplementationOnce(async (input) => {
       await t.c.orders.cancel(o.id, null); // staff cancel while Razorpay is still answering

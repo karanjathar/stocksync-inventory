@@ -56,7 +56,7 @@
 
 # 7.R2 Release 2 Audit — Payments (Razorpay) & Interactive Chat
 
-**Date:** 2026-11-06 · **Scope:** `src/api` payments, webhooks, chat flow, public checkout; `src/web` shop, order page, admin payment UI; `scripts/e2e`; dependencies · **Result:** ✅ PASSED once T56 and T57 are merged (no open High/Critical)
+**Date:** 2026-11-06 · **Scope:** `src/api` payments, webhooks, chat flow, public checkout; `src/web` shop, order page, admin payment UI; `scripts/e2e`; dependencies · **Result:** ✅ PASSED — all 15 findings fixed (none open); accepted risks listed in 7.R2.5
 **Method:** phase-by-phase code review with reproduced defects (each fixed test-first), automated scans, a permanent security regression suite (`tests/securityPayments.test.ts`), mutation checks of that suite, and a browser E2E (`npm run e2e`).
 **Not verified:** behaviour against the *real* Razorpay and Meta services (no credentials were available). Everything is verified against local fakes that follow the documented formats. A test-mode run with real keys remains on the release checklist.
 
@@ -111,7 +111,7 @@ All reproduced before fixing; every fix has a regression test.
 | R2-12 | Low | Settings let an admin leave customers with no usable payment method | T55 (warning) |
 | R2-13 | Low | `status <text>` reflected arbitrary typed text back unbounded | fixed in T42 (20 chars) |
 | R2-14 | Low | Production config accepted a plain-`http` provider base URL (credentials in clear text) | T56 (production refuses non-https provider URLs; loopback allowed for the local E2E) |
-| R2-15 | Medium | One chat or web customer could create unlimited open orders (40 in a probe) | **T57 — open until merged** |
+| R2-15 | Medium | One chat or web customer could create unlimited open orders (40 in a probe) | T57 (max 15 open orders per customer, enforced centrally under a row lock; staff-entered orders exempt; HTTP 429 / chat message) |
 
 ## 7.R2.5 Accepted risks and recommendations
 1. **Order links are bearer capabilities.** Anyone holding `/shop/order/<token>` can view that order's status and pay it. Mitigated by 122-bit tokens, no PII in the response, `no-store`, `no-referrer`, rate limits. Same model as hosted order pages elsewhere; shoppers should treat the link like a receipt.

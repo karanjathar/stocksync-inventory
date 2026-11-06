@@ -1,10 +1,13 @@
 import type pg from 'pg';
 import { withTx } from '../db/tx.js';
-import { ConflictError, NotFoundError, ValidationError } from '../domain/errors.js';
+import { AppError, ConflictError, NotFoundError, ValidationError } from '../domain/errors.js';
 import type { Order, OrderChannel, OrderItem, OrderStatus, PaymentMethod } from '../domain/types.js';
 import type { EventBus } from '../realtime/bus.js';
 import type { SettingsService } from './settings.js';
 import type { StockService } from './stock.js';
+
+/** Abuse guard: a customer can have at most this many PENDING orders (chat, web). Staff-entered orders are exempt. */
+export const MAX_OPEN_ORDERS = 15;
 
 export interface NewOrder {
   customerId: string;
@@ -45,8 +48,15 @@ export class OrdersService {
     if (!merged.size) throw new ValidationError('Order must contain at least one item');
 
     const id = await withTx(this.pool, async (c) => {
-      const cust = await c.query('SELECT 1 FROM customers WHERE id = $1', [input.customerId]);
+      // Row lock: concurrent requests for one customer queue up here, so the cap below cannot be raced past.
+      const cust = await c.query('SELECT 1 FROM customers WHERE id = $1 FOR NO KEY UPDATE', [input.customerId]);
       if (!cust.rowCount) throw new NotFoundError('Customer');
+      if (input.channel !== 'manual') {
+        const open = await c.query<{ n: number }>("SELECT count(*)::int AS n FROM orders WHERE customer_id = $1 AND status = 'PENDING'", [input.customerId]);
+        if (open.rows[0]!.n >= MAX_OPEN_ORDERS) {
+          throw new AppError(429, 'TOO_MANY_OPEN_ORDERS', `Too many open orders (${MAX_OPEN_ORDERS}). Please wait until some are confirmed or cancelled, or contact us.`);
+        }
+      }
       const { rows: products } = await c.query<{ id: string; sku: string; priceCents: number; isActive: boolean }>(
         'SELECT id, sku, price_cents AS "priceCents", is_active AS "isActive" FROM products WHERE id = ANY($1::uuid[])', [[...merged.keys()]]);
       if (products.length !== merged.size) throw new NotFoundError('Product');
