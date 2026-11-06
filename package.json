@@ -15,7 +15,8 @@
     "lint": "eslint .",
     "test": "npm run test --workspaces --if-present",
     "build": "npm run build -w @stocksync/web && npm run build -w @stocksync/api",
-    "start": "npm run start -w @stocksync/api"
+    "start": "npm run start -w @stocksync/api",
+    "e2e": "node scripts/e2e/payments.e2e.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

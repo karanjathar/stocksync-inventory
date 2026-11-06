@@ -204,3 +204,17 @@ describe('ChannelHub.reply (T28)', () => {
     expect((await repo.list({ channel: 'telegram', limit: 1 }))[0]).toMatchObject({ status: 'skipped', externalUser: '6' });
   });
 });
+
+describe('custom Graph API base for E2E fakes (T41)', () => {
+  it('defaults to graph.facebook.com and honours META_GRAPH_BASE (trailing slash tolerated)', async () => {
+    const f = fakeFetch();
+    await new WhatsAppAdapter({ token: 'T', phoneNumberId: '9', graphVersion: 'v21.0' }, f.fn).send('1', 'x');
+    await new WhatsAppAdapter({ token: 'T', phoneNumberId: '9', graphVersion: 'v21.0', graphBase: 'http://127.0.0.1:9000/' }, f.fn).send('1', 'x');
+    await new MetaPageAdapter('messenger', { token: 'P', graphVersion: 'v21.0', graphBase: 'http://127.0.0.1:9000' }, f.fn).send('2', 'y');
+    expect(f.calls.map((c) => c.url)).toEqual([
+      'https://graph.facebook.com/v21.0/9/messages',
+      'http://127.0.0.1:9000/v21.0/9/messages',
+      'http://127.0.0.1:9000/v21.0/me/messages',
+    ]);
+  });
+});

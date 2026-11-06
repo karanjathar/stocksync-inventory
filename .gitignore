@@ -22,3 +22,6 @@ infra/*.secrets.json
 .env.*
 !.env.example
 .engine/
+
+# E2E artifacts
+scripts/e2e/out/

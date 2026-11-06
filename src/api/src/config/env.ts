@@ -32,6 +32,8 @@ const schema = z.object({
   META_APP_SECRET: optional,
   META_VERIFY_TOKEN: optional,
   META_GRAPH_VERSION: z.string().default('v21.0'),
+  // Only overridden by tests / the E2E fake Meta API.
+  META_GRAPH_BASE: z.string().url().default('https://graph.facebook.com'),
   WHATSAPP_TOKEN: optional,
   WHATSAPP_PHONE_NUMBER_ID: optional,
   MESSENGER_PAGE_TOKEN: optional,

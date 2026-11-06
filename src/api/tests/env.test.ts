@@ -13,6 +13,7 @@ describe('loadEnv', () => {
     expect(env.NODE_ENV).toBe('development');
     expect(env.CORS_ORIGINS).toEqual([]);
     expect(env.META_GRAPH_VERSION).toBe('v21.0');
+    expect(env.META_GRAPH_BASE).toBe('https://graph.facebook.com');
     expect(env.DATABASE_SSL).toBe(false);
   });
 

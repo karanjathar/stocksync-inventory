@@ -1,7 +1,7 @@
 import { normaliseReply, optionsOf, truncate, type BotReply } from './reply.js';
 import { postJson, type ChannelAdapter } from './types.js';
 
-export interface MetaPageConfig { token?: string; graphVersion: string }
+export interface MetaPageConfig { token?: string; graphVersion: string; graphBase?: string }
 
 const MAX_TEXT = 2000;
 const MAX_QUICK_REPLIES = 13;
@@ -38,7 +38,7 @@ export class MetaPageAdapter implements ChannelAdapter {
   }
 
   private async post(to: string, message: Record<string, unknown>): Promise<void> {
-    await postJson(this.name, this.fetchFn, `https://graph.facebook.com/${this.cfg.graphVersion}/me/messages`, {
+    await postJson(this.name, this.fetchFn, `${(this.cfg.graphBase ?? 'https://graph.facebook.com').replace(/\/$/, '')}/${this.cfg.graphVersion}/me/messages`, {
       recipient: { id: to },
       messaging_type: 'RESPONSE',
       message,

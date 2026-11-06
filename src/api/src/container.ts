@@ -60,9 +60,9 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const messages = new MessagesRepo(pool);
   const fetchFn = opts.fetch ?? fetch;
   const hub = new ChannelHub([
-    new WhatsAppAdapter({ token: env.WHATSAPP_TOKEN, phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID, graphVersion: env.META_GRAPH_VERSION }, fetchFn),
-    new MetaPageAdapter('messenger', { token: env.MESSENGER_PAGE_TOKEN, graphVersion: env.META_GRAPH_VERSION }, fetchFn),
-    new MetaPageAdapter('instagram', { token: env.INSTAGRAM_PAGE_TOKEN, graphVersion: env.META_GRAPH_VERSION }, fetchFn),
+    new WhatsAppAdapter({ token: env.WHATSAPP_TOKEN, phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID, graphVersion: env.META_GRAPH_VERSION, graphBase: env.META_GRAPH_BASE }, fetchFn),
+    new MetaPageAdapter('messenger', { token: env.MESSENGER_PAGE_TOKEN, graphVersion: env.META_GRAPH_VERSION, graphBase: env.META_GRAPH_BASE }, fetchFn),
+    new MetaPageAdapter('instagram', { token: env.INSTAGRAM_PAGE_TOKEN, graphVersion: env.META_GRAPH_VERSION, graphBase: env.META_GRAPH_BASE }, fetchFn),
     new TelegramAdapter({ token: env.TELEGRAM_BOT_TOKEN }, fetchFn),
   ], messages);
   const messenger: Messenger = opts.messenger ?? hub;

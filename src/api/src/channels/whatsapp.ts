@@ -1,7 +1,7 @@
 import { normaliseReply, type BotReply } from './reply.js';
 import { postJson, type ChannelAdapter } from './types.js';
 
-export interface WhatsAppConfig { token?: string; phoneNumberId?: string; graphVersion: string }
+export interface WhatsAppConfig { token?: string; phoneNumberId?: string; graphVersion: string; graphBase?: string }
 
 /** WhatsApp Business Cloud API (Meta): text and interactive (button, list, cta_url) messages. */
 export class WhatsAppAdapter implements ChannelAdapter {
@@ -32,7 +32,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
   }
 
   private async post(to: string, message: Record<string, unknown>): Promise<void> {
-    await postJson(this.name, this.fetchFn, `https://graph.facebook.com/${this.cfg.graphVersion}/${this.cfg.phoneNumberId}/messages`, {
+    await postJson(this.name, this.fetchFn, `${(this.cfg.graphBase ?? 'https://graph.facebook.com').replace(/\/$/, '')}/${this.cfg.graphVersion}/${this.cfg.phoneNumberId}/messages`, {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
       to: to.replace(/[^0-9]/g, ''),
