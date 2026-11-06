@@ -10,6 +10,9 @@ import { Inventory } from './pages/Inventory';
 import { Movements } from './pages/Movements';
 import { Customers, Suppliers, Warehouses } from './pages/Parties';
 import { Orders } from './pages/Orders';
+import { PurchaseOrders } from './pages/PurchaseOrders';
+import { Bills } from './pages/Bills';
+import { Reorder } from './pages/Reorder';
 import { Inbox } from './pages/Inbox';
 import { SettingsPage } from './pages/SettingsPage';
 import { Users } from './pages/Users';
@@ -42,6 +45,9 @@ export function App() {
         <Route path="suppliers" element={<Suppliers />} />
         <Route path="customers" element={<Customers />} />
         <Route path="orders" element={<Orders />} />
+        <Route path="purchase-orders" element={<PurchaseOrders />} />
+        <Route path="bills" element={<Bills />} />
+        <Route path="reorder" element={<Reorder />} />
         <Route path="inbox" element={<RequireAuth role="staff"><Inbox /></RequireAuth>} />
         <Route path="account" element={<Account />} />
         <Route path="settings" element={<RequireAuth role="admin"><SettingsPage /></RequireAuth>} />
