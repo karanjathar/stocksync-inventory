@@ -20,7 +20,7 @@ interface QtyInput { productId: string; warehouseId: string; quantity: number; r
 
 const LEVEL_SELECT = `
   SELECT sl.product_id AS "productId", p.sku, p.name AS "productName", sl.warehouse_id AS "warehouseId",
-         w.code AS "warehouseCode", sl.quantity
+         w.code AS "warehouseCode", sl.quantity, sl.bin
   FROM stock_levels sl JOIN products p ON p.id = sl.product_id JOIN warehouses w ON w.id = sl.warehouse_id`;
 
 export class StockService {
@@ -50,6 +50,17 @@ export class StockService {
       return [await this.applyDelta(c, { productId: i.productId, warehouseId: i.warehouseId, delta: i.newQuantity - current, type: 'ADJUST', reason: i.reason, userId })];
     });
     await this.notify(changes);
+    return this.level(i.productId, i.warehouseId);
+  }
+
+  /** Sets or clears the bin/shelf location of a product in a warehouse. Changes no quantity. */
+  async setBin(i: { productId: string; warehouseId: string; bin: string | null }): Promise<StockLevel> {
+    await withTx(this.pool, async (c) => {
+      await this.assertExists(c, i.productId, [i.warehouseId]);
+      await c.query(
+        `INSERT INTO stock_levels (product_id, warehouse_id, quantity, bin) VALUES ($1, $2, 0, $3)
+         ON CONFLICT (product_id, warehouse_id) DO UPDATE SET bin = EXCLUDED.bin`, [i.productId, i.warehouseId, i.bin]);
+    });
     return this.level(i.productId, i.warehouseId);
   }
 

@@ -12,7 +12,7 @@ export interface Product { id: string; sku: string; name: string; description: s
   unit: string; priceCents: number; taxRateId: string | null; reorderLevel: number; reorderQuantity: number; preferredSupplierId: string | null; imageUrl: string | null;
   attributes: Record<string, string>; isActive: boolean; totalQuantity: number; createdAt: string; updatedAt: string }
 export interface Warehouse { id: string; code: string; name: string; address: string }
-export interface StockLevel { productId: string; sku: string; productName: string; warehouseId: string; warehouseCode: string; quantity: number }
+export interface StockLevel { productId: string; sku: string; productName: string; warehouseId: string; warehouseCode: string; quantity: number; bin: string | null }
 export interface StockMovement { id: string; productId: string; sku: string; warehouseId: string; warehouseCode: string;
   type: MovementType; quantityDelta: number; balanceAfter: number; reason: string; reference: string | null;
   userId: string | null; createdAt: string }

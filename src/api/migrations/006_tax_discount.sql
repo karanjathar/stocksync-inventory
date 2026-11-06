@@ -62,3 +62,6 @@ BEGIN
   RETURN NEW;
 END $$;
 CREATE TRIGGER invoices_immutable BEFORE UPDATE OR DELETE ON invoices FOR EACH ROW EXECUTE FUNCTION invoices_immutable();
+
+-- Bin/shelf location per product and warehouse, shown on picklists (T66). Not a quantity: StockService sets it.
+ALTER TABLE stock_levels ADD COLUMN bin text CHECK (bin IS NULL OR length(bin) BETWEEN 1 AND 40);

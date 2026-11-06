@@ -3,7 +3,9 @@ import { z } from 'zod';
 import type { Container } from '../../container.js';
 import { NotFoundError } from '../../domain/errors.js';
 import { idParam } from '../params.js';
+import { renderInvoice } from '../../services/documents.js';
 import { parse } from '../validate.js';
+import { sendHtml } from './documents.js';
 
 const listSchema = z.object({
   status: z.enum(['ISSUED', 'VOID']).optional(),
@@ -15,6 +17,11 @@ const listSchema = z.object({
 export function invoiceRoutes(c: Container): Router {
   const r = Router();
   r.get('/', async (req, res) => { res.json(await c.invoices.list(parse(listSchema, req.query))); });
+  r.get('/:id/print', async (req, res) => {
+    const inv = await c.invoices.get(idParam(req));
+    if (!inv) throw new NotFoundError('Invoice');
+    sendHtml(res, renderInvoice(inv));
+  });
   r.get('/:id', async (req, res) => {
     const inv = await c.invoices.get(idParam(req));
     if (!inv) throw new NotFoundError('Invoice');
