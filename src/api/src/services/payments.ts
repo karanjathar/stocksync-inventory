@@ -78,7 +78,9 @@ export class PaymentService {
         currency: s.currency,
         referenceId,
         description: `${s.businessName} order #${order.number}`,
-        customer: { name: customer?.name ?? order.customerName, ...(customer?.phone ? { contact: customer.phone } : {}) },
+        // Only WhatsApp numbers are known to carry a country code (wa_id). A web shopper's digits are a guess, and a
+        // wrong prefix could make Razorpay reject the link, so the shopper simply enters their number on Razorpay's page.
+        customer: { name: customer?.name ?? order.customerName, ...(customer?.channel === 'whatsapp' && customer.phone ? { contact: customer.phone } : {}) },
         callbackUrl: `${this.publicBaseUrl.replace(/\/$/, '')}/shop/order/${order.publicToken}`,
         expireBy: expiresAt,
         notes: { order_id: order.id, order_number: String(order.number) },

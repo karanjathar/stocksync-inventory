@@ -52,12 +52,28 @@ describe('payment links for orders (T35)', () => {
     const body = rz.links().at(-1)!.body as Record<string, unknown>;
     expect(body).toMatchObject({
       amount: 3000, currency: 'INR', reference_id: p.referenceId, description: `Corner Shop order #${o.number}`,
-      customer: { name: 'Asha', contact: '+919811112222' }, callback_url: `https://shop.example.com/shop/order/${o.publicToken}`,
+      customer: { name: 'Asha' }, callback_url: `https://shop.example.com/shop/order/${o.publicToken}`,
       notes: { order_id: o.id, order_number: String(o.number) },
     });
     expect(p.referenceId).toMatch(new RegExp(`^ORD-${o.number}-[a-z0-9]{6}$`));
     const expireBy = (body.expire_by as number) * 1000;
     expect(expireBy - before).toBeGreaterThanOrEqual(1440 * 60_000 - 5000);
+  });
+
+  it('sends the phone to Razorpay only when it is known to include a country code (WhatsApp), never a guessed web number (T54)', async () => {
+    const lastCustomer = () => (rz.links().at(-1)!.body as { customer: unknown }).customer;
+    const local = await t.c.customers.findOrCreateByChannel('web', '9811112233', 'Local Shopper'); // typed without a country code
+    const webOrder = await t.c.orders.create({ customerId: local.id, channel: 'web', paymentMethod: 'ONLINE', items: [{ productId: ids.tee.id, quantity: 1 }] });
+    await t.c.payments.linkForOrder(webOrder.id);
+    expect(lastCustomer()).toEqual({ name: 'Local Shopper' });
+    const wa = await t.c.customers.findOrCreateByChannel('whatsapp', '919811112222', 'Wa Asha'); // wa_id always has the country code
+    const waOrder = await t.c.orders.create({ customerId: wa.id, channel: 'whatsapp', paymentMethod: 'ONLINE', items: [{ productId: ids.tee.id, quantity: 1 }] });
+    await t.c.payments.linkForOrder(waOrder.id);
+    expect(lastCustomer()).toEqual({ name: 'Wa Asha', contact: '+919811112222' });
+    const tg = await t.c.customers.findOrCreateByChannel('telegram', '555', 'Tg User'); // no phone at all
+    const tgOrder = await t.c.orders.create({ customerId: tg.id, channel: 'telegram', paymentMethod: 'ONLINE', items: [{ productId: ids.tee.id, quantity: 1 }] });
+    await t.c.payments.linkForOrder(tgOrder.id);
+    expect(lastCustomer()).toEqual({ name: 'Tg User' });
   });
 
   it('reuses an open unexpired link instead of creating duplicates (also under concurrency)', async () => {
