@@ -39,6 +39,7 @@
 - phase Phase 7: Razorpay payments — approved by Claude on 2026-11-06
 - phase Phase 8: Web checkout & admin UI — approved by Claude on 2026-11-06
 - phase Phase 9: Hardening & release — approved by Claude on 2026-11-06
+- phase Phase 10: Purchasing — approved by Claude on 2026-11-06
 
 
 ## Log
