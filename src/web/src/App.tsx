@@ -46,7 +46,7 @@ export function App() {
         <Route path="customers" element={<Customers />} />
         <Route path="orders" element={<Orders />} />
         <Route path="purchase-orders" element={<PurchaseOrders />} />
-        <Route path="bills" element={<Bills />} />
+        <Route path="bills" element={<RequireAuth role="staff"><Bills /></RequireAuth>} />
         <Route path="reorder" element={<Reorder />} />
         <Route path="inbox" element={<RequireAuth role="staff"><Inbox /></RequireAuth>} />
         <Route path="account" element={<Account />} />

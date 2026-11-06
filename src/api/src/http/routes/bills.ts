@@ -26,8 +26,8 @@ const listSchema = z.object({
 export function billRoutes(c: Container): Router {
   const r = Router();
   const write = requireRole('staff');
-  r.get('/', async (req, res) => { res.json(await c.bills.list(parse(listSchema, req.query))); });
-  r.get('/:id', async (req, res) => {
+  r.get('/', write, async (req, res) => { res.json(await c.bills.list(parse(listSchema, req.query))); });
+  r.get('/:id', write, async (req, res) => {
     const bill = await c.bills.get(idParam(req));
     if (!bill) throw new NotFoundError('Bill');
     res.json(bill);

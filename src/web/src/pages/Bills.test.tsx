@@ -108,13 +108,4 @@ describe('Bills screen (T63)', () => {
     fireEvent.click(within(unpaid).getByRole('button', { name: 'Void' }));
     await waitFor(() => expect(calls.some((c) => c.path === '/bills/b2/void')).toBe(true));
   });
-
-  it('viewers see bills but no actions and the payables report is not requested', async () => {
-    auth.role = 'viewer';
-    const calls = mockApi(base([bill()]));
-    view();
-    await screen.findByText('#3');
-    for (const name of ['Pay', 'Void', '+ New bill']) expect(screen.queryByRole('button', { name })).toBeNull();
-    expect(calls.some((c) => c.path === '/reports/payables')).toBe(false);
-  });
 });

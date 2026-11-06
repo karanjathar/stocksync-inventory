@@ -11,7 +11,7 @@ const NAV: { to: string; label: string; icon: string; role: Role }[] = [
   { to: '/movements', label: 'Movements', icon: '🔁', role: 'viewer' },
   { to: '/orders', label: 'Orders', icon: '🧾', role: 'viewer' },
   { to: '/purchase-orders', label: 'Purchase orders', icon: '📥', role: 'viewer' },
-  { to: '/bills', label: 'Bills', icon: '💳', role: 'viewer' },
+  { to: '/bills', label: 'Bills', icon: '💳', role: 'staff' },
   { to: '/reorder', label: 'Reorder', icon: '🔔', role: 'viewer' },
   { to: '/inbox', label: 'Inbox', icon: '💬', role: 'staff' },
   { to: '/customers', label: 'Customers', icon: '👥', role: 'viewer' },

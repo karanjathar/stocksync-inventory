@@ -64,9 +64,9 @@ export class BillsService {
   async pay(id: string, p: NewBillPayment): Promise<Bill> {
     await withTx(this.pool, async (c) => {
       const bill = await this.lock(c, id);
-      const existing = await c.query<{ billId: string; amountCents: number }>('SELECT bill_id AS "billId", amount_cents AS "amountCents" FROM bill_payments WHERE request_id = $1', [p.requestId]);
+      const existing = await c.query<{ billId: string; amountCents: number; method: string }>('SELECT bill_id AS "billId", amount_cents AS "amountCents", method FROM bill_payments WHERE request_id = $1', [p.requestId]);
       if (existing.rows[0]) {
-        if (existing.rows[0].billId === id && existing.rows[0].amountCents === p.amountCents) return;
+        if (existing.rows[0].billId === id && existing.rows[0].amountCents === p.amountCents && existing.rows[0].method === p.method) return;
         throw new ConflictError('This request id was already used for a different payment');
       }
       if (bill.status === 'VOID') throw new ConflictError('A void bill cannot be paid');

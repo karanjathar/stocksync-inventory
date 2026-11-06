@@ -321,9 +321,10 @@ CREATE TABLE bill_payments (id uuid PK, bill_id uuid NOT NULL REFERENCES bills(i
 | GET/POST /api/purchase-orders, GET/PATCH /api/purchase-orders/:id | staff (GET: any) | PATCH only while DRAFT; totals server-side |
 | POST /api/purchase-orders/:id/send, /cancel | staff | DRAFT→SENT; cancel unless something was received; else 409 |
 | POST /api/purchase-orders/:id/receive | staff | `{lines:[{itemId,quantity,warehouseId?}]}`; never above ordered; ledger rows carry `reference='PO-<n>'` |
-| GET/POST /api/bills, POST /api/bills/:id/payments | staff | payment body needs `requestId` (idempotent); overpay → 409 |
+| GET/POST /api/bills, GET /api/bills/:id, POST /api/bills/:id/payments, POST /api/bills/:id/void | staff (reads too: supplier finances) | payment body needs `requestId` (replay must match amount, method and bill, else 409); overpay → 409 |
 | GET /api/reports/payables | staff | open balance per supplier |
-| GET/POST /api/reorder-suggestions | staff | POST `{productIds[]}` → one DRAFT PO per preferred supplier |
+| GET /api/reorder-suggestions (any role), POST (staff) | | POST `{productIds[]}` → one DRAFT PO per preferred supplier, in one transaction; suppliers whose total would exceed 32 bits are skipped with a reason |
+| POST /api/purchase-orders/:id/close | staff | PARTIALLY_RECEIVED → CLOSED (closed short); the receive endpoint is not idempotent beyond the remaining-quantity limit |
 
 ## 3.16 Release 3 Sales documents — `src/api/migrations/006_tax_discount.sql`
 ```sql

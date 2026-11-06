@@ -98,6 +98,14 @@ describe('vendor bills (T61)', () => {
     expect((await pay(bill.id, 1)).status).toBe(409);
   });
 
+  it('a replay with a different method is a conflict, not a silent success (T108)', async () => {
+    const bill = (await post('/api/bills', { supplierId: globex, amountCents: 1000 })).body;
+    expect((await post(`/api/bills/${bill.id}/payments`, { requestId: 'method-1', amountCents: 100, method: 'bank' })).status).toBe(200);
+    expect((await post(`/api/bills/${bill.id}/payments`, { requestId: 'method-1', amountCents: 100, method: 'bank' })).status).toBe(200);
+    expect((await post(`/api/bills/${bill.id}/payments`, { requestId: 'method-1', amountCents: 100, method: 'cash' })).status).toBe(409);
+    expect((await get(`/api/bills/${bill.id}`)).body.paidCents).toBe(100);
+  });
+
   it('records a payment exactly once per request id', async () => {
     const bill = (await post('/api/bills', { supplierId: globex, amountCents: 1000, dueDate: daysFromNow(5) })).body;
     const first = await pay(bill.id, 300, 'same-request');
@@ -134,19 +142,21 @@ describe('vendor bills (T61)', () => {
   });
 
   it('lists and reads bills; unknown ids are 404', async () => {
-    const all = await get('/api/bills', viewer);
+    const all = await get('/api/bills');
     expect(all.status).toBe(200);
     expect(all.body.length).toBeGreaterThan(5);
     expect(all.body[0].number).toBeGreaterThan(all.body[1].number);
-    expect((await get('/api/bills?status=PAID', viewer)).body.every((b: { status: string }) => b.status === 'PAID')).toBe(true);
-    expect((await get(`/api/bills?supplierId=${acme}`, viewer)).body.every((b: { supplierId: string }) => b.supplierId === acme)).toBe(true);
-    expect((await get('/api/bills?status=NOPE', viewer)).status).toBe(400);
-    expect((await get('/api/bills/00000000-0000-4000-8000-000000000000', viewer)).status).toBe(404);
-    expect((await get('/api/bills/not-a-uuid', viewer)).status).toBe(404);
+    expect((await get('/api/bills?status=PAID')).body.every((b: { status: string }) => b.status === 'PAID')).toBe(true);
+    expect((await get(`/api/bills?supplierId=${acme}`)).body.every((b: { supplierId: string }) => b.supplierId === acme)).toBe(true);
+    expect((await get('/api/bills?status=NOPE')).status).toBe(400);
+    expect((await get('/api/bills/00000000-0000-4000-8000-000000000000')).status).toBe(404);
+    expect((await get('/api/bills/not-a-uuid')).status).toBe(404);
   });
 
-  it('is staff-only for writes', async () => {
+  it('is staff-only for reads and writes: supplier finances are not for viewers (T108)', async () => {
     const bill = (await post('/api/bills', { supplierId: globex, amountCents: 100 })).body;
+    expect((await get('/api/bills', viewer)).status).toBe(403);
+    expect((await get(`/api/bills/${bill.id}`, viewer)).status).toBe(403);
     expect((await post('/api/bills', { supplierId: globex, amountCents: 100 }, viewer)).status).toBe(403);
     expect((await pay(bill.id, 10, 'v1', viewer)).status).toBe(403);
     expect((await post(`/api/bills/${bill.id}/void`, {}, viewer)).status).toBe(403);
