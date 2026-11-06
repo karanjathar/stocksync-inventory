@@ -41,3 +41,7 @@ export interface Payment { id: string; orderId: string; provider: 'razorpay'; pr
   status: 'CREATED' | 'PAID' | 'EXPIRED' | 'CANCELLED'; amountCents: number; currency: string; shortUrl: string;
   providerPaymentId: string | null; expiresAt: string; createdAt: string }
 export interface PaymentSettings { onlineEnabled: boolean; codEnabled: boolean; linkExpiryMinutes: number }
+export type PurchaseStatus = 'DRAFT' | 'SENT' | 'PARTIALLY_RECEIVED' | 'RECEIVED' | 'CANCELLED';
+export interface PurchaseOrderItem { id: string; productId: string; sku: string; name: string; quantity: number; receivedQuantity: number; unitCostCents: number }
+export interface PurchaseOrder { id: string; number: number; supplierId: string; supplierName: string; status: PurchaseStatus; warehouseId: string;
+  expectedDate: string | null; notes: string; totalCents: number; items: PurchaseOrderItem[]; createdBy: string | null; createdAt: string; updatedAt: string }

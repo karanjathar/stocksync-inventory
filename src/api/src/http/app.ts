@@ -19,6 +19,7 @@ import { webhookRoutes } from './routes/webhooks.js';
 import { channelRoutes, messageRoutes } from './routes/messages.js';
 import { publicRoutes, uploadRoutes } from './routes/public.js';
 import { paymentRoutes } from './routes/payments.js';
+import { purchaseRoutes } from './routes/purchases.js';
 import { categoryRoutes, customerRoutes, productRoutes, supplierRoutes, warehouseRoutes } from './routes/catalog.js';
 
 export interface AppOptions {
@@ -85,6 +86,7 @@ export function createApp(c: Container, opts: AppOptions = {}): Express {
   api.use('/channels', secure, channelRoutes(c));
   api.use('/uploads', secure, uploadRoutes(c));
   api.use('/payments', secure, paymentRoutes(c));
+  api.use('/purchase-orders', secure, purchaseRoutes(c));
   api.get('/dashboard', secure, async (_req, res) => { res.json(await dashboardStats(pool)); });
 
   app.use('/api', api);

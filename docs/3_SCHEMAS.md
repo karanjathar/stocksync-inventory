@@ -400,7 +400,9 @@ Razorpay UPI QR (verify against test keys before enabling): `POST /v1/payments/q
 
 ## 3.20 Release 3 Catalogue depth — `src/api/migrations/010_catalogue.sql`
 ```sql
-ALTER TABLE products ADD COLUMN unit text NOT NULL DEFAULT 'pcs' CHECK (unit IN ('pcs','kg','g','l','ml','pack')),
+-- products.unit already exists (free text since 001). The migration first maps unknown values to 'pcs', then constrains it.
+UPDATE products SET unit = 'pcs' WHERE unit NOT IN ('pcs','kg','g','l','ml','pack');
+ALTER TABLE products ADD CONSTRAINT products_unit_chk CHECK (unit IN ('pcs','kg','g','l','ml','pack')),
   ADD COLUMN unit_scale integer NOT NULL DEFAULT 1 CHECK (unit_scale IN (1,10,100,1000)), ADD COLUMN item_group_id uuid REFERENCES item_groups(id), ADD COLUMN variant_values jsonb;
 CREATE TABLE item_groups (id uuid PK, name text NOT NULL UNIQUE, attributes jsonb NOT NULL, -- {"size":["S","M"],"colour":["Red"]}
   category_id uuid REFERENCES categories(id), description text NOT NULL DEFAULT '');
