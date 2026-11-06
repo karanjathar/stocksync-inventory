@@ -118,6 +118,11 @@ export class PaymentService {
     return outcome.payment;
   }
 
+  /** The order's open, unexpired payment link, if any (never creates one). */
+  openLink(orderId: string): Promise<Payment | undefined> {
+    return this.reusableLink(orderId);
+  }
+
   private async reusableLink(orderId: string): Promise<Payment | undefined> {
     const { rows } = await this.pool.query<Payment>(`SELECT ${PAYMENT_COLS} FROM payments WHERE order_id = $1 AND status = 'CREATED'`, [orderId]);
     const current = rows[0];

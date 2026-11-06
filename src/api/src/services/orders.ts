@@ -122,6 +122,12 @@ export class OrdersService {
     return rows[0] ? { ...rows[0], items: await this.items(this.pool, id) } : undefined;
   }
 
+  /** Lookup by the unguessable public token (shop order-status page). */
+  async getByPublicToken(token: string): Promise<Order | undefined> {
+    const { rows } = await this.pool.query<{ id: string }>('SELECT id FROM orders WHERE public_token = $1', [token]);
+    return rows[0] ? this.get(rows[0].id) : undefined;
+  }
+
   async getByNumber(n: number): Promise<Order | undefined> {
     const { rows } = await this.pool.query<{ id: string }>('SELECT id FROM orders WHERE number = $1', [n]);
     return rows[0] ? this.get(rows[0].id) : undefined;

@@ -36,6 +36,7 @@
 - phase Web — baseline (complete when the plan was approved)
 - phase Phase 5: Rich chat replies — approved by Claude on 2026-11-06
 - phase Phase 6: Tap-to-order — approved by Claude on 2026-11-06
+- phase Phase 7: Razorpay payments — approved by Claude on 2026-11-06
 
 
 ## Log
@@ -61,3 +62,4 @@
 - **T49** Fix: a second payment for an already-paid order is not flagged (2026-11-06): When a different payment link of an already-paid order is paid, the extra payment is now recorded, staff are alerted with the order number and pay_ id to refund the duplicate, and the customer is told; the order stays PAID and confirmed and stock is deducted once. Re-deliveries under new event ids don't re-alert.
 - **T50** Fix: paid order without a default warehouse is wrongly marked REFUND_DUE (2026-11-06): A paid order that can't be auto-confirmed only because no default warehouse is configured now stays PENDING and PAID: staff are told to set a default warehouse and confirm by hand, and the customer is told payment was received (no refund wording). Only genuine failures such as insufficient stock still become REFUND_DUE.
 - **T51** Fix: Razorpay HTTP call runs inside a held DB transaction (2026-11-06): linkForOrder no longer holds a pooled DB connection while waiting on Razorpay: it reuses an open link, calls Razorpay with no transaction open, then persists under a short per-order lock that re-checks the order (cancelled or already paid becomes a 409 and the fresh link is cancelled) and any racing request (the loser's link is cancelled). With Razorpay 2 s slow and 15 requests in flight against a pool of 10, /healthz now answers in under a second.
+- **T38** Public checkout API with payment methods (2026-11-06): POST /api/public/orders now accepts paymentMethod (defaulting to the first enabled method, rejecting disabled ones with 409), returns an unguessable tracking token and, for ONLINE, a Razorpay paymentUrl whose amount always comes from the server; if the provider is down the web order is cancelled so no orphans remain (502). New GET /api/public/orders/:token returns only safe fields (no personal data or internal ids, no-store) with the pay URL while payment is pending, and the catalog lists the usable paymentMethods.

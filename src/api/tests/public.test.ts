@@ -56,7 +56,7 @@ describe('public catalog', () => {
   it('is anonymous and exposes only safe fields of active products', async () => {
     const res = await request(t.app).get('/api/public/catalog');
     expect(res.status).toBe(200);
-    expect(res.body.settings).toEqual({ businessName: 'Corner Shop', currency: 'USD', whatsappNumber: '15550001234' });
+    expect(res.body.settings).toEqual({ businessName: 'Corner Shop', currency: 'USD', whatsappNumber: '15550001234', paymentMethods: ['COD'] }); // Razorpay not configured here
     const tee = res.body.products.find((p: { sku: string }) => p.sku === 'TEE');
     expect(tee).toEqual({ id: ids.tee.id, sku: 'TEE', name: 'T-Shirt', description: '', priceCents: 1500, unit: 'pcs', imageUrl: null, attributes: {}, categoryId: null, inStock: true, available: 4 });
     expect(res.body.products.find((p: { sku: string }) => p.sku === 'MUG').inStock).toBe(false);
@@ -68,7 +68,7 @@ describe('public orders', () => {
   it('creates a PENDING web order and a web customer', async () => {
     const res = await request(t.app).post('/api/public/orders').send({ name: 'Mia', phone: '+1 555 000 7777', items: [{ productId: ids.tee.id, quantity: 2 }] });
     expect(res.status).toBe(201);
-    expect(res.body).toEqual({ number: expect.any(Number), status: 'PENDING', totalCents: 3000 });
+    expect(res.body).toEqual({ number: expect.any(Number), status: 'PENDING', totalCents: 3000, paymentMethod: 'COD', token: expect.stringMatching(/^[0-9a-f-]{36}$/) });
     const order = await t.c.orders.getByNumber(res.body.number);
     expect(order).toMatchObject({ channel: 'web', customerName: 'Mia' });
     const cust = await t.c.customers.get(order!.customerId);
