@@ -50,6 +50,13 @@ const schema = z.object({
   // (Loopback is allowed so the local E2E can point the app at its fake providers.)
   .superRefine((env, ctx) => {
     if (env.NODE_ENV !== 'production') return;
+    // A public (https) deployment must not boot with the documented default or a trivially short admin password.
+    // The local docker-compose quick start (http://localhost) keeps its convenient default.
+    if (env.ADMIN_PASSWORD && new URL(env.PUBLIC_BASE_URL).protocol === 'https:') {
+      if (env.ADMIN_PASSWORD === 'ChangeMe123!' || env.ADMIN_PASSWORD.length < 12) {
+        ctx.addIssue({ code: 'custom', path: ['ADMIN_PASSWORD'], message: 'must be a unique password of at least 12 characters on a public deployment' });
+      }
+    }
     for (const key of ['RAZORPAY_API_BASE', 'META_GRAPH_BASE'] as const) {
       const url = new URL(env[key]);
       const loopback = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(url.hostname);

@@ -241,3 +241,9 @@ To test webhooks from a laptop, expose port 8080 with a tunnel (e.g. `devtunnel 
 | Harden networking | Move PostgreSQL to VNet integration / private endpoint and drop the `AllowAzureServices` firewall rule |
 
 Security posture and accepted risks: see `docs/7_SECURITY_AUDIT.md`.
+
+### Hardening notes
+- The CI/CD deploy job only runs for `main` (push or manual run), tags images with the commit SHA only (no `:latest`), and rolls back to the previous image if the health check fails.
+- In production over https, the server refuses to start with the default admin password (`ChangeMe123!`) or one shorter than 12 characters. Set a unique `ADMIN_PASSWORD` secret.
+- `.github/workflows/security.yml` runs CodeQL and `npm audit` on every PR and weekly.
+- The rate limiter and live-event bus are in-process: keep **one replica** until they are moved to Redis or the database.
