@@ -373,3 +373,27 @@ Costing: moving weighted average on receipt `new = round((old_qty×old_avg + in_
 | POST /api/imports/products?dryRun=true\|false | admin | multipart CSV ≤ 2 MB / 5000 rows; dry-run writes nothing |
 | GET /api/audit | admin | filter by entity, actor, date |
 CSV safety: cells starting with `=`, `+`, `-`, `@`, tab or CR are prefixed with `'`.
+
+## 3.19 Release 3 Retail experience and QR — `src/api/migrations/009_retail.sql`
+Ideas taken from public descriptions of DMart Ready (price vs MRP, delivery or pick-up point, time slots, minimum order, repeat orders). Details of the real app were not verifiable, so only the generic pattern is used.
+```sql
+ALTER TABLE products ADD COLUMN mrp_cents integer CHECK (mrp_cents IS NULL OR mrp_cents >= price_cents);
+ALTER TABLE orders ADD COLUMN fulfilment text NOT NULL DEFAULT 'PICKUP' CHECK (fulfilment IN ('PICKUP','DELIVERY')),
+  ADD COLUMN delivery_fee_cents integer NOT NULL DEFAULT 0, ADD COLUMN delivery_pincode text, ADD COLUMN slot_id uuid REFERENCES delivery_slots(id),
+  ADD COLUMN handover_code text UNIQUE, ADD COLUMN handed_over_at timestamptz;
+CREATE TABLE delivery_slots (id uuid PK, kind text NOT NULL CHECK (kind IN ('PICKUP','DELIVERY')), starts_at timestamptz NOT NULL, ends_at timestamptz NOT NULL CHECK (ends_at > starts_at), capacity integer NOT NULL CHECK (capacity > 0), booked integer NOT NULL DEFAULT 0 CHECK (booked BETWEEN 0 AND capacity));
+CREATE TABLE service_pincodes (pincode text PRIMARY KEY CHECK (pincode ~ '^[1-9][0-9]{5}$'));
+```
+Settings keys added: `minOrderCents`, `deliveryFeeCents`. Slot booking: `UPDATE delivery_slots SET booked = booked + 1 WHERE id = $1 AND booked < capacity` (atomic); cancellation decrements once.
+`handover_code` is 128-bit random (base64url), shown only to the owning customer; scanning marks `handed_over_at` exactly once.
+
+| Method & Path | Role | Notes |
+|---|---|---|
+| GET /api/public/slots?kind=&pincode= | public | only slots with space, rate limited |
+| GET/POST/PATCH /api/slots, GET/PUT /api/service-pincodes | admin (GET: staff) | |
+| POST /api/public/orders/:token/repeat | token | builds a cart preview; nothing is ordered until confirmed |
+| GET /api/products/:id/qr.svg, /api/shop/qr.svg, /api/shop/whatsapp-qr.svg | staff / public for shop | fixed targets only; no free-text QR endpoint |
+| POST /api/orders/handover | staff | `{code}`; 404 unknown, 409 reused or cancelled |
+| POST /api/counter-sales, GET /api/counter-sales/:id | staff | creates order + Razorpay UPI QR |
+
+Razorpay UPI QR (verify against test keys before enabling): `POST /v1/payments/qr_codes` with `type: "upi_qr"`, `usage: "single_use"`, `fixed_amount: true`, `payment_amount` (paise), `close_by`; paid state arrives on the signed `qr_code.credited` webhook. Razorpay's pages describe two creation paths and a note about webhooks on close; contract tests pin what we implement and the feature flag stays off until a real test run confirms it.

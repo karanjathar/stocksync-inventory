@@ -47,3 +47,9 @@ _One entry per significant decision. Newest at the bottom._
 
 ## D-014 No new runtime dependencies for documents and barcodes (2026-11-06)
 **Context:** Every dependency adds supply-chain risk. **Decision:** Invoices, packing slips and picklists are escaped HTML with print CSS (users print to PDF); barcodes are server-generated SVG. **Consequences:** No PDF library. Pixel-perfect PDFs and emailing documents can come later.
+
+## D-015 One audited dependency for QR encoding (2026-11-06)
+**Context:** D-014 forbids new runtime dependencies, but QR encoding needs Reed-Solomon error correction and is easy to get wrong by hand. **Decision:** Add a single small, widely used QR library, pinned to an exact version, checked for maintenance and peer compatibility, with `npm audit` kept clean. QR generation is only exposed for fixed targets. **Consequences:** One extra supply-chain dependency; no hand-rolled encoder. Barcodes (Code 128 and EAN-13) remain in-house.
+
+## D-016 Retail ideas chosen from public evidence only (2026-11-06)
+**Context:** The owner asked to learn from DMart and similar retailers. A web search gave public descriptions of DMart Ready (home delivery in time slots or free pick-up point, discount versus MRP, order minimums) but nothing verifiable about its scanning or repeat-order features. **Decision:** Implement the generic patterns the evidence supports (MRP and savings, minimum order and fee, pick-up or delivery with slots, order again) plus QR features that fit StockSync's own flows (product and shop QR, camera scanning, handover QR, UPI QR at the counter). **Consequences:** Features are modelled on common retail practice, not a copy of any app. Loyalty and coupons are deferred.

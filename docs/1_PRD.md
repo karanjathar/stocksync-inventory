@@ -141,3 +141,15 @@ WhatsApp Cloud API access as in v1. Until keys exist, everything is verified wit
 | FR-R3-13 | Append-only audit log | missing |
 **Already at parity or better:** multi-warehouse, transfers, adjustments and ledger, custom fields, roles, reorder alerts, online payments (Razorpay), WhatsApp/Telegram/Messenger/Instagram ordering, public shop, PWA.
 **Success measure.** A shop owner can run buy → receive → sell → invoice → return → report without leaving StockSync, and every stock and money figure reconciles with the ledger.
+
+### 1.9.1 Retail experience and QR (added after owner request: QR scan, learn from DMart and similar)
+| ID | Requirement |
+|---|---|
+| FR-R3-14 | Price, MRP and savings shown; minimum order value and delivery fee |
+| FR-R3-15 | Pick-up or delivery, time slots with capacity, serviceable pincodes |
+| FR-R3-16 | Order again from a past order (web and chat) |
+| FR-R3-17 | QR codes for products, the shop and a WhatsApp start link |
+| FR-R3-18 | Camera scanning of barcodes and QR codes in the web app (with scanner and manual fallback) |
+| FR-R3-19 | Handover QR: customer shows it, staff scan to complete pick-up or delivery |
+| FR-R3-20 | UPI QR payment at the counter, confirmed only by the signed webhook |
+**Not copied:** loyalty programs, coupons, store-level pricing and rider tracking (no verified detail, and they need data we do not have).
