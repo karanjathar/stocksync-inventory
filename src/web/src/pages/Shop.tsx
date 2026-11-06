@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router';
 import { api, errorText } from '../api/client';
 import { money, whatsappLink } from '../format';
 import { Badge, Empty, ErrorBanner, Field } from '../components/ui';
-import type { PublicCatalog, PublicProduct } from '../api/types';
+import { isSafePaymentUrl, redirectTo } from '../redirect';
+import type { PaymentMethod, PlacedOrder, PublicCatalog, PublicProduct } from '../api/types';
 
 const CART_KEY = 'stocksync.cart';
 type Cart = Record<string, number>;
@@ -20,7 +22,8 @@ export function Shop() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
-  const [placed, setPlaced] = useState<{ number: number; totalCents: number } | null>(null);
+  const [chosen, setChosen] = useState<PaymentMethod | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     api<PublicCatalog>('/public/catalog').then(setCatalog, (e: unknown) => setError(errorText(e)));
@@ -49,6 +52,9 @@ export function Shop() {
     return copy;
   });
 
+  const methods = catalog?.settings.paymentMethods ?? [];
+  const method = chosen && methods.includes(chosen) ? chosen : methods[0];
+
   const waText = catalog
     ? [`Hi ${catalog.settings.businessName}! I'd like to order:`, ...lines.map((l) => `order ${l.product.sku} ${l.qty}`)].join('\n')
     : '';
@@ -58,11 +64,12 @@ export function Shop() {
     setBusy(true);
     setError(null);
     try {
-      const res = await api<{ number: number; totalCents: number }>('/public/orders', {
-        body: { name: name.trim(), phone: phone.trim(), items: lines.map((l) => ({ productId: l.product.id, quantity: l.qty })) },
+      const res = await api<PlacedOrder>('/public/orders', {
+        body: { name: name.trim(), phone: phone.trim(), paymentMethod: method, items: lines.map((l) => ({ productId: l.product.id, quantity: l.qty })) },
       });
-      setPlaced(res);
-      setCart({});
+      setCart({}); // the order exists now; the cart is only emptied after the server accepted it
+      if (res.paymentUrl && isSafePaymentUrl(res.paymentUrl)) redirectTo(res.paymentUrl);
+      else navigate(`/shop/order/${res.token}`);
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -103,11 +110,6 @@ export function Shop() {
         </div>
         <aside id="cart" className="card cart" role="region" aria-label="Cart">
           <h2>Your cart</h2>
-          {placed ? (
-            <div className="banner ok">
-              ✅ Order #{placed.number} received ({money(placed.totalCents, currency)}). We'll contact you on WhatsApp to confirm.
-            </div>
-          ) : null}
           {lines.length ? (
             <>
               <ul className="feed">
@@ -123,7 +125,22 @@ export function Shop() {
               <form className="grid" onSubmit={checkout} style={{ gap: 10 }}>
                 <Field label="Your name"><input required value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" /></Field>
                 <Field label="Phone (WhatsApp)"><input required type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" placeholder="+15551234567" /></Field>
-                <button className="primary" type="submit" disabled={busy}>Place order</button>
+                {methods.length > 1 ? (
+                  <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
+                    <legend>Payment</legend>
+                    {methods.map((m) => (
+                      <label key={m} className="row small" style={{ margin: '4px 0' }}>
+                        <input type="radio" name="payment" style={{ width: 'auto' }} checked={method === m} onChange={() => setChosen(m)} />
+                        {m === 'ONLINE' ? 'Pay online (UPI / cards)' : 'Cash on delivery'}
+                      </label>
+                    ))}
+                  </fieldset>
+                ) : methods.length === 1 ? (
+                  <p className="small muted">{method === 'ONLINE' ? '💳 You will pay online (UPI / cards).' : '💵 Pay cash on delivery.'}</p>
+                ) : (
+                  <p className="banner error">Ordering is temporarily unavailable. Please try again later{catalog?.settings.whatsappNumber ? ' or order on WhatsApp' : ''}.</p>
+                )}
+                <button className="primary" type="submit" disabled={busy || !method}>Place order</button>
               </form>
               {catalog?.settings.whatsappNumber && (
                 <p style={{ textAlign: 'center' }}>
@@ -131,7 +148,7 @@ export function Shop() {
                 </p>
               )}
             </>
-          ) : !placed && <Empty>Your cart is empty.</Empty>}
+          ) : <Empty>Your cart is empty.</Empty>}
         </aside>
       </div>
     </div>
