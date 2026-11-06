@@ -3,7 +3,7 @@ import { api } from '../api/client';
 import { useAction, useApi } from '../hooks';
 import { useSettings } from '../settings';
 import { Badge, Card, ErrorBanner, Field, Page } from '../components/ui';
-import type { AlertRecipient, ChannelName, ChannelStatus, CustomFieldDef, Settings, Warehouse } from '../api/types';
+import type { AlertRecipient, ChannelName, ChannelStatus, CustomFieldDef, PaymentsConfig, Settings, Warehouse } from '../api/types';
 
 const CHANNELS: ChannelName[] = ['whatsapp', 'messenger', 'instagram', 'telegram'];
 interface FieldDraft { key: string; label: string; type: CustomFieldDef['type']; options: string }
@@ -12,11 +12,12 @@ export function SettingsPage() {
   const loaded = useApi<Settings>('/settings');
   const warehouses = useApi<Warehouse[]>('/warehouses');
   const channels = useApi<ChannelStatus[]>('/channels');
+  const payConfig = useApi<PaymentsConfig>('/payments/config');
   const { reload: reloadGlobal } = useSettings();
   const [form, setForm] = useState<Settings | null>(null);
   const [fields, setFields] = useState<FieldDraft[]>([]);
   const [saved, setSaved] = useState(false);
-  const { busy, error, run } = useAction();
+  const { busy, error, run, setError } = useAction();
 
   useEffect(() => {
     if (!loaded.data) return;
@@ -34,6 +35,10 @@ export function SettingsPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setSaved(false);
+    if (!Number.isInteger(form.payments.linkExpiryMinutes) || form.payments.linkExpiryMinutes < 15) {
+      setError('Payment link validity must be at least 15 minutes (a Razorpay requirement).');
+      return;
+    }
     const customFields: CustomFieldDef[] = fields.filter((f) => f.key.trim()).map((f) => ({
       key: f.key.trim(), label: f.label.trim() || f.key.trim(), type: f.type,
       ...(f.type === 'select' ? { options: f.options.split(',').map((o) => o.trim()).filter(Boolean) } : {}),
@@ -69,6 +74,25 @@ export function SettingsPage() {
             {channels.data?.map((c) => <Badge key={c.name} tone={c.configured ? 'good' : 'neutral'}>{c.name}</Badge>)}
           </div>
           <p className="small muted">Green channels have credentials configured on the server (see DEPLOYMENT_GUIDE.md). Webhook URLs: <code>/webhooks/meta</code> (WhatsApp, Messenger, Instagram) and <code>/webhooks/telegram</code>.</p>
+        </Card>
+
+        <Card title="Payments (Razorpay)">
+          {payConfig.data && (payConfig.data.onlineAvailable
+            ? <div className="banner ok">✅ Online payments are available.</div>
+            : <div className="banner error">⚠️ {payConfig.data.reason ?? 'Online payments are unavailable.'}</div>)}
+          <div className="grid" style={{ gap: 8 }}>
+            <label className="row small"><input type="checkbox" style={{ width: 'auto' }} checked={form.payments.onlineEnabled}
+              onChange={(e) => set('payments', { ...form.payments, onlineEnabled: e.target.checked })} /> Accept online payments (Razorpay)</label>
+            <label className="row small"><input type="checkbox" style={{ width: 'auto' }} checked={form.payments.codEnabled}
+              onChange={(e) => set('payments', { ...form.payments, codEnabled: e.target.checked })} /> Accept cash on delivery</label>
+            <Field label="Payment link validity (minutes)" hint="At least 15. Customers can still ask for a fresh link after it expires.">
+              <input type="number" inputMode="numeric" value={form.payments.linkExpiryMinutes}
+                onChange={(e) => set('payments', { ...form.payments, linkExpiryMinutes: Number(e.target.value) })} />
+            </Field>
+          </div>
+          <p className="small muted">In the Razorpay dashboard (Settings → Webhooks) add this URL and enable the events below, using the same secret as <code>RAZORPAY_WEBHOOK_SECRET</code>:</p>
+          <code className="code-line">{`${window.location.origin}/webhooks/razorpay`}</code>
+          <p className="small muted">Events: <code>payment_link.paid</code>, <code>payment_link.expired</code>, <code>payment_link.cancelled</code></p>
         </Card>
 
         <Card title="Low-stock alert recipients">

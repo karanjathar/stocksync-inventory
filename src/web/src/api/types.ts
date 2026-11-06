@@ -32,6 +32,8 @@ export interface PublicOrderStatus {
   paymentUrl?: string;
 }
 
+export interface PaymentsConfig { razorpayConfigured: boolean; onlineAvailable: boolean; codEnabled: boolean; reason?: string }
+
 export interface PlacedOrder { number: number; status: OrderStatus; totalCents: number; paymentMethod: PaymentMethod; token: string; paymentUrl?: string }
 
 export interface ChannelStatus { name: 'whatsapp' | 'messenger' | 'instagram' | 'telegram'; configured: boolean }
