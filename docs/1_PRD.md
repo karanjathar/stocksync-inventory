@@ -119,3 +119,52 @@ WhatsApp Cloud API access as in v1. Until keys exist, everything is verified wit
 - **FR-R2-11 Refund handling.** `REFUND_DUE` (paid but unfulfillable, duplicate, or cancelled-after-paid) alerts staff and tells the customer; staff refund in Razorpay and press **Mark refunded** (`REFUNDED`).
 - **FR-R2-12 Abuse limits.** At most 15 open orders per customer (chat and web); public endpoints rate limited.
 - **FR-R2-13 Configuration safety.** Settings warns when no payment method would be usable; production refuses non-https provider URLs.
+
+## 1.9 Release 3 — Inventory standard parity (Zoho Inventory class)
+**Goal.** Close the functional gap between StockSync and mainstream small-business inventory software while keeping its chat and online-payment advantage.
+**Method.** Gap analysis against Zoho Inventory's published feature list. Out of scope for R3: multi-currency, e-commerce marketplace connectors, shipping-carrier integrations, full accounting/GL, payroll, mobile native apps.
+
+| ID | Requirement | Status before R3 |
+|---|---|---|
+| FR-R3-1 | Purchase orders with partial receiving against the PO | missing (suppliers CRUD only) |
+| FR-R3-2 | Vendor bills, supplier payments, payables summary | missing |
+| FR-R3-3 | Reorder suggestions with preferred supplier → draft PO | alerts only |
+| FR-R3-4 | Tax rates (GST) and discounts, computed server-side | missing |
+| FR-R3-5 | Immutable numbered sales invoices; printable invoice, packing slip, picklist | missing |
+| FR-R3-6 | Sales returns with credit notes; purchase returns with debit notes | missing |
+| FR-R3-7 | Composite items (bundles/kits) | missing |
+| FR-R3-8 | Barcode assignment, label generation, scan lookup | missing |
+| FR-R3-9 | Batch/lot with expiry (FEFO) and serial number tracking; expiry alerts | missing |
+| FR-R3-10 | Weighted-average costing and stock valuation | missing |
+| FR-R3-11 | Reports (sales, purchases, margin, movement, low stock, ageing) with CSV export | dashboard only |
+| FR-R3-12 | CSV import of products and opening stock with dry-run | missing |
+| FR-R3-13 | Append-only audit log | missing |
+**Already at parity or better:** multi-warehouse, transfers, adjustments and ledger, custom fields, roles, reorder alerts, online payments (Razorpay), WhatsApp/Telegram/Messenger/Instagram ordering, public shop, PWA.
+**Success measure.** A shop owner can run buy → receive → sell → invoice → return → report without leaving StockSync, and every stock and money figure reconciles with the ledger.
+
+### 1.9.1 Retail experience and QR (added after owner request: QR scan, learn from DMart and similar)
+| ID | Requirement |
+|---|---|
+| FR-R3-14 | Price, MRP and savings shown; minimum order value and delivery fee |
+| FR-R3-15 | Pick-up or delivery, time slots with capacity, serviceable pincodes |
+| FR-R3-16 | Order again from a past order (web and chat) |
+| FR-R3-17 | QR codes for products, the shop and a WhatsApp start link |
+| FR-R3-18 | Camera scanning of barcodes and QR codes in the web app (with scanner and manual fallback) |
+| FR-R3-19 | Handover QR: customer shows it, staff scan to complete pick-up or delivery |
+| FR-R3-20 | UPI QR payment at the counter, confirmed only by the signed webhook |
+**Not copied:** loyalty programs, coupons, store-level pricing and rider tracking (no verified detail, and they need data we do not have).
+
+### 1.9.2 Catalogue depth, credit and operations (added after review of what was missing)
+| ID | Requirement |
+|---|---|
+| FR-R3-21 | Units of measure and fractional quantities (kg, g, l, ml, pack) |
+| FR-R3-22 | Item groups with variants (size, colour) in admin, shop and chat |
+| FR-R3-23 | Stocktake with variance adjustments and scan-to-count |
+| FR-R3-24 | Supplier price lists, cost history, cheapest-supplier reorder |
+| FR-R3-25 | Search, filters, pagination and a load test at realistic size |
+| FR-R3-26 | Customer credit ledger, limits, receipts, statements, ageing, reminders |
+| FR-R3-27 | Send invoices, statements and POs by WhatsApp and email |
+| FR-R3-28 | Accounting export (CSV and Tally XML) |
+| FR-R3-29 | Hindi and regional-language shop, chat and documents |
+| FR-R3-30 | Backups with a tested restore, data retention and deletion requests |
+**Explicitly out of scope (owner decision):** GST return filing (GSTR, e-invoice, e-way bill) and a counter point-of-sale mode with receipt printer and offline billing. Tax on invoices (FR-R3-4) stays.

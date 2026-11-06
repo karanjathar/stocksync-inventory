@@ -298,3 +298,140 @@ export interface BotReply {
 
 Migrations: `002_reply_options.sql` (options shown with each reply), `003_payments_chat.sql` (payments, webhook events, chat carts, order payment columns), `004_refunded.sql` (REFUNDED status).
 Production configuration rule (T56): `RAZORPAY_API_BASE` and `META_GRAPH_BASE` must be `https` (loopback `http` allowed for local fakes).
+
+## 3.15 Release 3 Purchasing — `src/api/migrations/005_purchasing.sql`
+All money is integer minor units. Quantities are positive integers. Stock changes only through StockService.
+```sql
+ALTER TABLE products ADD COLUMN reorder_quantity integer NOT NULL DEFAULT 0, ADD COLUMN preferred_supplier_id uuid REFERENCES suppliers(id);
+CREATE TABLE purchase_orders (id uuid PK, number serial UNIQUE, supplier_id uuid NOT NULL REFERENCES suppliers(id),
+  status text NOT NULL CHECK (status IN ('DRAFT','SENT','PARTIALLY_RECEIVED','RECEIVED','CANCELLED')),
+  warehouse_id uuid NOT NULL REFERENCES warehouses(id), expected_date date, notes text NOT NULL DEFAULT '',
+  total_cents integer NOT NULL, created_by uuid REFERENCES users(id), created_at timestamptz, updated_at timestamptz);
+CREATE TABLE purchase_order_items (id uuid PK, purchase_order_id uuid NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  product_id uuid NOT NULL REFERENCES products(id), quantity integer NOT NULL CHECK (quantity > 0),
+  received_quantity integer NOT NULL DEFAULT 0 CHECK (received_quantity BETWEEN 0 AND quantity), unit_cost_cents integer NOT NULL CHECK (unit_cost_cents >= 0));
+CREATE TABLE bills (id uuid PK, number serial UNIQUE, supplier_id uuid NOT NULL REFERENCES suppliers(id), purchase_order_id uuid REFERENCES purchase_orders(id),
+  status text NOT NULL CHECK (status IN ('UNPAID','PARTIAL','PAID','VOID')), total_cents integer NOT NULL, paid_cents integer NOT NULL DEFAULT 0 CHECK (paid_cents <= total_cents),
+  due_date date NOT NULL, created_at timestamptz);
+CREATE TABLE bill_payments (id uuid PK, bill_id uuid NOT NULL REFERENCES bills(id), amount_cents integer NOT NULL CHECK (amount_cents > 0),
+  request_id text NOT NULL UNIQUE, method text NOT NULL, paid_at timestamptz NOT NULL DEFAULT now());
+```
+| Method & Path | Role | Notes |
+|---|---|---|
+| GET/POST /api/purchase-orders, GET/PATCH /api/purchase-orders/:id | staff (GET: any) | PATCH only while DRAFT; totals server-side |
+| POST /api/purchase-orders/:id/send, /cancel | staff | DRAFT→SENT; cancel unless something was received; else 409 |
+| POST /api/purchase-orders/:id/receive | staff | `{lines:[{itemId,quantity,warehouseId?}]}`; never above ordered; ledger rows carry `reference='PO-<n>'` |
+| GET/POST /api/bills, POST /api/bills/:id/payments | staff | payment body needs `requestId` (idempotent); overpay → 409 |
+| GET /api/reports/payables | staff | open balance per supplier |
+| GET/POST /api/reorder-suggestions | staff | POST `{productIds[]}` → one DRAFT PO per preferred supplier |
+
+## 3.16 Release 3 Sales documents — `src/api/migrations/006_tax_discount.sql`
+```sql
+CREATE TABLE tax_rates (id uuid PK, name text NOT NULL UNIQUE, rate_bp integer NOT NULL CHECK (rate_bp BETWEEN 0 AND 10000), active boolean NOT NULL DEFAULT true); -- basis points: 18% = 1800
+ALTER TABLE products ADD COLUMN tax_rate_id uuid REFERENCES tax_rates(id);
+ALTER TABLE orders ADD COLUMN discount_cents integer NOT NULL DEFAULT 0, ADD COLUMN tax_cents integer NOT NULL DEFAULT 0, ADD COLUMN subtotal_cents integer;
+ALTER TABLE order_items ADD COLUMN tax_rate_bp integer NOT NULL DEFAULT 0, ADD COLUMN discount_cents integer NOT NULL DEFAULT 0;
+CREATE TABLE invoices (id uuid PK, order_id uuid NOT NULL UNIQUE REFERENCES orders(id), number text NOT NULL UNIQUE, -- INV-<year>-<6 digits>, gapless per year
+  status text NOT NULL CHECK (status IN ('ISSUED','VOID')), seller jsonb NOT NULL, customer jsonb NOT NULL, lines jsonb NOT NULL,
+  subtotal_cents integer, discount_cents integer, tax_cents integer, total_cents integer NOT NULL, issued_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE sales_returns (id uuid PK, number serial UNIQUE, order_id uuid NOT NULL REFERENCES orders(id), warehouse_id uuid NOT NULL REFERENCES warehouses(id),
+  credit_total_cents integer NOT NULL, request_id text NOT NULL UNIQUE, reason text NOT NULL DEFAULT '', created_at timestamptz);
+CREATE TABLE sales_return_items (id uuid PK, sales_return_id uuid NOT NULL REFERENCES sales_returns(id) ON DELETE CASCADE, order_item_id uuid NOT NULL REFERENCES order_items(id), quantity integer NOT NULL CHECK (quantity > 0));
+CREATE TABLE purchase_returns (id uuid PK, number serial UNIQUE, bill_id uuid REFERENCES bills(id), purchase_order_id uuid NOT NULL REFERENCES purchase_orders(id), warehouse_id uuid NOT NULL REFERENCES warehouses(id), debit_total_cents integer NOT NULL, request_id text NOT NULL UNIQUE, created_at timestamptz);
+```
+Rounding rule: line tax = round-half-up(`(line_total − line_discount) × rate_bp / 10000`); order totals are the sum of rounded line values; there is no second rounding. Invoices are never updated; a change after issue is a credit note.
+
+| Method & Path | Role | Notes |
+|---|---|---|
+| GET/POST/PATCH /api/tax-rates | admin (GET: any) | |
+| GET /api/invoices, /api/invoices/:id | staff | |
+| GET /api/invoices/:id/print, /api/orders/:id/packing-slip, /api/picklists?orderIds= | staff | escaped HTML, A4 print CSS |
+| POST /api/orders/:id/returns | staff | `{requestId, warehouseId, lines:[{orderItemId,quantity}], reason?}`; cannot exceed shipped − already returned |
+| POST /api/purchase-orders/:id/returns | staff | stock issued through StockService; cannot go negative |
+
+## 3.17 Release 3 Tracking — `src/api/migrations/007_tracking.sql`
+```sql
+ALTER TABLE products ADD COLUMN barcode text UNIQUE, ADD COLUMN tracking text NOT NULL DEFAULT 'NONE' CHECK (tracking IN ('NONE','BATCH','SERIAL')), ADD COLUMN is_bundle boolean NOT NULL DEFAULT false;
+CREATE TABLE bundle_components (bundle_id uuid REFERENCES products(id) ON DELETE CASCADE, component_id uuid REFERENCES products(id), quantity integer NOT NULL CHECK (quantity > 0), PRIMARY KEY (bundle_id, component_id), CHECK (bundle_id <> component_id));
+CREATE TABLE stock_batches (id uuid PK, product_id uuid NOT NULL REFERENCES products(id), warehouse_id uuid NOT NULL REFERENCES warehouses(id), batch_no text NOT NULL, expires_on date, quantity integer NOT NULL CHECK (quantity >= 0), expiry_alerted boolean NOT NULL DEFAULT false, UNIQUE (product_id, warehouse_id, batch_no));
+CREATE TABLE stock_serials (id uuid PK, product_id uuid NOT NULL REFERENCES products(id), serial text NOT NULL, warehouse_id uuid REFERENCES warehouses(id), status text NOT NULL CHECK (status IN ('IN_STOCK','ISSUED')), UNIQUE (product_id, serial));
+```
+Rules: a bundle holds no stock of its own; its availability is `min(floor(component_on_hand / quantity))`. For BATCH products Σ batch quantity = `stock_levels.quantity` per warehouse (checked in tests). Issue picks the earliest non-expired expiry first. Barcode: EAN-13 (valid check digit) or Code 128.
+
+## 3.18 Release 3 Costing, Reports, Import, Audit — `src/api/migrations/008_costing.sql`
+```sql
+ALTER TABLE stock_movements ADD COLUMN unit_cost_cents integer;
+ALTER TABLE stock_levels ADD COLUMN avg_cost_cents integer NOT NULL DEFAULT 0;
+CREATE TABLE audit_log (id bigserial PK, at timestamptz NOT NULL DEFAULT now(), actor_id uuid, actor_email text, action text NOT NULL, entity text NOT NULL, entity_id text, before jsonb, after jsonb);
+REVOKE UPDATE, DELETE ON audit_log FROM PUBLIC; -- append-only; also enforced by a trigger that raises
+```
+Costing: moving weighted average on receipt `new = round((old_qty×old_avg + in_qty×in_cost) / (old_qty+in_qty))`; issues use the current average and never change it.
+
+| Method & Path | Role | Notes |
+|---|---|---|
+| GET /api/reports/valuation, /sales, /purchases, /margin, /movements, /low-stock, /ageing | staff | `from`,`to`,`page`,`format=csv` |
+| POST /api/imports/products?dryRun=true\|false | admin | multipart CSV ≤ 2 MB / 5000 rows; dry-run writes nothing |
+| GET /api/audit | admin | filter by entity, actor, date |
+CSV safety: cells starting with `=`, `+`, `-`, `@`, tab or CR are prefixed with `'`.
+
+## 3.19 Release 3 Retail experience and QR — `src/api/migrations/009_retail.sql`
+Ideas taken from public descriptions of DMart Ready (price vs MRP, delivery or pick-up point, time slots, minimum order, repeat orders). Details of the real app were not verifiable, so only the generic pattern is used.
+```sql
+ALTER TABLE products ADD COLUMN mrp_cents integer CHECK (mrp_cents IS NULL OR mrp_cents >= price_cents);
+ALTER TABLE orders ADD COLUMN fulfilment text NOT NULL DEFAULT 'PICKUP' CHECK (fulfilment IN ('PICKUP','DELIVERY')),
+  ADD COLUMN delivery_fee_cents integer NOT NULL DEFAULT 0, ADD COLUMN delivery_pincode text, ADD COLUMN slot_id uuid REFERENCES delivery_slots(id),
+  ADD COLUMN handover_code text UNIQUE, ADD COLUMN handed_over_at timestamptz;
+CREATE TABLE delivery_slots (id uuid PK, kind text NOT NULL CHECK (kind IN ('PICKUP','DELIVERY')), starts_at timestamptz NOT NULL, ends_at timestamptz NOT NULL CHECK (ends_at > starts_at), capacity integer NOT NULL CHECK (capacity > 0), booked integer NOT NULL DEFAULT 0 CHECK (booked BETWEEN 0 AND capacity));
+CREATE TABLE service_pincodes (pincode text PRIMARY KEY CHECK (pincode ~ '^[1-9][0-9]{5}$'));
+```
+Settings keys added: `minOrderCents`, `deliveryFeeCents`. Slot booking: `UPDATE delivery_slots SET booked = booked + 1 WHERE id = $1 AND booked < capacity` (atomic); cancellation decrements once.
+`handover_code` is 128-bit random (base64url), shown only to the owning customer; scanning marks `handed_over_at` exactly once.
+
+| Method & Path | Role | Notes |
+|---|---|---|
+| GET /api/public/slots?kind=&pincode= | public | only slots with space, rate limited |
+| GET/POST/PATCH /api/slots, GET/PUT /api/service-pincodes | admin (GET: staff) | |
+| POST /api/public/orders/:token/repeat | token | builds a cart preview; nothing is ordered until confirmed |
+| GET /api/products/:id/qr.svg, /api/shop/qr.svg, /api/shop/whatsapp-qr.svg | staff / public for shop | fixed targets only; no free-text QR endpoint |
+| POST /api/orders/handover | staff | `{code}`; 404 unknown, 409 reused or cancelled |
+| POST /api/counter-sales, GET /api/counter-sales/:id | staff | creates order + Razorpay UPI QR |
+
+Razorpay UPI QR (verify against test keys before enabling): `POST /v1/payments/qr_codes` with `type: "upi_qr"`, `usage: "single_use"`, `fixed_amount: true`, `payment_amount` (paise), `close_by`; paid state arrives on the signed `qr_code.credited` webhook. Razorpay's pages describe two creation paths and a note about webhooks on close; contract tests pin what we implement and the feature flag stays off until a real test run confirms it.
+
+## 3.20 Release 3 Catalogue depth — `src/api/migrations/010_catalogue.sql`
+```sql
+ALTER TABLE products ADD COLUMN unit text NOT NULL DEFAULT 'pcs' CHECK (unit IN ('pcs','kg','g','l','ml','pack')),
+  ADD COLUMN unit_scale integer NOT NULL DEFAULT 1 CHECK (unit_scale IN (1,10,100,1000)), ADD COLUMN item_group_id uuid REFERENCES item_groups(id), ADD COLUMN variant_values jsonb;
+CREATE TABLE item_groups (id uuid PK, name text NOT NULL UNIQUE, attributes jsonb NOT NULL, -- {"size":["S","M"],"colour":["Red"]}
+  category_id uuid REFERENCES categories(id), description text NOT NULL DEFAULT '');
+CREATE TABLE stocktakes (id uuid PK, warehouse_id uuid NOT NULL REFERENCES warehouses(id), category_id uuid REFERENCES categories(id),
+  status text NOT NULL CHECK (status IN ('OPEN','POSTED','CANCELLED')), started_at timestamptz NOT NULL DEFAULT now(), posted_at timestamptz, created_by uuid REFERENCES users(id));
+CREATE TABLE stocktake_lines (stocktake_id uuid REFERENCES stocktakes(id) ON DELETE CASCADE, product_id uuid REFERENCES products(id),
+  expected integer NOT NULL, counted integer, PRIMARY KEY (stocktake_id, product_id));
+CREATE TABLE supplier_prices (supplier_id uuid REFERENCES suppliers(id), product_id uuid REFERENCES products(id), unit_cost_cents integer NOT NULL CHECK (unit_cost_cents >= 0),
+  min_quantity integer NOT NULL DEFAULT 1, lead_days integer NOT NULL DEFAULT 0, active boolean NOT NULL DEFAULT true, PRIMARY KEY (supplier_id, product_id));
+CREATE TABLE cost_history (id bigserial PK, product_id uuid, supplier_id uuid, unit_cost_cents integer NOT NULL, at timestamptz NOT NULL DEFAULT now(), reference text);
+```
+Units: quantities are always integers in base units. A product with `unit='kg'`, `unit_scale=1000` stores 1.5 kg as 1500. Price is per display unit (price_cents per kg); line total = round-half-up(`quantity_base × price_cents / unit_scale`). Pieces use scale 1, so all existing behaviour and tests are unchanged.
+Stocktake posting: for each line with `counted IS NOT NULL` and `counted <> expected`, call StockService.adjust with reference `STOCKTAKE-<id>`; the status flips OPEN→POSTED in the same transaction (a second post is 409).
+
+| Method & Path | Role | Notes |
+|---|---|---|
+| GET/POST/PATCH /api/item-groups, POST /api/item-groups/:id/variants | staff | variants generated from attribute combinations |
+| POST /api/stocktakes, PUT /api/stocktakes/:id/lines, POST /api/stocktakes/:id/post, /cancel | staff | |
+| GET/PUT /api/suppliers/:id/prices | staff | |
+| list endpoints | any | `q`, filters, `after` (keyset cursor), `limit` ≤ 100 |
+
+## 3.21 Release 3 Credit, communication, operations — `src/api/migrations/011_credit.sql`
+```sql
+ALTER TABLE customers ADD COLUMN credit_limit_cents integer NOT NULL DEFAULT 0, ADD COLUMN language text NOT NULL DEFAULT 'en';
+CREATE TABLE credit_entries (id bigserial PK, customer_id uuid NOT NULL REFERENCES customers(id), kind text NOT NULL CHECK (kind IN ('SALE','RETURN','RECEIPT','ADJUSTMENT')),
+  amount_cents integer NOT NULL, -- positive = customer owes more, negative = owes less
+  order_id uuid REFERENCES orders(id), request_id text UNIQUE, note text NOT NULL DEFAULT '', at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE document_links (token text PRIMARY KEY, kind text NOT NULL, ref_id uuid NOT NULL, expires_at timestamptz NOT NULL);
+CREATE TABLE send_log (id bigserial PK, kind text, ref_id uuid, channel text, recipient text, ok boolean, at timestamptz NOT NULL DEFAULT now());
+```
+Balance = Σ amount_cents; the ledger is append-only. Orders gain payment method `CREDIT`. A credit sale is allowed only if `balance + total <= credit_limit` (checked under a customer row lock).
+Languages: message catalogues `en`, `hi`; every key must exist in `en`; fallback is `en`. Accounting export: Tally voucher XML (sales, purchase, receipt, payment) plus CSV; the totals must equal the invoice, bill and ledger totals.
+Retention: `RETENTION_WEBHOOK_DAYS` (default 30) and `RETENTION_MESSAGE_DAYS` (default 365); deletion requests anonymise name, phone, email and channel id but keep order and invoice amounts.
+Email provider env: `ACS_EMAIL_ENDPOINT`, `ACS_EMAIL_KEY`, `EMAIL_FROM` (all optional; sending is disabled when unset).
