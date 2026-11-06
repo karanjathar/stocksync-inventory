@@ -4,7 +4,7 @@ import type { Container } from '../../container.js';
 import { NotFoundError } from '../../domain/errors.js';
 import { currentUser, requireRole } from '../middleware/auth.js';
 import { idParam } from '../params.js';
-import { parse } from '../validate.js';
+import { isoDate, parse } from '../validate.js';
 
 const line = z.object({
   productId: z.string().uuid(),
@@ -12,11 +12,10 @@ const line = z.object({
   unitCostCents: z.number().int().min(0).max(1_000_000_000),
 });
 const items = z.array(line).min(1).max(200);
-const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'use YYYY-MM-DD').refine((d) => !Number.isNaN(Date.parse(d)), 'not a real date');
 const createSchema = z.object({
   supplierId: z.string().uuid(),
   warehouseId: z.string().uuid(),
-  expectedDate: date.nullable().optional(),
+  expectedDate: isoDate.nullable().optional(),
   notes: z.string().max(2000).optional(),
   items,
 });

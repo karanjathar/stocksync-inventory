@@ -63,6 +63,18 @@ describe('purchase orders (T59)', () => {
     expect((await request(t.app).patch(`/api/purchase-orders/${po.id}`).set(auth(staff)).send({ notes: 'too late' })).status).toBe(409);
   });
 
+  it('rejects impossible calendar dates instead of failing in the database', async () => {
+    for (const expectedDate of ['2024-02-31', '2026-13-01', '2026-04-31', 'tomorrow', '2026-1-5']) {
+      expect((await create({ expectedDate })).status).toBe(400);
+    }
+    const ok = await create({ expectedDate: '2028-02-29' }); // a real leap day
+    expect(ok.status).toBe(201);
+    expect(ok.body.expectedDate).toBe('2028-02-29');
+    const patched = await request(t.app).patch(`/api/purchase-orders/${ok.body.id}`).set(auth(staff)).send({ expectedDate: '2026-02-30' });
+    expect(patched.status).toBe(400);
+    expect((await request(t.app).patch(`/api/purchase-orders/${ok.body.id}`).set(auth(staff)).send({ expectedDate: null })).body.expectedDate).toBeNull();
+  });
+
   it('moves DRAFT → SENT once, and cancels from DRAFT or SENT once', async () => {
     const po = (await create()).body;
     const sent = await act(po.id, 'send');

@@ -4,15 +4,14 @@ import type { Container } from '../../container.js';
 import { NotFoundError } from '../../domain/errors.js';
 import { requireRole } from '../middleware/auth.js';
 import { idParam } from '../params.js';
-import { parse } from '../validate.js';
+import { isoDate, parse } from '../validate.js';
 
-const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'use YYYY-MM-DD').refine((d) => !Number.isNaN(Date.parse(d)) && new Date(d).toISOString().startsWith(d), 'not a real date');
 const amount = z.number().int().positive().max(2_000_000_000);
 const createSchema = z.object({
   purchaseOrderId: z.string().uuid().optional(),
   supplierId: z.string().uuid().optional(),
   amountCents: amount.optional(),
-  dueDate: date.optional(),
+  dueDate: isoDate.optional(),
 });
 const paymentSchema = z.object({
   requestId: z.string().trim().min(1).max(100),
