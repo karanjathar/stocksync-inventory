@@ -4,7 +4,7 @@ import { api, ApiError, errorText } from '../api/client';
 import { money, whatsappLink } from '../format';
 import { Badge, Empty, ErrorBanner, Field } from '../components/ui';
 import { isSafePaymentUrl, redirectTo } from '../redirect';
-import type { PaymentMethod, PlacedOrder, PublicCatalog, PublicOrderStatus, PublicProduct } from '../api/types';
+import type { CartQuote, PaymentMethod, PlacedOrder, PublicCatalog, PublicOrderStatus, PublicProduct } from '../api/types';
 
 const CART_KEY = 'stocksync.cart';
 const LAST_ONLINE_KEY = 'stocksync.lastOnlineOrder'; // the shopper may back out of the payment page; let them resume
@@ -57,7 +57,18 @@ export function Shop() {
   const lines = Object.entries(cart)
     .map(([id, qty]) => ({ product: byId.get(id), qty }))
     .filter((l): l is { product: PublicProduct; qty: number } => Boolean(l.product) && l.qty > 0);
-  const total = lines.reduce((sum, l) => sum + l.product.priceCents * l.qty, 0);
+  const localTotal = lines.reduce((sum, l) => sum + l.product.priceCents * l.qty, 0);
+  // The real payable total comes from the server (tax and discounts are computed there only); the local sum is the fallback.
+  const [quote, setQuote] = useState<CartQuote | null>(null);
+  const quoteKey = lines.map((l) => `${l.product.id}:${l.qty}`).join(',');
+  useEffect(() => {
+    if (!quoteKey) { setQuote(null); return; }
+    const ac = new AbortController();
+    const items = quoteKey.split(',').map((p) => { const [productId, qty] = p.split(':'); return { productId, quantity: Number(qty) }; });
+    api<CartQuote>('/public/quote', { body: { items }, signal: ac.signal }).then(setQuote, () => { if (!ac.signal.aborted) setQuote(null); });
+    return () => ac.abort();
+  }, [quoteKey]);
+  const total = quote?.totalCents ?? localTotal;
   const currency = catalog?.settings.currency ?? 'USD';
   const visible = (catalog?.products ?? []).filter((p) => {
     const q = search.trim().toLowerCase();
@@ -149,6 +160,13 @@ export function Shop() {
                   </li>
                 ))}
               </ul>
+              {quote && quote.taxCents > 0 && (
+                <div className="muted small" style={{ marginTop: 8 }}>
+                  {quote.inclusive
+                    ? <div>Includes tax {money(quote.taxCents, currency)}</div>
+                    : <><div>Subtotal {money(quote.subtotalCents, currency)}</div><div>Tax {money(quote.taxCents, currency)}</div></>}
+                </div>
+              )}
               <div className="row" style={{ margin: '12px 0' }}><strong>Total</strong><span className="spacer" /><strong>{money(total, currency)}</strong></div>
               <form className="grid" onSubmit={checkout} style={{ gap: 10 }}>
                 <Field label="Your name"><input required value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" /></Field>

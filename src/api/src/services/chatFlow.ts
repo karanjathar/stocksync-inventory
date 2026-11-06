@@ -137,10 +137,11 @@ export class ChatFlow {
     const { added, capped } = await this.carts.add(customer.id, productId, quantity);
     const cart = await this.carts.get(customer.id);
     const items = cart.lines.reduce((n, l) => n + l.quantity, 0);
+    const quote = await this.cartQuote(cart);
     const lines = [
       added > 0 ? `✅ Added ${added} × ${p.name} to your cart.` : `Your cart already has all available ${p.name}.`,
       capped ? `(We have only ${p.totalQuantity} available.)` : '',
-      `🛒 Cart: ${plural(items, 'item')} · ${money(cart.totalCents)}`,
+      `🛒 Cart: ${plural(items, 'item')} · ${money(quote.totalCents)}`,
     ].filter(Boolean);
     return {
       text: lines.join('\n'),
@@ -153,10 +154,18 @@ export class ChatFlow {
     return { customer, cart: await this.carts.get(customer.id) };
   }
 
-  private cartLines(cart: Awaited<ReturnType<ChatCartsRepo['get']>>, money: (c: number) => string): string {
+  /** The real payable total (tax included), priced by the same code that prices the order. */
+  private async cartQuote(cart: Awaited<ReturnType<ChatCartsRepo['get']>>) {
+    if (!cart.lines.length) return { totalCents: 0, subtotalCents: 0, taxCents: 0, inclusive: false };
+    return this.orders.quote(cart.lines.map((l) => ({ productId: l.productId, quantity: l.quantity })));
+  }
+
+  private async cartLines(cart: Awaited<ReturnType<ChatCartsRepo['get']>>, money: (c: number) => string): Promise<string> {
+    const q = await this.cartQuote(cart);
     return [
       ...cart.lines.map((l) => `${l.quantity} × ${l.name} — ${money(l.quantity * l.unitPriceCents)}`),
-      `*Total: ${money(cart.totalCents)}*`,
+      ...(q.taxCents > 0 ? [q.inclusive ? `(includes tax ${money(q.taxCents)})` : `Subtotal: ${money(q.subtotalCents)}\nTax: ${money(q.taxCents)}`] : []),
+      `*Total: ${money(q.totalCents)}*`,
     ].join('\n');
   }
 
@@ -170,7 +179,7 @@ export class ChatFlow {
     if (!cart.lines.length) return this.emptyCart(cart.adjusted);
     const note = cart.adjusted ? '⚠️ Some items changed since you added them (stock or availability).\n' : '';
     return {
-      text: `${note}🛒 *Your cart*\n${this.cartLines(cart, money)}`,
+      text: `${note}🛒 *Your cart*\n${await this.cartLines(cart, money)}`,
       buttons: [{ id: 'checkout', title: '🧾 Checkout' }, { id: 'catalog', title: '🛍 Keep shopping' }, { id: 'cart:clear', title: '🗑 Clear cart' }],
     };
   }
@@ -192,7 +201,7 @@ export class ChatFlow {
       ...(cod ? [{ id: 'pay:cod', title: '💵 Cash on delivery' }] : []),
       { id: 'cart', title: '✏️ Edit cart' },
     ];
-    return { text: `${note}🧾 *Checkout*\n${this.cartLines(cart, money)}\n\nHow would you like to pay?`, buttons };
+    return { text: `${note}🧾 *Checkout*\n${await this.cartLines(cart, money)}\n\nHow would you like to pay?`, buttons };
   }
 
   private async placeOrder(msg: InboundMessage, method: PaymentMethod, money: (c: number) => string): Promise<BotReply> {

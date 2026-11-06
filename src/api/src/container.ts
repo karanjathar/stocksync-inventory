@@ -29,6 +29,7 @@ import { PaymentService } from './services/payments.js';
 import { PurchasesService } from './services/purchases.js';
 import { BillsService } from './services/bills.js';
 import { ReorderService } from './services/reorder.js';
+import { TaxRatesService } from './services/taxRates.js';
 
 export interface ContainerOverrides {
   logger?: Logger;
@@ -85,7 +86,8 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const purchases = new PurchasesService(pool, stock);
   const bills = new BillsService(pool);
   const reorder = new ReorderService(pool, purchases, settings);
-  return { env, pool, logger, repos, purchases, bills, reorder, auth, stock, customers, settings, events, orders, alerts, messages, hub, messenger, bot, inbox, images, carts, chatFlow, razorpay, payments };
+  const taxRates = new TaxRatesService(pool);
+  return { env, pool, logger, repos, purchases, bills, reorder, taxRates, auth, stock, customers, settings, events, orders, alerts, messages, hub, messenger, bot, inbox, images, carts, chatFlow, razorpay, payments };
 }
 
 export type Container = ReturnType<typeof createContainer>;

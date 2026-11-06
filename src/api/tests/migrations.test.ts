@@ -32,7 +32,7 @@ describe('migrations 003–004 on an existing Release 1 database (T29, T58)', ()
     const cust = await pool.query<{ id: string }>("INSERT INTO customers (name) VALUES ('Legacy') RETURNING id");
     await pool.query("INSERT INTO orders (customer_id, channel, status, total_cents) VALUES ($1, 'manual', 'PENDING', 500), ($1, 'web', 'FULFILLED', 900)", [cust.rows[0]!.id]);
 
-    expect(await migrate(pool)).toEqual(['003_payments_chat.sql', '004_refunded.sql', '005_purchasing.sql']);
+    expect(await migrate(pool)).toEqual(['003_payments_chat.sql', '004_refunded.sql', '005_purchasing.sql', '006_tax_discount.sql']);
     expect(await migrate(pool)).toEqual([]);
 
     const { rows } = await pool.query<{ payment_method: string; payment_status: string; public_token: string }>('SELECT payment_method, payment_status, public_token FROM orders ORDER BY number');

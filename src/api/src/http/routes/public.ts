@@ -39,6 +39,14 @@ export function publicRoutes(c: Container): Router {
     });
   });
 
+  // Prices a cart exactly as an order would be priced (tax included), so the shop shows the real total.
+  const quoteLimiter = rateLimit({ windowMs: 60_000, limit: c.env.NODE_ENV === 'test' ? 10_000 : 120, standardHeaders: true, legacyHeaders: false });
+  const quoteSchema = z.object({ items: z.array(z.object({ productId: z.string().uuid(), quantity: z.number().int().positive().max(100_000) })).min(1).max(100) });
+  r.post('/quote', quoteLimiter, async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(await c.orders.quote(parse(quoteSchema, req.body).items));
+  });
+
   r.post('/orders', orderLimiter, async (req, res) => {
     const o = parse(orderSchema, req.body);
     // Which payment methods may be used right now (keys configured, enabled in Settings, INR for online).

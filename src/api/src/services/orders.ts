@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import { withTx } from '../db/tx.js';
 import { AppError, ConflictError, NotFoundError, ValidationError } from '../domain/errors.js';
+import { priceOrder, type Discount, type PricedLine } from '../domain/pricing.js';
 import type { Order, OrderChannel, OrderItem, OrderStatus, PaymentMethod } from '../domain/types.js';
 import type { EventBus } from '../realtime/bus.js';
 import type { SettingsService } from './settings.js';
@@ -12,17 +13,25 @@ export const MAX_OPEN_ORDERS = 15;
 export interface NewOrder {
   customerId: string;
   channel: OrderChannel;
-  items: { productId: string; quantity: number }[];
+  items: { productId: string; quantity: number; discount?: Discount }[];
+  /** Order-level discount, shared across lines. Only staff-entered (manual) orders may carry discounts. */
+  discount?: Discount;
   notes?: string;
   warehouseId?: string | null;
   paymentMethod?: PaymentMethod;
+}
+
+export interface Quote {
+  lines: (PricedLine & { productId: string })[];
+  subtotalCents: number; discountCents: number; taxCents: number; totalCents: number; inclusive: boolean;
 }
 
 export type OrderStatusObserver = (order: Order, previous: OrderStatus | null) => void | Promise<void>;
 
 const ORDER_SELECT = `
   SELECT o.id, o.number, o.customer_id AS "customerId", c.name AS "customerName", o.channel, o.status,
-         o.warehouse_id AS "warehouseId", o.total_cents AS "totalCents", o.notes,
+         o.warehouse_id AS "warehouseId", o.total_cents AS "totalCents", o.subtotal_cents AS "subtotalCents",
+         o.tax_cents AS "taxCents", o.discount_cents AS "discountCents", o.notes,
          o.created_at AS "createdAt", o.updated_at AS "updatedAt",
          o.payment_method AS "paymentMethod", o.payment_status AS "paymentStatus", o.public_token AS "publicToken"
   FROM orders o JOIN customers c ON c.id = o.customer_id`;
@@ -42,10 +51,30 @@ export class OrdersService {
 
   onStatusChange(o: OrderStatusObserver): void { this.observers.push(o); }
 
-  async create(input: NewOrder): Promise<Order> {
+  /** Prices items exactly as an order would be priced (no discounts). Used by the shop and chat to show the real total. */
+  async quote(items: { productId: string; quantity: number }[]): Promise<Quote> {
     const merged = new Map<string, number>();
-    for (const i of input.items) merged.set(i.productId, (merged.get(i.productId) ?? 0) + i.quantity);
+    for (const i of items) merged.set(i.productId, (merged.get(i.productId) ?? 0) + i.quantity);
+    const inclusive = (await this.settings.get()).pricesIncludeTax;
+    const products = await this.pricingRows(this.pool, [...merged.keys()]);
+    const inactive = products.filter((p) => !p.isActive);
+    if (inactive.length) throw new ConflictError(`Product not available: ${inactive.map((p) => p.sku).join(', ')}`);
+    const priced = priceOrder({ lines: products.map((p) => ({ unitPriceCents: p.priceCents, quantity: merged.get(p.id)!, rateBp: p.rateBp })), inclusive });
+    return { lines: priced.lines.map((l, i) => ({ ...l, productId: products[i]!.id })), subtotalCents: priced.subtotalCents,
+      discountCents: priced.discountCents, taxCents: priced.taxCents, totalCents: priced.totalCents, inclusive };
+  }
+
+  async create(input: NewOrder): Promise<Order> {
+    const merged = new Map<string, { quantity: number; discount?: Discount }>();
+    for (const i of input.items) {
+      const prev = merged.get(i.productId);
+      if (prev && (prev.discount || i.discount)) throw new ValidationError('A product with a discount can appear only once per order');
+      merged.set(i.productId, { quantity: (prev?.quantity ?? 0) + i.quantity, ...(i.discount ? { discount: i.discount } : {}) });
+    }
     if (!merged.size) throw new ValidationError('Order must contain at least one item');
+    const hasDiscount = Boolean(input.discount) || [...merged.values()].some((m) => m.discount);
+    if (hasDiscount && input.channel !== 'manual') throw new ValidationError('Only staff can apply discounts');
+    const inclusive = (await this.settings.get()).pricesIncludeTax;
 
     const id = await withTx(this.pool, async (c) => {
       // Row lock: concurrent requests for one customer queue up here, so the cap below cannot be raced past.
@@ -57,20 +86,21 @@ export class OrdersService {
           throw new AppError(429, 'TOO_MANY_OPEN_ORDERS', `Too many open orders (${MAX_OPEN_ORDERS}). Please wait until some are confirmed or cancelled, or contact us.`);
         }
       }
-      const { rows: products } = await c.query<{ id: string; sku: string; priceCents: number; isActive: boolean }>(
-        'SELECT id, sku, price_cents AS "priceCents", is_active AS "isActive" FROM products WHERE id = ANY($1::uuid[])', [[...merged.keys()]]);
-      if (products.length !== merged.size) throw new NotFoundError('Product');
+      const products = await this.pricingRows(c, [...merged.keys()]);
       const inactive = products.filter((p) => !p.isActive);
       if (inactive.length) throw new ConflictError(`Product not available: ${inactive.map((p) => p.sku).join(', ')}`);
-      const total = products.reduce((sum, p) => sum + p.priceCents * merged.get(p.id)!, 0);
+      const priced = priceOrder({
+        lines: products.map((p) => ({ unitPriceCents: p.priceCents, quantity: merged.get(p.id)!.quantity, rateBp: p.rateBp, discount: merged.get(p.id)!.discount })),
+        orderDiscount: input.discount, inclusive,
+      });
       const { rows } = await c.query<{ id: string }>(
-        `INSERT INTO orders (customer_id, channel, status, warehouse_id, total_cents, notes, payment_method)
-         VALUES ($1, $2, 'PENDING', $3, $4, $5, $6) RETURNING id`,
-        [input.customerId, input.channel, input.warehouseId ?? null, total, input.notes ?? '', input.paymentMethod ?? 'COD']);
+        `INSERT INTO orders (customer_id, channel, status, warehouse_id, total_cents, subtotal_cents, tax_cents, discount_cents, notes, payment_method)
+         VALUES ($1, $2, 'PENDING', $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+        [input.customerId, input.channel, input.warehouseId ?? null, priced.totalCents, priced.subtotalCents, priced.taxCents, priced.discountCents, input.notes ?? '', input.paymentMethod ?? 'COD']);
       const orderId = rows[0]!.id;
-      for (const p of products) {
-        await c.query('INSERT INTO order_items (order_id, product_id, quantity, unit_price_cents) VALUES ($1, $2, $3, $4)',
-          [orderId, p.id, merged.get(p.id), p.priceCents]);
+      for (const [i, p] of products.entries()) {
+        await c.query('INSERT INTO order_items (order_id, product_id, quantity, unit_price_cents, tax_rate_bp, discount_cents) VALUES ($1, $2, $3, $4, $5, $6)',
+          [orderId, p.id, merged.get(p.id)!.quantity, p.priceCents, p.rateBp, priced.lines[i]!.discountCents]);
       }
       return orderId;
     });
@@ -153,10 +183,19 @@ export class OrdersService {
     const { rows } = await this.pool.query<OrderRow>(`${ORDER_SELECT} ${where} ORDER BY o.number DESC LIMIT $${values.length}`, values);
     if (!rows.length) return [];
     const { rows: items } = await this.pool.query<OrderItem & { orderId: string }>(
-      `SELECT oi.order_id AS "orderId", oi.product_id AS "productId", p.sku, p.name, oi.quantity, oi.unit_price_cents AS "unitPriceCents"
+      `SELECT oi.order_id AS "orderId", oi.product_id AS "productId", p.sku, p.name, oi.quantity, oi.unit_price_cents AS "unitPriceCents",
+              oi.tax_rate_bp AS "taxRateBp", oi.discount_cents AS "discountCents"
        FROM order_items oi JOIN products p ON p.id = oi.product_id WHERE oi.order_id = ANY($1::uuid[]) ORDER BY p.sku`,
       [rows.map((r) => r.id)]);
     return rows.map((r) => ({ ...r, items: items.filter((i) => i.orderId === r.id).map(({ orderId: _o, ...i }) => i) }));
+  }
+
+  private async pricingRows(c: Pick<pg.Pool, 'query'>, ids: string[]) {
+    const { rows } = await c.query<{ id: string; sku: string; priceCents: number; isActive: boolean; rateBp: number }>(
+      `SELECT p.id, p.sku, p.price_cents AS "priceCents", p.is_active AS "isActive", COALESCE(t.rate_bp, 0) AS "rateBp"
+       FROM products p LEFT JOIN tax_rates t ON t.id = p.tax_rate_id WHERE p.id = ANY($1::uuid[]) ORDER BY p.id`, [ids]);
+    if (rows.length !== ids.length) throw new NotFoundError('Product');
+    return rows;
   }
 
   private async afterTransition(id: string, previous: OrderStatus): Promise<Order> {
@@ -181,7 +220,8 @@ export class OrdersService {
 
   private async items(c: Pick<pg.Pool, 'query'>, orderId: string): Promise<OrderItem[]> {
     const { rows } = await c.query<OrderItem>(
-      `SELECT oi.product_id AS "productId", p.sku, p.name, oi.quantity, oi.unit_price_cents AS "unitPriceCents"
+      `SELECT oi.product_id AS "productId", p.sku, p.name, oi.quantity, oi.unit_price_cents AS "unitPriceCents",
+              oi.tax_rate_bp AS "taxRateBp", oi.discount_cents AS "discountCents"
        FROM order_items oi JOIN products p ON p.id = oi.product_id WHERE oi.order_id = $1 ORDER BY p.sku`, [orderId]);
     return rows;
   }

@@ -11,7 +11,7 @@ describe('settings', () => {
   it('returns defaults', async () => {
     const res = await request(t.app).get('/api/settings').set(auth(await t.token('viewer')));
     expect(res.body).toEqual({
-      businessName: 'StockSync', currency: 'USD', whatsappNumber: '', defaultWarehouseId: null, alertRecipients: [], customFields: [],
+      businessName: 'StockSync', currency: 'USD', pricesIncludeTax: false, whatsappNumber: '', defaultWarehouseId: null, alertRecipients: [], customFields: [],
       payments: { onlineEnabled: true, codEnabled: true, linkExpiryMinutes: 1440 }, // Release 2
     });
   });

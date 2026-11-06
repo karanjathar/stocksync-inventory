@@ -34,6 +34,40 @@ async function fillCheckout() {
 
 beforeEach(() => { redirectTo.mockClear(); });
 
+describe('Shop totals come from the server (T64)', () => {
+  it('shows tax and the server-priced total instead of the local sum', async () => {
+    const calls = mockApi({
+      '/public/catalog': catalog(),
+      'POST /public/quote': { subtotalCents: 3000, taxCents: 540, discountCents: 0, totalCents: 3540, inclusive: false },
+    });
+    renderShop();
+    const add = await screen.findByRole('button', { name: 'Add T-Shirt to cart' });
+    fireEvent.click(add);
+    fireEvent.click(add);
+    const cart = screen.getByRole('region', { name: 'Cart' });
+    await waitFor(() => expect(within(cart).getByText('Total').parentElement).toHaveTextContent('$35.40'));
+    expect(within(cart).getByText(/Tax \$5\.40/)).toBeInTheDocument();
+    expect(within(cart).getByText(/Subtotal \$30\.00/)).toBeInTheDocument();
+    expect(calls.filter((c) => c.path === '/public/quote').at(-1)!.body).toEqual({ items: [{ productId: 'p1', quantity: 2 }] });
+  });
+
+  it('says tax is included when prices include tax', async () => {
+    mockApi({ '/public/catalog': catalog(), 'POST /public/quote': { subtotalCents: 1271, taxCents: 229, discountCents: 0, totalCents: 1500, inclusive: true } });
+    renderShop();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add T-Shirt to cart' }));
+    expect(await screen.findByText(/Includes tax \$2\.29/)).toBeInTheDocument();
+  });
+
+  it('falls back to the local sum when the quote is unavailable', async () => {
+    mockApi({ '/public/catalog': catalog() }); // no quote route: 404
+    renderShop();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add T-Shirt to cart' }));
+    const cart = screen.getByRole('region', { name: 'Cart' });
+    expect(within(cart).getByText('Total').parentElement).toHaveTextContent('$15.00');
+    expect(within(cart).queryByText(/Tax/)).toBeNull();
+  });
+});
+
 describe('Shop browsing & cart', () => {
   it('shows products, builds a cart capped at availability and a WhatsApp order link', async () => {
     mockApi({ '/public/catalog': catalog() });
@@ -72,7 +106,7 @@ describe('Shop checkout with payment choice (T39)', () => {
     expect(screen.getByLabelText(/cash on delivery/i)).not.toBeChecked();
     fireEvent.click(screen.getByRole('button', { name: 'Place order' }));
     await waitFor(() => expect(redirectTo).toHaveBeenCalledWith('https://rzp.io/i/abc'));
-    expect(calls.find((c) => c.method === 'POST')!.body).toEqual({
+    expect(calls.find((c) => c.method === 'POST' && c.path === '/public/orders')!.body).toEqual({
       name: 'Mia', phone: '+15550007777', paymentMethod: 'ONLINE', items: [{ productId: 'p1', quantity: 1 }],
     });
     expect(JSON.parse(localStorage.getItem('stocksync.cart') ?? '{}')).toEqual({});
@@ -88,7 +122,7 @@ describe('Shop checkout with payment choice (T39)', () => {
     fireEvent.click(screen.getByLabelText(/cash on delivery/i));
     fireEvent.click(screen.getByRole('button', { name: 'Place order' }));
     expect(await screen.findByText('Order page for token')).toBeInTheDocument();
-    expect(calls.find((c) => c.method === 'POST')!.body).toMatchObject({ paymentMethod: 'COD' });
+    expect(calls.find((c) => c.method === 'POST' && c.path === '/public/orders')!.body).toMatchObject({ paymentMethod: 'COD' });
     expect(redirectTo).not.toHaveBeenCalled();
   });
 

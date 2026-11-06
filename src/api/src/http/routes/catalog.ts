@@ -21,6 +21,7 @@ const productBase = z.object({
   categoryId: z.string().uuid().nullable().optional(),
   unit: z.string().trim().min(1).max(20).optional(),
   priceCents: z.number().int().min(0).max(1_000_000_000),
+  taxRateId: z.string().uuid().nullable().optional(),
   reorderLevel: z.number().int().min(0).max(1_000_000).optional(),
   reorderQuantity: z.number().int().min(0).max(1_000_000).optional(),
   preferredSupplierId: z.string().uuid().nullable().optional(),

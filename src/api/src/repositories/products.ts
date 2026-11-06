@@ -4,7 +4,7 @@ import { escapeLike } from './simple.js';
 
 export const PRODUCT_SELECT = `
   SELECT p.id, p.sku, p.name, p.description, p.category_id AS "categoryId", p.unit,
-         p.price_cents AS "priceCents", p.reorder_level AS "reorderLevel", p.reorder_quantity AS "reorderQuantity",
+         p.price_cents AS "priceCents", p.tax_rate_id AS "taxRateId", p.reorder_level AS "reorderLevel", p.reorder_quantity AS "reorderQuantity",
          p.preferred_supplier_id AS "preferredSupplierId", p.image_url AS "imageUrl",
          p.attributes, p.is_active AS "isActive", COALESCE(s.total, 0)::int AS "totalQuantity",
          p.created_at AS "createdAt", p.updated_at AS "updatedAt"
@@ -12,12 +12,12 @@ export const PRODUCT_SELECT = `
   LEFT JOIN (SELECT product_id, SUM(quantity) AS total FROM stock_levels GROUP BY product_id) s ON s.product_id = p.id`;
 
 export interface ProductFilter { search?: string; categoryId?: string; lowStock?: boolean; activeOnly?: boolean; limit?: number }
-export type ProductInput = Partial<Pick<Product, 'sku' | 'name' | 'description' | 'categoryId' | 'unit' | 'priceCents' |
+export type ProductInput = Partial<Pick<Product, 'sku' | 'name' | 'description' | 'categoryId' | 'unit' | 'priceCents' | 'taxRateId' |
   'reorderLevel' | 'reorderQuantity' | 'preferredSupplierId' | 'imageUrl' | 'attributes' | 'isActive'>>;
 
 const COLUMN: Record<keyof ProductInput, string> = {
   sku: 'sku', name: 'name', description: 'description', categoryId: 'category_id', unit: 'unit',
-  priceCents: 'price_cents', reorderLevel: 'reorder_level', reorderQuantity: 'reorder_quantity',
+  priceCents: 'price_cents', taxRateId: 'tax_rate_id', reorderLevel: 'reorder_level', reorderQuantity: 'reorder_quantity',
   preferredSupplierId: 'preferred_supplier_id', imageUrl: 'image_url', attributes: 'attributes', isActive: 'is_active',
 };
 

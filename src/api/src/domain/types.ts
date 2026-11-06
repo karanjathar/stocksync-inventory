@@ -9,7 +9,7 @@ export interface User { id: string; email: string; name: string; role: Role; cre
 export interface AuthUser { id: string; email: string; role: Role }
 export interface Category { id: string; name: string }
 export interface Product { id: string; sku: string; name: string; description: string; categoryId: string | null;
-  unit: string; priceCents: number; reorderLevel: number; reorderQuantity: number; preferredSupplierId: string | null; imageUrl: string | null;
+  unit: string; priceCents: number; taxRateId: string | null; reorderLevel: number; reorderQuantity: number; preferredSupplierId: string | null; imageUrl: string | null;
   attributes: Record<string, string>; isActive: boolean; totalQuantity: number; createdAt: string; updatedAt: string }
 export interface Warehouse { id: string; code: string; name: string; address: string }
 export interface StockLevel { productId: string; sku: string; productName: string; warehouseId: string; warehouseCode: string; quantity: number }
@@ -18,13 +18,14 @@ export interface StockMovement { id: string; productId: string; sku: string; war
   userId: string | null; createdAt: string }
 export interface Supplier { id: string; name: string; email: string | null; phone: string | null; notes: string }
 export interface Customer { id: string; name: string; phone: string | null; email: string | null; channel: OrderChannel | string; channelUserId: string | null }
-export interface OrderItem { productId: string; sku: string; name: string; quantity: number; unitPriceCents: number }
+export interface OrderItem { productId: string; sku: string; name: string; quantity: number; unitPriceCents: number; taxRateBp: number; discountCents: number }
+export interface TaxRate { id: string; name: string; rateBp: number; active: boolean }
 export interface Order { id: string; number: number; customerId: string; customerName: string; channel: OrderChannel;
-  status: OrderStatus; warehouseId: string | null; totalCents: number; notes: string; items: OrderItem[]; createdAt: string; updatedAt: string;
+  status: OrderStatus; warehouseId: string | null; totalCents: number; subtotalCents: number; taxCents: number; discountCents: number; notes: string; items: OrderItem[]; createdAt: string; updatedAt: string;
   paymentMethod: PaymentMethod; paymentStatus: PaymentStatus; publicToken: string }
 export interface AlertRecipient { channel: ChannelName; to: string }
 export interface CustomFieldDef { key: string; label: string; type: 'text' | 'number' | 'select'; options?: string[] }
-export interface Settings { businessName: string; currency: string; whatsappNumber: string; defaultWarehouseId: string | null;
+export interface Settings { businessName: string; currency: string; pricesIncludeTax: boolean; whatsappNumber: string; defaultWarehouseId: string | null;
   alertRecipients: AlertRecipient[]; customFields: CustomFieldDef[]; payments: PaymentSettings }
 export interface ChannelMessage { id: string; channel: ChannelName; direction: 'in' | 'out'; externalUser: string; text: string; status: string; createdAt: string }
 /** `action` is the id of a tapped button / list row / quick reply (docs/3_SCHEMAS.md §3.12); absent for typed text. */

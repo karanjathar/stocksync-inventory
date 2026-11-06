@@ -6,9 +6,14 @@ import { currentUser, requireRole } from '../middleware/auth.js';
 import { idParam } from '../params.js';
 import { parse } from '../validate.js';
 
+const discountSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('percent'), basisPoints: z.number().int().min(0).max(10_000) }),
+  z.object({ type: z.literal('fixed'), cents: z.number().int().min(0).max(2_147_483_647) }),
+]);
 const createSchema = z.object({
   customerId: z.string().uuid(),
-  items: z.array(z.object({ productId: z.string().uuid(), quantity: z.number().int().positive().max(100_000) })).min(1).max(100),
+  items: z.array(z.object({ productId: z.string().uuid(), quantity: z.number().int().positive().max(100_000), discount: discountSchema.optional() })).min(1).max(100),
+  discount: discountSchema.optional(),
   notes: z.string().max(2000).optional(),
   warehouseId: z.string().uuid().optional(),
 });

@@ -6,6 +6,7 @@ import type { Settings } from '../domain/types.js';
 export const DEFAULT_SETTINGS: Settings = {
   businessName: 'StockSync',
   currency: 'USD',
+  pricesIncludeTax: false,
   whatsappNumber: '',
   defaultWarehouseId: null,
   alertRecipients: [],
@@ -16,6 +17,7 @@ export const DEFAULT_SETTINGS: Settings = {
 export const settingsPatchSchema = z.object({
   businessName: z.string().trim().min(1).max(120).optional(),
   currency: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/, 'ISO 4217 code').optional(),
+  pricesIncludeTax: z.boolean().optional(),
   whatsappNumber: z.string().trim().regex(/^(\+?[0-9]{6,15})?$/, 'digits only, international format').optional(),
   defaultWarehouseId: z.string().uuid().nullable().optional(),
   alertRecipients: z.array(z.object({

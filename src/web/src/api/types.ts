@@ -16,6 +16,8 @@ export interface PublicProduct {
   available: number;
 }
 
+/** Server-priced cart (tax and discounts included): what the customer will actually pay. */
+export interface CartQuote { subtotalCents: number; taxCents: number; discountCents: number; totalCents: number; inclusive: boolean }
 export interface PublicCatalog {
   settings: { businessName: string; currency: string; whatsappNumber: string; paymentMethods: PaymentMethod[] };
   products: PublicProduct[];
