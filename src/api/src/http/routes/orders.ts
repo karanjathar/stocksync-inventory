@@ -6,6 +6,7 @@ import { currentUser, requireRole } from '../middleware/auth.js';
 import { idParam } from '../params.js';
 import { parse } from '../validate.js';
 import { sendHtml } from './documents.js';
+import { returnBodySchema } from './returns.js';
 
 const discountSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('percent'), basisPoints: z.number().int().min(0).max(10_000) }),
@@ -25,6 +26,10 @@ export function orderRoutes(c: Container): Router {
   const r = Router();
   const write = requireRole('staff');
   r.get('/', async (req, res) => { res.json(await c.orders.list(parse(listSchema, req.query))); });
+  r.post('/:id/returns', write, async (req, res) => {
+    const { salesReturn, created } = await c.returns.create(idParam(req), parse(returnBodySchema, req.body), currentUser(req).id);
+    res.status(created ? 201 : 200).json(salesReturn);
+  });
   r.get('/:id/packing-slip', write, async (req, res) => { sendHtml(res, await c.documents.packingSlip(idParam(req))); });
   r.get('/:id', async (req, res) => {
     const o = await c.orders.get(idParam(req));

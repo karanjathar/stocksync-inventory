@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import { ConflictError, NotFoundError, ValidationError } from '../domain/errors.js';
-import type { Invoice, Order } from '../domain/types.js';
+import type { CreditNote, Invoice, Order } from '../domain/types.js';
 import { formatMoney } from './money.js';
 import type { OrdersService } from './orders.js';
 import type { SettingsService } from './settings.js';
@@ -56,6 +56,26 @@ export function renderInvoice(inv: Invoice): string {
     ${inv.inclusive ? '<p class="muted">Prices include tax.</p>' : ''}
     ${inv.status === 'VOID' ? `<p><strong>This invoice was voided${inv.voidedAt ? ` on ${day(inv.voidedAt)}` : ''}.</strong></p>` : ''}
     <p class="muted">Thank you for your business.</p>`);
+}
+
+export function renderCreditNote(cn: CreditNote): string {
+  const m = (c: number) => esc(formatMoney(c, cn.currency));
+  const rows = cn.lines.map((l) => `<tr><td>${esc(l.sku)}</td><td>${esc(l.name)}</td><td class="num">${l.quantity}</td><td class="num">${m(l.unitPriceCents)}</td>
+    <td class="num">${pct(l.taxRateBp)}</td><td class="num">${m(l.taxCents)}</td><td class="num">${m(l.totalCents)}</td></tr>`).join('');
+  return page(`Credit note ${cn.number}`, `
+    <div class="row"><div><h1>${esc(cn.seller.businessName)}</h1>
+      <div class="muted">${esc(cn.seller.address).replace(/\n/g, '<br>')}</div>
+      ${cn.seller.taxId ? `<div>Tax ID: ${esc(cn.seller.taxId)}</div>` : ''}</div>
+      <div style="text-align:right"><h1>CREDIT NOTE</h1><div><strong>${esc(cn.number)}</strong></div>
+      <div>Date: ${day(cn.issuedAt)}</div><div class="muted">Order #${cn.orderNumber}${cn.invoiceNumber ? ` · against invoice ${esc(cn.invoiceNumber)}` : ''}</div></div></div>
+    <h2>Credited to</h2><div>${esc(cn.customer.name)}</div>
+    ${cn.reason ? `<h2>Reason</h2><div>${esc(cn.reason)}</div>` : ''}
+    <table><thead><tr><th>SKU</th><th>Item</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Tax %</th><th class="num">Tax</th><th class="num">Credit</th></tr></thead><tbody>${rows}</tbody></table>
+    <table class="totals"><tbody>
+      <tr><td>Subtotal</td><td class="num">${m(cn.subtotalCents)}</td></tr>
+      <tr><td>Tax reversed</td><td class="num">${m(cn.taxCents)}</td></tr>
+      <tr class="grand"><td>Total credit</td><td class="num">${m(cn.totalCents)}</td></tr></tbody></table>
+    ${cn.inclusive ? '<p class="muted">Prices include tax.</p>' : ''}`);
 }
 
 export function renderPackingSlip(order: Order, warehouseCode: string | null, businessName: string): string {

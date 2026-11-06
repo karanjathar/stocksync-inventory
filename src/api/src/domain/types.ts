@@ -60,3 +60,12 @@ export interface Invoice { id: string; orderId: string; orderNumber: number; num
   seller: { businessName: string; taxId: string; address: string; whatsappNumber: string };
   customer: { name: string; phone: string | null; email: string | null }; lines: InvoiceLine[];
   subtotalCents: number; discountCents: number; taxCents: number; totalCents: number; issuedAt: string; voidedAt: string | null }
+export type RefundStatus = 'NOT_REQUIRED' | 'REFUND_DUE' | 'REFUNDED';
+export interface SalesReturnItem { orderItemId: string; sku: string; name: string; quantity: number; creditTaxCents: number; creditTotalCents: number }
+export interface SalesReturn { id: string; number: number; orderId: string; orderNumber: number; warehouseId: string;
+  creditSubtotalCents: number; creditTaxCents: number; creditTotalCents: number; reason: string; refundStatus: RefundStatus; refundCents: number;
+  requestId: string; createdAt: string; items: SalesReturnItem[]; creditNote: { id: string; number: string } }
+export interface CreditNoteLine { sku: string; name: string; quantity: number; unitPriceCents: number; netCents: number; taxRateBp: number; taxCents: number; totalCents: number }
+export interface CreditNote { id: string; number: string; salesReturnId: string; orderId: string; orderNumber: number; invoiceNumber: string | null;
+  currency: string; inclusive: boolean; seller: Invoice['seller']; customer: Invoice['customer']; lines: CreditNoteLine[]; reason: string;
+  subtotalCents: number; taxCents: number; totalCents: number; issuedAt: string }
