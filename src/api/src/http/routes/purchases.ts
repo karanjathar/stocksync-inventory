@@ -21,6 +21,13 @@ const createSchema = z.object({
   items,
 });
 const patchSchema = createSchema.partial();
+const receiveSchema = z.object({
+  lines: z.array(z.object({
+    itemId: z.string().uuid(),
+    quantity: z.number().int().positive().max(1_000_000),
+    warehouseId: z.string().uuid().optional(),
+  })).min(1).max(200),
+});
 const listSchema = z.object({
   status: z.enum(['DRAFT', 'SENT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED']).optional(),
   supplierId: z.string().uuid().optional(),
@@ -40,6 +47,9 @@ export function purchaseRoutes(c: Container): Router {
   });
   r.patch('/:id', write, async (req, res) => { res.json(await c.purchases.update(idParam(req), parse(patchSchema, req.body))); });
   r.post('/:id/send', write, async (req, res) => { res.json(await c.purchases.send(idParam(req))); });
+  r.post('/:id/receive', write, async (req, res) => {
+    res.json(await c.purchases.receive(idParam(req), parse(receiveSchema, req.body).lines, currentUser(req).id));
+  });
   r.post('/:id/cancel', write, async (req, res) => { res.json(await c.purchases.cancel(idParam(req))); });
   return r;
 }

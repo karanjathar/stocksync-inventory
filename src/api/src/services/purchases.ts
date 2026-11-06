@@ -2,6 +2,7 @@ import type pg from 'pg';
 import { withTx } from '../db/tx.js';
 import { ConflictError, NotFoundError, ValidationError } from '../domain/errors.js';
 import type { PurchaseOrder, PurchaseOrderItem, PurchaseStatus } from '../domain/types.js';
+import type { StockService } from './stock.js';
 
 export interface PurchaseLineInput { productId: string; quantity: number; unitCostCents: number }
 export interface NewPurchaseOrder {
@@ -12,6 +13,7 @@ export interface NewPurchaseOrder {
   items: PurchaseLineInput[];
   userId: string | null;
 }
+export interface ReceiveLine { itemId: string; quantity: number; warehouseId?: string }
 export interface PurchasePatch {
   supplierId?: string;
   warehouseId?: string;
@@ -32,7 +34,7 @@ type PoRow = Omit<PurchaseOrder, 'items'>;
 
 /** Purchase orders. Receiving stock against them is a separate step (T60) and always goes through StockService. */
 export class PurchasesService {
-  constructor(private readonly pool: pg.Pool) {}
+  constructor(private readonly pool: pg.Pool, private readonly stock: StockService) {}
 
   async create(input: NewPurchaseOrder): Promise<PurchaseOrder> {
     const total = this.total(input.items);
@@ -75,6 +77,46 @@ export class PurchasesService {
 
   async cancel(id: string): Promise<PurchaseOrder> {
     await this.transition(id, ['DRAFT', 'SENT'], 'CANCELLED', 'cancelled');
+    return (await this.get(id))!;
+  }
+
+  /**
+   * Books received goods through StockService (the only stock write path) in one transaction with the PO update.
+   * The PO row and its item rows are locked, so concurrent or repeated submits cannot receive more than was ordered.
+   */
+  async receive(id: string, lines: ReceiveLine[], userId: string | null): Promise<PurchaseOrder> {
+    if (!lines.length) throw new ValidationError('At least one line is required');
+    if (new Set(lines.map((l) => l.itemId)).size !== lines.length) throw new ValidationError('Each item may appear only once per receipt');
+    const changes = await withTx(this.pool, async (c) => {
+      const po = await this.lock(c, id);
+      if (po.status !== 'SENT' && po.status !== 'PARTIALLY_RECEIVED') {
+        throw new ConflictError(`Only SENT or partially received purchase orders can be received (this one is ${po.status})`);
+      }
+      const { rows: items } = await c.query<{ id: string; productId: string; sku: string; quantity: number; received: number }>(
+        `SELECT poi.id, poi.product_id AS "productId", p.sku, poi.quantity, poi.received_quantity AS received
+         FROM purchase_order_items poi JOIN products p ON p.id = poi.product_id WHERE poi.purchase_order_id = $1 FOR UPDATE OF poi`, [id]);
+      const byId = new Map(items.map((i) => [i.id, i]));
+      const deltas = [];
+      for (const l of lines) {
+        const item = byId.get(l.itemId);
+        if (!item) throw new NotFoundError('Purchase order item');
+        const remaining = item.quantity - item.received;
+        if (l.quantity > remaining) throw new ConflictError(`Cannot receive ${l.quantity} of ${item.sku}: only ${remaining} still expected`);
+        deltas.push({
+          productId: item.productId, warehouseId: l.warehouseId ?? po.warehouseId, delta: l.quantity, type: 'IN' as const,
+          reason: `Purchase order #${po.number}`, reference: `PO-${po.number}`, userId,
+        });
+      }
+      const applied = await this.stock.applyMany(c, deltas);
+      for (const l of lines) {
+        await c.query('UPDATE purchase_order_items SET received_quantity = received_quantity + $2 WHERE id = $1', [l.itemId, l.quantity]);
+        byId.get(l.itemId)!.received += l.quantity;
+      }
+      const complete = [...byId.values()].every((i) => i.received === i.quantity);
+      await c.query('UPDATE purchase_orders SET status = $2, updated_at = now() WHERE id = $1', [id, complete ? 'RECEIVED' : 'PARTIALLY_RECEIVED']);
+      return applied;
+    });
+    await this.stock.notify(changes);
     return (await this.get(id))!;
   }
 
@@ -133,8 +175,8 @@ export class PurchasesService {
   }
 
   private async lock(c: pg.PoolClient, id: string) {
-    const { rows } = await c.query<{ status: PurchaseStatus; supplierId: string; warehouseId: string; expectedDate: string | null; notes: string }>(
-      `SELECT status, supplier_id AS "supplierId", warehouse_id AS "warehouseId", to_char(expected_date, 'YYYY-MM-DD') AS "expectedDate", notes
+    const { rows } = await c.query<{ status: PurchaseStatus; number: number; supplierId: string; warehouseId: string; expectedDate: string | null; notes: string }>(
+      `SELECT status, number, supplier_id AS "supplierId", warehouse_id AS "warehouseId", to_char(expected_date, 'YYYY-MM-DD') AS "expectedDate", notes
        FROM purchase_orders WHERE id = $1 FOR UPDATE`, [id]);
     if (!rows[0]) throw new NotFoundError('Purchase order');
     return rows[0];
