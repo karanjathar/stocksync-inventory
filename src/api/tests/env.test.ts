@@ -64,4 +64,18 @@ describe('provider base URLs must be https in production (T56)', () => {
   it('reports every offending variable at once', () => {
     expect(() => loadEnv({ ...prod, RAZORPAY_API_BASE: 'http://a.example', META_GRAPH_BASE: 'http://b.example' })).toThrow(/RAZORPAY_API_BASE[\s\S]*META_GRAPH_BASE/);
   });
+
+  describe('default admin password guard', () => {
+    const prod = { ...base, NODE_ENV: 'production', PUBLIC_BASE_URL: 'https://shop.example.com' };
+    it('refuses the well-known default password on a public https deployment', () => {
+      expect(() => loadEnv({ ...prod, ADMIN_PASSWORD: 'ChangeMe123!' })).toThrow(/ADMIN_PASSWORD/);
+    });
+    it('refuses very short admin passwords on a public https deployment', () => {
+      expect(() => loadEnv({ ...prod, ADMIN_PASSWORD: 'short1' })).toThrow(/ADMIN_PASSWORD/);
+    });
+    it('accepts a strong password, and the local quick start (http localhost) keeps its default', () => {
+      expect(loadEnv({ ...prod, ADMIN_PASSWORD: 'a-long-unique-passphrase-9' }).ADMIN_PASSWORD).toBeDefined();
+      expect(loadEnv({ ...base, NODE_ENV: 'production', PUBLIC_BASE_URL: 'http://localhost:3005', ADMIN_PASSWORD: 'ChangeMe123!' })).toBeDefined();
+    });
+  });
 });

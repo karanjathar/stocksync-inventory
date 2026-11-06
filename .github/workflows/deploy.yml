@@ -87,7 +87,8 @@ jobs:
   deploy:
     name: Build image & deploy to Azure Container Apps
     needs: [test, e2e]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    # Parenthesised: only ever deploy main, including manual runs (a dispatch from another branch must not reach production).
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -108,9 +109,13 @@ jobs:
       - name: Build and push image to ACR
         run: |
           az acr login --name "${{ vars.ACR_NAME }}"
-          docker build --pull -t "$IMAGE" -t "${{ vars.ACR_NAME }}.azurecr.io/stocksync:latest" .
+          docker build --pull -t "$IMAGE" .
           docker push "$IMAGE"
-          docker push "${{ vars.ACR_NAME }}.azurecr.io/stocksync:latest"
+
+      - name: Remember the running image (for rollback)
+        run: |
+          prev=$(az containerapp show -n "${{ vars.CONTAINER_APP_NAME }}" -g "${{ vars.AZURE_RESOURCE_GROUP }}" --query "properties.template.containers[0].image" -o tsv || true)
+          echo "PREVIOUS_IMAGE=$prev" >> "$GITHUB_ENV"
 
       - name: Deploy new revision
         run: |
@@ -129,3 +134,13 @@ jobs:
           done
           echo "Health check failed for $url" >&2
           exit 1
+
+      - name: Roll back to the previous image if the new one is unhealthy
+        if: failure() && env.PREVIOUS_IMAGE != ''
+        run: |
+          az containerapp update \
+            --name "${{ vars.CONTAINER_APP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --image "$PREVIOUS_IMAGE" \
+            --output none
+          echo "Rolled back to $PREVIOUS_IMAGE" >&2
