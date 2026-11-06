@@ -25,7 +25,7 @@ export interface Order { id: string; number: number; customerId: string; custome
   paymentMethod: PaymentMethod; paymentStatus: PaymentStatus; publicToken: string }
 export interface AlertRecipient { channel: ChannelName; to: string }
 export interface CustomFieldDef { key: string; label: string; type: 'text' | 'number' | 'select'; options?: string[] }
-export interface Settings { businessName: string; currency: string; pricesIncludeTax: boolean; whatsappNumber: string; defaultWarehouseId: string | null;
+export interface Settings { businessName: string; currency: string; pricesIncludeTax: boolean; taxId: string; businessAddress: string; whatsappNumber: string; defaultWarehouseId: string | null;
   alertRecipients: AlertRecipient[]; customFields: CustomFieldDef[]; payments: PaymentSettings }
 export interface ChannelMessage { id: string; channel: ChannelName; direction: 'in' | 'out'; externalUser: string; text: string; status: string; createdAt: string }
 /** `action` is the id of a tapped button / list row / quick reply (docs/3_SCHEMAS.md §3.12); absent for typed text. */
@@ -53,3 +53,10 @@ export interface Bill { id: string; number: number; supplierId: string; supplier
   totalCents: number; paidCents: number; dueDate: string; createdAt: string; payments: BillPayment[] }
 export interface PayablesRow { supplierId: string; supplierName: string; openCents: number; overdueCents: number; billCount: number }
 export interface Payables { suppliers: PayablesRow[]; totalOpenCents: number; totalOverdueCents: number }
+export type InvoiceStatus = 'ISSUED' | 'VOID';
+export interface InvoiceLine { sku: string; name: string; quantity: number; unitPriceCents: number; discountCents: number; netCents: number;
+  taxRateBp: number; taxCents: number; totalCents: number }
+export interface Invoice { id: string; orderId: string; orderNumber: number; number: string; status: InvoiceStatus; currency: string; inclusive: boolean;
+  seller: { businessName: string; taxId: string; address: string; whatsappNumber: string };
+  customer: { name: string; phone: string | null; email: string | null }; lines: InvoiceLine[];
+  subtotalCents: number; discountCents: number; taxCents: number; totalCents: number; issuedAt: string; voidedAt: string | null }

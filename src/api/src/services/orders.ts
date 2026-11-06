@@ -5,6 +5,7 @@ import { priceOrder, type Discount, type PricedLine } from '../domain/pricing.js
 import type { Order, OrderChannel, OrderItem, OrderStatus, PaymentMethod } from '../domain/types.js';
 import type { EventBus } from '../realtime/bus.js';
 import type { SettingsService } from './settings.js';
+import type { InvoicesService } from './invoices.js';
 import type { StockService } from './stock.js';
 
 /** Abuse guard: a customer can have at most this many PENDING orders (chat, web). Staff-entered orders are exempt. */
@@ -40,6 +41,7 @@ type OrderRow = Omit<Order, 'items'>;
 
 export class OrdersService {
   private readonly observers: OrderStatusObserver[] = [];
+  private invoices: InvoicesService | undefined;
 
   constructor(
     private readonly pool: pg.Pool,
@@ -50,6 +52,9 @@ export class OrdersService {
   ) {}
 
   onStatusChange(o: OrderStatusObserver): void { this.observers.push(o); }
+
+  /** Invoices are issued inside the confirming transaction and voided inside the cancelling one. */
+  setInvoices(invoices: InvoicesService): void { this.invoices = invoices; }
 
   /** Prices items exactly as an order would be priced (no discounts). Used by the shop and chat to show the real total. */
   async quote(items: { productId: string; quantity: number }[]): Promise<Quote> {
@@ -94,13 +99,14 @@ export class OrdersService {
         orderDiscount: input.discount, inclusive,
       });
       const { rows } = await c.query<{ id: string }>(
-        `INSERT INTO orders (customer_id, channel, status, warehouse_id, total_cents, subtotal_cents, tax_cents, discount_cents, notes, payment_method)
-         VALUES ($1, $2, 'PENDING', $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-        [input.customerId, input.channel, input.warehouseId ?? null, priced.totalCents, priced.subtotalCents, priced.taxCents, priced.discountCents, input.notes ?? '', input.paymentMethod ?? 'COD']);
+        `INSERT INTO orders (customer_id, channel, status, warehouse_id, total_cents, subtotal_cents, tax_cents, discount_cents, prices_include_tax, notes, payment_method)
+         VALUES ($1, $2, 'PENDING', $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+        [input.customerId, input.channel, input.warehouseId ?? null, priced.totalCents, priced.subtotalCents, priced.taxCents, priced.discountCents, inclusive, input.notes ?? '', input.paymentMethod ?? 'COD']);
       const orderId = rows[0]!.id;
       for (const [i, p] of products.entries()) {
-        await c.query('INSERT INTO order_items (order_id, product_id, quantity, unit_price_cents, tax_rate_bp, discount_cents) VALUES ($1, $2, $3, $4, $5, $6)',
-          [orderId, p.id, merged.get(p.id)!.quantity, p.priceCents, p.rateBp, priced.lines[i]!.discountCents]);
+        const line = priced.lines[i]!;
+        await c.query('INSERT INTO order_items (order_id, product_id, quantity, unit_price_cents, tax_rate_bp, discount_cents, tax_cents, total_cents) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+          [orderId, p.id, merged.get(p.id)!.quantity, p.priceCents, p.rateBp, line.discountCents, line.taxCents, line.totalCents]);
       }
       return orderId;
     });
@@ -123,6 +129,7 @@ export class OrdersService {
         reason: `Order #${row.number}`, reference: `ORDER-${row.number}`, userId,
       })));
       await c.query("UPDATE orders SET status = 'CONFIRMED', warehouse_id = $2, updated_at = now() WHERE id = $1", [id, wh]);
+      await this.invoices?.issueWith(c, id, defaults);
       return { changes };
     });
     await this.stock.notify(changes);
@@ -151,6 +158,7 @@ export class OrdersService {
         })));
       }
       await c.query("UPDATE orders SET status = 'CANCELLED', updated_at = now() WHERE id = $1", [id]);
+      await this.invoices?.voidWith(c, id);
       return { previous: row.status, changes };
     });
     await this.stock.notify(changes);

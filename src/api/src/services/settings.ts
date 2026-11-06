@@ -7,6 +7,8 @@ export const DEFAULT_SETTINGS: Settings = {
   businessName: 'StockSync',
   currency: 'USD',
   pricesIncludeTax: false,
+  taxId: '',
+  businessAddress: '',
   whatsappNumber: '',
   defaultWarehouseId: null,
   alertRecipients: [],
@@ -18,6 +20,8 @@ export const settingsPatchSchema = z.object({
   businessName: z.string().trim().min(1).max(120).optional(),
   currency: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/, 'ISO 4217 code').optional(),
   pricesIncludeTax: z.boolean().optional(),
+  taxId: z.string().trim().max(40).optional(),
+  businessAddress: z.string().trim().max(500).optional(),
   whatsappNumber: z.string().trim().regex(/^(\+?[0-9]{6,15})?$/, 'digits only, international format').optional(),
   defaultWarehouseId: z.string().uuid().nullable().optional(),
   alertRecipients: z.array(z.object({
