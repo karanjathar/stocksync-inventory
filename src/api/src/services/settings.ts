@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultWarehouseId: null,
   alertRecipients: [],
   customFields: [],
+  payments: { onlineEnabled: true, codEnabled: true, linkExpiryMinutes: 1440 },
 };
 
 export const settingsPatchSchema = z.object({
@@ -27,6 +28,11 @@ export const settingsPatchSchema = z.object({
     type: z.enum(['text', 'number', 'select']),
     options: z.array(z.string().trim().min(1).max(60)).max(50).optional(),
   })).max(50).optional(),
+  payments: z.object({
+    onlineEnabled: z.boolean(),
+    codEnabled: z.boolean(),
+    linkExpiryMinutes: z.number().int().min(15).max(7 * 24 * 60),
+  }).optional(),
 });
 
 export class SettingsService {

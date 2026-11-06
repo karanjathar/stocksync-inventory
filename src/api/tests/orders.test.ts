@@ -29,6 +29,7 @@ describe('orders', () => {
     const res = await post('/api/orders', { customerId, items: [{ productId: ids.tee.id, quantity: 2 }, { productId: ids.tee.id, quantity: 1 }, { productId: ids.mug.id, quantity: 1 }] });
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ status: 'PENDING', channel: 'manual', customerName: 'Buyer', totalCents: 3 * 1500 + 800, number: expect.any(Number) });
+    expect(res.body).toMatchObject({ paymentMethod: 'COD', paymentStatus: 'UNPAID', publicToken: expect.stringMatching(/^[0-9a-f-]{36}$/) });
     expect(res.body.items).toHaveLength(2);
     expect(res.body.items.find((i: { sku: string }) => i.sku === 'TEE')).toMatchObject({ quantity: 3, unitPriceCents: 1500, name: 'T-Shirt' });
     orderId = res.body.id;
@@ -89,5 +90,12 @@ describe('orders', () => {
     expect(pending.body).toHaveLength(1);
     const byNum = await t.c.orders.getByNumber(all.body[0].number);
     expect(byNum?.id).toBe(all.body[0].id);
+  });
+
+  it('records the payment method for chat/web orders (T29)', async () => {
+    const o = await t.c.orders.create({ customerId, channel: 'web', paymentMethod: 'ONLINE', items: [{ productId: ids.tee.id, quantity: 1 }] });
+    expect(o).toMatchObject({ paymentMethod: 'ONLINE', paymentStatus: 'UNPAID' });
+    expect((await t.c.orders.list({ status: 'PENDING' })).find((x) => x.id === o.id)?.paymentMethod).toBe('ONLINE');
+    await t.c.orders.cancel(o.id, null);
   });
 });

@@ -1,0 +1,30 @@
+{
+  "id": "go",
+  "label": "Go",
+  "description": "Go (stable), go vet, golangci-lint, go test -race, govulncheck",
+  "commands": {
+    "install": "go mod download",
+    "dev": "go run ./...",
+    "gates": [
+      { "name": "vet", "run": "go vet ./...", "required": true },
+      { "name": "lint", "run": "golangci-lint run", "required": false },
+      { "name": "test", "run": "go test -race ./...", "required": true },
+      { "name": "build", "run": "go build ./...", "required": true },
+      { "name": "audit", "run": "govulncheck ./...", "required": false }
+    ]
+  },
+  "conventions": [
+    "Handle every error explicitly; no `_ =` on errors and no panics in library code.",
+    "Use `context.Context` for cancellation on all I/O; accept interfaces, return structs.",
+    "Configuration from environment parsed once into a typed struct at startup.",
+    "Table-driven tests; run with -race."
+  ],
+  "gitignore": ["bin/", "dist/", "coverage.out"],
+  "ci": {
+    "setup": [
+      "- uses: actions/setup-go@v5",
+      "  with:",
+      "    go-version: stable"
+    ]
+  }
+}

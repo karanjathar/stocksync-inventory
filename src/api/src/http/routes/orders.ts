@@ -31,6 +31,11 @@ export function orderRoutes(c: Container): Router {
     const { warehouseId } = parse(confirmSchema, req.body ?? {});
     res.json(await c.orders.confirm(idParam(req), warehouseId, currentUser(req).id));
   });
+  r.post('/:id/payment-link', write, async (req, res) => {
+    const { notify } = parse(z.object({ notify: z.boolean().optional() }), req.body ?? {});
+    res.json(await c.payments.sendLink(idParam(req), notify ?? false));
+  });
+  r.post('/:id/refunded', write, async (req, res) => { res.json(await c.payments.markRefunded(idParam(req))); });
   r.post('/:id/fulfill', write, async (req, res) => { res.json(await c.orders.fulfill(idParam(req))); });
   r.post('/:id/cancel', write, async (req, res) => { res.json(await c.orders.cancel(idParam(req), currentUser(req).id)); });
   return r;

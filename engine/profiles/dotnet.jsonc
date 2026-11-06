@@ -1,0 +1,29 @@
+{
+  "id": "dotnet",
+  "label": ".NET (C#)",
+  "description": ".NET 9, C# with nullable reference types, xUnit, dotnet format",
+  "commands": {
+    "install": "dotnet restore",
+    "dev": "dotnet watch run",
+    "gates": [
+      { "name": "format", "run": "dotnet format --verify-no-changes", "required": true },
+      { "name": "build", "run": "dotnet build --no-restore -warnaserror", "required": true },
+      { "name": "test", "run": "dotnet test --no-build", "required": true },
+      { "name": "audit", "run": "dotnet list package --vulnerable --include-transitive", "required": false }
+    ]
+  },
+  "conventions": [
+    "<Nullable>enable</Nullable> and <TreatWarningsAsErrors>true</TreatWarningsAsErrors>; no `dynamic`, no `#pragma warning disable` without a recorded decision.",
+    "Validate input with FluentValidation or data annotations at the API boundary.",
+    "Configuration via IOptions<T> bound from environment / Key Vault; never hard-coded connection strings.",
+    "Central package management (Directory.Packages.props) with pinned versions."
+  ],
+  "gitignore": ["bin/", "obj/", "TestResults/", "*.user"],
+  "ci": {
+    "setup": [
+      "- uses: actions/setup-dotnet@v4",
+      "  with:",
+      "    dotnet-version: '9.0.x'"
+    ]
+  }
+}

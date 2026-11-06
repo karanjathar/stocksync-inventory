@@ -1,11 +1,19 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth';
 import { useAction, useApi } from '../hooks';
 import { useSettings } from '../settings';
 import { dateTime, money } from '../format';
 import { Badge, Card, Empty, ErrorBanner, Field, Page, STATUS_TONE } from '../components/ui';
-import type { Customer, Order, OrderStatus, Product, Warehouse } from '../api/types';
+import { subscribeEvents } from '../api/events';
+import type { Customer, Order, OrderStatus, PaymentsConfig, Product, Warehouse } from '../api/types';
+
+const CHAT_CHANNELS: readonly string[] = ['whatsapp', 'messenger', 'instagram', 'telegram'];
+const METHOD_LABEL = { COD: 'Cash on delivery', ONLINE: 'Online' } as const;
+const PAY_LABEL = { UNPAID: 'unpaid', PAID: 'paid', REFUND_DUE: 'Refund due', REFUNDED: 'refunded' } as const;
+const PAY_TONE = { UNPAID: 'neutral', PAID: 'good', REFUND_DUE: 'bad', REFUNDED: 'info' } as const;
+
+interface LinkInfo { number: number; url: string; notified: boolean; copied: boolean; sent: boolean }
 
 const FILTERS: (OrderStatus | 'ALL')[] = ['ALL', 'PENDING', 'CONFIRMED', 'FULFILLED', 'CANCELLED'];
 
@@ -17,8 +25,32 @@ export function Orders() {
   const [warehouseFor, setWarehouseFor] = useState<Record<string, string>>({});
   const orders = useApi<Order[]>(filter === 'ALL' ? '/orders' : `/orders?status=${filter}`);
   const warehouses = useApi<Warehouse[]>('/warehouses');
+  const payConfig = useApi<PaymentsConfig>('/payments/config');
   const action = useAction();
   const canWrite = can('staff');
+  const [linkInfo, setLinkInfo] = useState<LinkInfo | null>(null);
+  const { reload } = orders;
+  // Live: payments and orders change while this page is open (Razorpay webhooks, chat orders).
+  useEffect(() => subscribeEvents((e) => {
+    if (e.type === 'payment.updated' || e.type === 'order.created' || e.type === 'order.updated') reload();
+  }), [reload]);
+
+  const markRefunded = async (o: Order) => {
+    if (!window.confirm(`Have you already refunded ${money(o.totalCents, settings.currency)} to ${o.customerName} in the Razorpay dashboard?\n\nThis clears the refund flag and tells the customer the refund was issued.`)) return;
+    const ok = await action.run(() => api(`/orders/${o.id}/refunded`, { body: {} }));
+    if (ok) orders.reload();
+  };
+
+  const paymentLink = async (o: Order, notify: boolean) => {
+    const res = await action.run(() => api<{ url: string; expiresAt: string; notified: boolean }>(`/orders/${o.id}/payment-link`, { body: { notify } }));
+    if (!res) return;
+    let copied = false;
+    if (!notify) {
+      try { await navigator.clipboard.writeText(res.url); copied = true; } catch { /* clipboard blocked: the URL is shown below */ }
+    }
+    setLinkInfo({ number: o.number, url: res.url, notified: res.notified, copied, sent: notify });
+    orders.reload(); // a COD order becomes ONLINE when a link is requested
+  };
 
   const transition = async (o: Order, verb: 'confirm' | 'fulfill' | 'cancel') => {
     if (verb === 'cancel' && !window.confirm(`Cancel order #${o.number}?${o.status === 'CONFIRMED' ? ' Stock will be returned.' : ''}`)) return;
@@ -31,6 +63,16 @@ export function Orders() {
   return (
     <Page title="Orders" actions={canWrite && <button className="primary" onClick={() => setCreating(true)}>+ New order</button>}>
       <ErrorBanner error={orders.error ?? action.error} />
+      {linkInfo && (
+        <div className="banner ok" role="status">
+          <strong>Payment link for order #{linkInfo.number}</strong>
+          <code className="code-line">{linkInfo.url}</code>
+          {linkInfo.sent
+            ? (linkInfo.notified ? '✅ Sent to the customer\'s chat.' : '⚠️ This customer can\'t be reached on chat — select and copy the link above to share it.')
+            : (linkInfo.copied ? '📋 Copied to the clipboard.' : 'Select and copy the link above to share it.')}
+          {' '}<button className="ghost small" onClick={() => setLinkInfo(null)}>Dismiss</button>
+        </div>
+      )}
       {creating && <NewOrder onDone={() => { setCreating(false); orders.reload(); }} onCancel={() => setCreating(false)} />}
       <div className="row" role="tablist">
         {FILTERS.map((f) => (
@@ -44,12 +86,19 @@ export function Orders() {
               <thead><tr><th>Order</th><th>Customer</th><th>Items</th><th className="num">Total</th><th>Status</th><th /></tr></thead>
               <tbody>
                 {orders.data.map((o) => (
-                  <tr key={o.id}>
+                  <tr key={o.id} className={o.paymentStatus === 'REFUND_DUE' ? 'row-alert' : undefined}>
                     <td><strong>#{o.number}</strong><div className="muted small">{dateTime(o.createdAt)}</div></td>
                     <td>{o.customerName}<div><Badge tone="info">{o.channel}</Badge></div></td>
                     <td>{o.items.map((i) => <div key={i.productId}>{i.quantity} × {i.name}</div>)}{o.notes && <div className="muted small">{o.notes}</div>}</td>
                     <td className="num">{money(o.totalCents, settings.currency)}</td>
-                    <td><Badge tone={STATUS_TONE[o.status]}>{o.status}</Badge></td>
+                    <td>
+                      <Badge tone={STATUS_TONE[o.status]}>{o.status}</Badge>
+                      <div className="row" style={{ marginTop: 4 }}>
+                        <Badge>{METHOD_LABEL[o.paymentMethod]}</Badge>
+                        <Badge tone={PAY_TONE[o.paymentStatus]}>{PAY_LABEL[o.paymentStatus]}</Badge>
+                      </div>
+                      {o.paymentStatus === 'REFUND_DUE' && <div className="small" style={{ color: 'var(--bad)' }}>Refund the customer in Razorpay</div>}
+                    </td>
                     <td>{canWrite && (
                       <div className="row" style={{ justifyContent: 'flex-end' }}>
                         {o.status === 'PENDING' && (
@@ -65,6 +114,13 @@ export function Orders() {
                         )}
                         {o.status === 'CONFIRMED' && <button className="small primary" disabled={action.busy} onClick={() => void transition(o, 'fulfill')}>Fulfil</button>}
                         {(o.status === 'PENDING' || o.status === 'CONFIRMED') && <button className="small danger" disabled={action.busy} onClick={() => void transition(o, 'cancel')}>Cancel</button>}
+                        {o.paymentStatus === 'REFUND_DUE' && <button className="small primary" disabled={action.busy} onClick={() => void markRefunded(o)}>Mark refunded</button>}
+                        {payConfig.data?.onlineAvailable && o.paymentStatus === 'UNPAID' && o.status !== 'CANCELLED' && (
+                          <>
+                            {CHAT_CHANNELS.includes(o.channel) && <button className="small" disabled={action.busy} onClick={() => void paymentLink(o, true)}>Send link</button>}
+                            <button className="small" disabled={action.busy} onClick={() => void paymentLink(o, false)}>Copy link</button>
+                          </>
+                        )}
                       </div>
                     )}</td>
                   </tr>

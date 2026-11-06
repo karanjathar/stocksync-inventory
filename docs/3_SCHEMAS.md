@@ -144,3 +144,157 @@ Inbound:
 ## 3.5 Bot Command Grammar (case-insensitive)
 `help` · `catalog` (top 10 active in stock) · `stock <SKU>` · `price <SKU>` · `order <SKU> <qty>` · `status <number>`.
 Anything else → help text.
+
+---
+# Release 2 contracts (payments & tap-to-order)
+
+## 3.6 Release 2 Database — `src/api/migrations/003_payments_chat.sql`
+```sql
+ALTER TABLE orders
+  ADD COLUMN payment_method text NOT NULL DEFAULT 'COD' CHECK (payment_method IN ('COD','ONLINE')),
+  ADD COLUMN payment_status text NOT NULL DEFAULT 'UNPAID' CHECK (payment_status IN ('UNPAID','PAID','REFUND_DUE')),
+  ADD COLUMN public_token uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE;     -- unguessable id for /shop/order/<token>
+
+CREATE TABLE payments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id uuid NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  provider text NOT NULL DEFAULT 'razorpay',
+  provider_ref text NOT NULL UNIQUE,                 -- plink_xxx
+  reference_id text NOT NULL UNIQUE,                 -- sent to Razorpay, e.g. ORD-42-1a2b
+  status text NOT NULL CHECK (status IN ('CREATED','PAID','EXPIRED','CANCELLED')),
+  amount_cents integer NOT NULL CHECK (amount_cents > 0),
+  currency text NOT NULL,
+  short_url text NOT NULL,
+  provider_payment_id text,                          -- pay_xxx once paid
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX payments_one_open_per_order ON payments(order_id) WHERE status = 'CREATED';
+
+CREATE TABLE webhook_events (provider text NOT NULL, event_id text NOT NULL, received_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (provider, event_id));
+
+CREATE TABLE chat_carts (customer_id uuid PRIMARY KEY REFERENCES customers(id) ON DELETE CASCADE,
+  items jsonb NOT NULL DEFAULT '[]',                 -- [{ "productId": uuid, "quantity": int }]
+  updated_at timestamptz NOT NULL DEFAULT now());
+```
+
+## 3.7 Release 2 Types — additions to `src/api/src/domain/types.ts`
+```ts
+export type PaymentMethod = 'COD' | 'ONLINE';
+export type PaymentStatus = 'UNPAID' | 'PAID' | 'REFUND_DUE' | 'REFUNDED';   // REFUNDED added by migration 004 (T58)
+// Order gains: paymentMethod: PaymentMethod; paymentStatus: PaymentStatus; publicToken: string
+export interface Payment { id: string; orderId: string; provider: 'razorpay'; providerRef: string; referenceId: string;
+  status: 'CREATED' | 'PAID' | 'EXPIRED' | 'CANCELLED'; amountCents: number; currency: string; shortUrl: string;
+  providerPaymentId: string | null; expiresAt: string; createdAt: string }
+// Settings gains:
+export interface PaymentSettings { onlineEnabled: boolean; codEnabled: boolean; linkExpiryMinutes: number } // defaults true, true, 1440
+// InboundMessage gains: action?: string   (payload of a tapped button / list row, see 3.12)
+// RealtimeEvent gains: { type: 'payment.updated'; orderId: string; number: number; paymentStatus: PaymentStatus }
+```
+
+## 3.8 Bot Replies — `src/api/src/channels/reply.ts`
+```ts
+export interface ReplyButton { id: string; title: string }                      // id = action (3.12), title ≤ 20 chars
+export interface ReplyListRow { id: string; title: string; description?: string } // title ≤ 24, description ≤ 72
+export interface BotReply {
+  text: string;                                                                   // ≤ 1024 when interactive
+  buttons?: ReplyButton[];                                                        // ≤ 3
+  list?: { button: string; sections: { title: string; rows: ReplyListRow[] }[] }; // button ≤ 20, ≤ 10 rows total
+  link?: { label: string; url: string };                                          // single URL button, label ≤ 20
+}
+// At most ONE of buttons | list | link. normaliseReply() truncates titles with "…" and drops overflow (never throws).
+// renderPlain(reply): text + "\n\n1. Title\n2. Title…" (+ "\n<label>: <url>") for channels without rich support.
+// Numbered replies ("2") map back to the option id via the last options sent to that user (stored with the outbound message).
+// ChannelAdapter gains: sendReply(to: string, reply: BotReply): Promise<void>   (default: send(to, renderPlain(reply)))
+// Messenger port gains: reply(channel, to, reply: BotReply): Promise<void>
+```
+
+## 3.9 WhatsApp Interactive — Cloud API `POST /{phone-number-id}/messages`
+```jsonc
+// buttons
+{ "messaging_product": "whatsapp", "to": "<wa_id>", "type": "interactive",
+  "interactive": { "type": "button", "body": { "text": "…" },
+    "action": { "buttons": [ { "type": "reply", "reply": { "id": "catalog", "title": "🛍 Browse" } } ] } } }
+// list
+{ …, "interactive": { "type": "list", "body": { "text": "…" },
+    "action": { "button": "Choose", "sections": [ { "title": "Apparel", "rows": [ { "id": "prod:<uuid>", "title": "Red T-Shirt", "description": "₹499 · 40 left" } ] } ] } } }
+// URL button
+{ …, "interactive": { "type": "cta_url", "body": { "text": "…" },
+    "action": { "name": "cta_url", "parameters": { "display_text": "Pay ₹998", "url": "https://rzp.io/i/…" } } } }
+// inbound taps (webhook messages[]):
+{ "id": "wamid…", "from": "<wa_id>", "type": "interactive",
+  "interactive": { "type": "button_reply", "button_reply": { "id": "catalog", "title": "🛍 Browse" } } }
+{ …, "interactive": { "type": "list_reply", "list_reply": { "id": "prod:<uuid>", "title": "Red T-Shirt" } } }
+// inbound template quick-reply: { "type": "button", "button": { "payload": "…", "text": "…" } }
+```
+
+## 3.10 Telegram & Messenger Rich Replies
+```jsonc
+// Telegram sendMessage: buttons/list → one inline button per row; link → url button
+{ "chat_id": "42", "text": "…", "reply_markup": { "inline_keyboard": [[{ "text": "🛍 Browse", "callback_data": "catalog" }], [{ "text": "Pay ₹998", "url": "https://…" }]] } }
+// callback_data ≤ 64 BYTES → actions must fit (uuids are 36 chars; "qty:<uuid>:10" = 43 ✓)
+// inbound: update.callback_query { id, data, from: { first_name }, message: { chat: { id } } }
+//   → treat as InboundMessage { action: data, text: <button text> } and POST /answerCallbackQuery { callback_query_id }
+// Messenger / Instagram Send API: buttons + list rows → quick_replies (≤ 13, title ≤ 20); link → appended to text
+{ "recipient": { "id": "PSID" }, "messaging_type": "RESPONSE",
+  "message": { "text": "…", "quick_replies": [ { "content_type": "text", "title": "Browse", "payload": "catalog" } ] } }
+// inbound: messaging[].message.quick_reply.payload  or  messaging[].postback.payload
+```
+
+## 3.11 Razorpay API — Payment Links (server-side, Basic auth key_id:key_secret)
+```jsonc
+// POST {RAZORPAY_API_BASE=https://api.razorpay.com}/v1/payment_links
+{ "amount": 99800, "currency": "INR", "accept_partial": false, "reference_id": "ORD-42-1a2b",
+  "description": "Corner Shop order #42", "customer": { "name": "Asha", "contact": "+919811112222" },
+  "notify": { "sms": false, "email": false }, "reminder_enable": false,
+  "notes": { "order_id": "<uuid>" }, "callback_url": "<PUBLIC_BASE_URL>/shop/order/<public_token>",
+  "callback_method": "get", "expire_by": 1793999999 }
+// → 200 { "id": "plink_…", "short_url": "https://rzp.io/i/…", "status": "created", "amount": 99800, "reference_id": "ORD-42-1a2b" }
+// POST /v1/payment_links/{id}/cancel → { "status": "cancelled" }
+// Webhook POST /webhooks/razorpay   headers: X-Razorpay-Signature = hex(HMAC_SHA256(rawBody, RAZORPAY_WEBHOOK_SECRET)), X-Razorpay-Event-Id
+{ "event": "payment_link.paid",
+  "payload": { "payment_link": { "entity": { "id": "plink_…", "status": "paid", "amount": 99800, "amount_paid": 99800, "reference_id": "ORD-42-1a2b" } },
+               "payment": { "entity": { "id": "pay_…", "amount": 99800, "status": "captured" } } } }
+// also: payment_link.expired, payment_link.cancelled (payload.payment_link.entity.id)
+// Callback query (UX only, never trusted for state): razorpay_payment_id, razorpay_payment_link_id,
+//   razorpay_payment_link_reference_id, razorpay_payment_link_status, razorpay_signature
+//   = hex(HMAC_SHA256(`${link_id}|${reference_id}|${status}|${payment_id}`, key_secret))
+// Env: RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET, RAZORPAY_API_BASE (tests / E2E fake only)
+```
+
+## 3.12 Chat Action IDs
+| Action | Meaning |
+|---|---|
+| `menu` | Welcome buttons: Browse · My cart · My orders |
+| `catalog` | Category list (or product list if ≤ 1 category) |
+| `cat:<categoryId>:<offset>` | Products in category, 9 per page + "More…" row (`all` = uncategorised/all) |
+| `prod:<productId>` | Product detail + quantity list |
+| `qty:<productId>:<n>` | Add n to cart → buttons Checkout · Keep shopping · Clear cart |
+| `cart` · `cart:clear` · `checkout` | Show cart · empty it · checkout summary with payment buttons |
+| `pay:online` · `pay:cod` | Place order from cart with that method |
+| `orders` · `order:<number>` | Last 5 own orders · one order's status |
+| `paylink:<number>` | (Re)send pay link for own unpaid ONLINE order |
+
+## 3.13 Release 2 REST API
+| Method & Path | Role | Body / Query | Response |
+|---|---|---|---|
+| POST /webhooks/razorpay | signed | Razorpay event | 200 `{ok:true}` · 401 bad signature · 503 not configured |
+| POST /api/orders/:id/payment-link | staff | `{notify?: boolean}` | `{url, expiresAt}` (409 if PAID/CANCELLED, 501 if Razorpay off) |
+| GET /api/payments/config | any | – | `{razorpayConfigured, onlineAvailable, codEnabled, reason?}` |
+| POST /api/public/orders | public | + `paymentMethod: 'COD' \| 'ONLINE'` | + `{token, paymentUrl?}` |
+| GET /api/public/orders/:token | public | – | `{number, status, paymentMethod, paymentStatus, totalCents, currency, items:[{name,quantity}]}` |
+| GET /api/public/catalog | public | – | `settings` gains `paymentMethods: ('ONLINE'\|'COD')[]` |
+| PUT /api/settings | admin | + `payments: PaymentSettings` | Settings |
+
+## 3.14 Release 2 REST API — additions made during the build
+| Method & Path | Role | Notes |
+|---|---|---|
+| POST /api/public/orders/:token/payment-link | token | Returns `{paymentUrl}`: the open link, or a fresh one after expiry. 409 unless the order is ONLINE, UNPAID and not cancelled. Rate limited (30 / 15 min) |
+| POST /api/orders/:id/refunded | staff | REFUND_DUE → REFUNDED exactly once (409 otherwise). Publishes `payment.updated` and messages the chat customer |
+| POST /api/orders/:id/payment-link | staff | Body `{notify?: boolean}` → `{url, expiresAt, notified}` |
+| GET /api/payments/config | any | `{razorpayConfigured, onlineAvailable, codEnabled, reason?}` |
+| POST /api/public/orders | public | Errors: 409 method unavailable, **429 `TOO_MANY_OPEN_ORDERS`** (15 open orders per customer, staff-entered orders exempt), 502 `PAYMENT_PROVIDER_ERROR` (the web order is cancelled again) |
+
+Migrations: `002_reply_options.sql` (options shown with each reply), `003_payments_chat.sql` (payments, webhook events, chat carts, order payment columns), `004_refunded.sql` (REFUNDED status).
+Production configuration rule (T56): `RAZORPAY_API_BASE` and `META_GRAPH_BASE` must be `https` (loopback `http` allowed for local fakes).

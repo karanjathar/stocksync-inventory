@@ -17,3 +17,11 @@ coverage/
 
 # Local deployment secrets
 infra/*.secrets.json
+
+# AI Project Engine
+.env.*
+!.env.example
+.engine/
+
+# E2E artifacts
+scripts/e2e/out/

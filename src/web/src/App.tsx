@@ -14,6 +14,7 @@ import { Inbox } from './pages/Inbox';
 import { SettingsPage } from './pages/SettingsPage';
 import { Users } from './pages/Users';
 import { Shop } from './pages/Shop';
+import { ShopOrder } from './pages/ShopOrder';
 import { Account } from './pages/Account';
 import type { Role } from './api/types';
 
@@ -31,6 +32,7 @@ export function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/shop" element={<Shop />} />
+      <Route path="/shop/order/:token" element={<ShopOrder />} />
       <Route element={<RequireAuth><SettingsProvider><Layout /></SettingsProvider></RequireAuth>}>
         <Route index element={<Dashboard />} />
         <Route path="products" element={<Products />} />

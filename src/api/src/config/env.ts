@@ -32,13 +32,32 @@ const schema = z.object({
   META_APP_SECRET: optional,
   META_VERIFY_TOKEN: optional,
   META_GRAPH_VERSION: z.string().default('v21.0'),
+  // Only overridden by tests / the E2E fake Meta API.
+  META_GRAPH_BASE: z.string().url().default('https://graph.facebook.com'),
   WHATSAPP_TOKEN: optional,
   WHATSAPP_PHONE_NUMBER_ID: optional,
   MESSENGER_PAGE_TOKEN: optional,
   INSTAGRAM_PAGE_TOKEN: optional,
   TELEGRAM_BOT_TOKEN: optional,
   TELEGRAM_WEBHOOK_SECRET: optional,
-});
+  RAZORPAY_KEY_ID: optional,
+  RAZORPAY_KEY_SECRET: optional,
+  RAZORPAY_WEBHOOK_SECRET: optional,
+  // Only overridden by tests / the E2E fake Razorpay.
+  RAZORPAY_API_BASE: z.string().url().default('https://api.razorpay.com'),
+})
+  // Credentials travel to these hosts in the Authorization header: never over plain http in production.
+  // (Loopback is allowed so the local E2E can point the app at its fake providers.)
+  .superRefine((env, ctx) => {
+    if (env.NODE_ENV !== 'production') return;
+    for (const key of ['RAZORPAY_API_BASE', 'META_GRAPH_BASE'] as const) {
+      const url = new URL(env[key]);
+      const loopback = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(url.hostname);
+      if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
+        ctx.addIssue({ code: 'custom', path: [key], message: 'must use https in production (plain http is only allowed for localhost)' });
+      }
+    }
+  });
 
 export type Env = z.infer<typeof schema>;
 

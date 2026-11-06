@@ -1,0 +1,31 @@
+{
+  "id": "python",
+  "label": "Python (uv)",
+  "description": "Python 3.12+, uv, Ruff (lint+format), mypy (strict), pytest",
+  "commands": {
+    "install": "uv sync",
+    "dev": "uv run python -m app",
+    "gates": [
+      { "name": "format", "run": "uv run ruff format --check .", "required": true },
+      { "name": "lint", "run": "uv run ruff check .", "required": true },
+      { "name": "typecheck", "run": "uv run mypy .", "required": true },
+      { "name": "test", "run": "uv run pytest -q", "required": true },
+      { "name": "audit", "run": "uv run pip-audit", "required": false }
+    ]
+  },
+  "conventions": [
+    "Full type hints; mypy strict. `Any`, `# type: ignore` and `# noqa` are forbidden without a written justification in docs/8_DECISIONS.md.",
+    "Validate external input with pydantic models at the boundary.",
+    "Settings via a typed settings object (e.g. pydantic-settings), never os.environ scattered in code.",
+    "Pin dependencies in pyproject.toml / uv.lock."
+  ],
+  "gitignore": [".venv/", "__pycache__/", "*.pyc", ".pytest_cache/", ".mypy_cache/", ".ruff_cache/", "dist/", "htmlcov/"],
+  "ci": {
+    "setup": [
+      "- uses: astral-sh/setup-uv@v5",
+      "- uses: actions/setup-python@v5",
+      "  with:",
+      "    python-version: '3.12'"
+    ]
+  }
+}

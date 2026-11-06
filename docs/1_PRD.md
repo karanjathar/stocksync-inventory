@@ -59,5 +59,63 @@ same warehouse (400); cancelling a fulfilled order (409); a channel not configur
 send skipped); Meta webhook retries (handled idempotently by message id).
 
 ## 1.7 Non-Goals (v1)
-Payments, multi-tenant SaaS, barcode hardware integration, accounting/invoicing, native
+~~Payments~~ (moved into Release 2, see 1.8), multi-tenant SaaS, barcode hardware integration, accounting/invoicing, native
 iOS/Android binaries (the PWA covers mobile), multi-currency per order.
+
+---
+
+## 1.8 Release 2 — Payments & WhatsApp Tap-to-Order
+
+### Goal
+Customers can browse, build a cart and **pay** entirely inside WhatsApp (and the other chat channels) by tapping buttons,
+or pay online from the web shop. Cash on delivery remains available. Paid orders confirm themselves.
+
+### Functional requirements
+- **FR-R2-1 Payment methods.** Each order has `paymentMethod` (`COD` | `ONLINE`) and `paymentStatus` (`UNPAID` | `PAID` | `REFUND_DUE`).
+  Admins enable or disable online payment and COD in Settings. Online payment is offered only when Razorpay credentials are configured **and** the shop currency is INR.
+- **FR-R2-2 Razorpay payment links.** For an ONLINE order the server creates a Razorpay Payment Link. The amount is always computed server-side from the order.
+  The link expires after `payments.linkExpiryMinutes` (≥ 15). An unexpired link is reused instead of creating duplicates.
+- **FR-R2-3 Webhook is the source of truth.** `POST /webhooks/razorpay` verifies `X-Razorpay-Signature` (HMAC-SHA256 of the raw body) and is idempotent per event id.
+  On `payment_link.paid`: payment → PAID, order → `paymentStatus=PAID`, then the order is **auto-confirmed** from the default warehouse (stock deducted).
+  If confirmation fails (e.g. stock ran out), the order is flagged `REFUND_DUE` and staff are alerted. `payment_link.expired/cancelled` update the payment.
+- **FR-R2-4 Chat payments.** After a chat order the customer chooses **Pay online** (receives a pay-link button) or **Cash on delivery**.
+  When payment arrives they get "✅ Payment received — order #N confirmed".
+- **FR-R2-5 Web checkout.** The shop checkout offers the enabled methods. ONLINE redirects to the Razorpay page, then back to `/shop/order/<token>`, which shows live payment and order status.
+- **FR-R2-6 Staff tools.** The Orders page shows payment badges and a REFUND_DUE flag. Staff can (re)send a payment link to the customer's channel and copy it.
+- **FR-R2-7 Tap-to-order (WhatsApp).** "hi", "menu" or any unknown text → welcome message with buttons **Browse · My cart · My orders**.
+  Browse → category list → product list (10 per page, "More…" row) → product detail → quantity list (1–5, 10) → added to cart →
+  buttons **Checkout · Keep shopping · Clear cart** → checkout summary → **Pay online · Cash on delivery** → order placed.
+  **My orders** → last 5 orders → order detail with status.
+- **FR-R2-8 Other channels.** The same flows render as Telegram inline keyboards and Messenger/Instagram quick replies.
+  Any channel without rich support gets numbered text options. All v1 text commands keep working unchanged.
+- **FR-R2-9 Chat cart.** One cart per chat customer, persisted, capped at available stock, cleared after checkout.
+
+### Flows
+1. *WhatsApp tap-to-pay:* hi → Browse → Apparel → Red T-Shirt → qty 2 → Checkout → Pay online → taps "Pay ₹998" → Razorpay UPI → webhook → order confirmed, stock deducted, customer notified, dashboard updates live.
+2. *Web online checkout:* /shop → cart → "Pay online" → Razorpay → back to /shop/order/<token> → "Paid ✓ Order #N confirmed".
+3. *COD:* any channel → Cash on delivery → PENDING order → staff confirm as in v1.
+
+### Acceptance criteria
+- Forged or unsigned Razorpay webhooks → 401, with no state change. Replayed events → no double confirmation or double stock deduction.
+- The amount sent to Razorpay always equals the order total in paise. Clients can't influence it.
+- Paid-but-unfulfillable orders end as `REFUND_DUE` with a staff alert, never silently lost.
+- WhatsApp payloads respect platform limits (≤ 3 reply buttons, ≤ 10 list rows, title lengths). Telegram `callback_data` ≤ 64 bytes.
+- All gates green. Payment and webhook flows covered by contract tests against Razorpay's documented payloads. A browser E2E test covers web online checkout against a local fake Razorpay.
+
+### Edge cases
+Product deactivated or out of stock while in a cart. Link expired before paying. A customer pays twice via an old link. Webhook arrives before the redirect.
+Currency not INR. Razorpay not configured (online option hidden). A button tap from an old message after the cart changed. Long product names.
+
+### Non-goals (Release 2)
+Automated refunds via API (staff refund in the Razorpay dashboard; the order is flagged), partial payments, subscriptions, multi-currency,
+the WhatsApp Commerce/Catalog API (Meta-hosted product catalogs), saved cards, invoicing/GST.
+
+### Credentials needed (human)
+Razorpay **test-mode** Key ID + Key Secret + Webhook Secret (free; dashboard → Test Mode → API Keys / Webhooks), later live keys after KYC.
+WhatsApp Cloud API access as in v1. Until keys exist, everything is verified with contract tests and a local fake Razorpay, and labelled unverified against the real service.
+
+### 1.8.1 Additions discovered while building and reviewing Release 2
+- **FR-R2-10 Resume payment.** A web shopper whose payment link expired or who backed out can get a fresh link from the order page; the shop remembers the last unpaid online order ("Continue payment").
+- **FR-R2-11 Refund handling.** `REFUND_DUE` (paid but unfulfillable, duplicate, or cancelled-after-paid) alerts staff and tells the customer; staff refund in Razorpay and press **Mark refunded** (`REFUNDED`).
+- **FR-R2-12 Abuse limits.** At most 15 open orders per customer (chat and web); public endpoints rate limited.
+- **FR-R2-13 Configuration safety.** Settings warns when no payment method would be usable; production refuses non-https provider URLs.

@@ -1,8 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createHmac } from 'node:crypto';
 import request from 'supertest';
-import { buildTestApp, type TestApp } from './helpers/app.js';
-import { parseMetaWebhook, parseTelegramUpdate } from '../src/channels/parse.js';
+import { buildTestApp, TEST_ENV, type TestApp } from './helpers/app.js';
+import { createContainer, type ContainerOverrides } from '../src/container.js';
+import { createApp } from '../src/http/app.js';
+import { loadEnv } from '../src/config/env.js';
+
+/** Second app on the SAME test database (never reset the DB inside a test file). */
+const appWith = (env: Record<string, string>, overrides: ContainerOverrides = {}) =>
+  createApp(createContainer({ env: loadEnv({ ...TEST_ENV, ...env }), pool: t.pool, ...overrides }));
+import { parseMetaWebhook, parseTelegramUpdate, telegramCallbackId } from '../src/channels/parse.js';
+import { fakeFetch } from './helpers/fakeFetch.js';
 
 let t: TestApp;
 const sent: { channel: string; to: string; text: string }[] = [];
@@ -97,14 +105,60 @@ describe('POST /webhooks/telegram', () => {
 
 describe('unconfigured secrets', () => {
   it('refuses webhooks when secrets are not set', async () => {
-    const u = await buildTestApp({ META_APP_SECRET: '', TELEGRAM_WEBHOOK_SECRET: '', META_VERIFY_TOKEN: '' });
-    try {
-      const raw = '{}';
-      expect((await request(u.app).post('/webhooks/meta').set('content-type', 'application/json').set('x-hub-signature-256', sign(raw, '')).send(raw)).status).toBe(503);
-      expect((await request(u.app).post('/webhooks/telegram').set('x-telegram-bot-api-secret-token', '').send({})).status).toBe(503);
-      expect((await request(u.app).get('/webhooks/meta').query({ 'hub.mode': 'subscribe', 'hub.verify_token': '', 'hub.challenge': '1' })).status).toBe(503);
-    } finally {
-      await u.close();
-    }
+    const u = appWith({ META_APP_SECRET: '', TELEGRAM_WEBHOOK_SECRET: '', META_VERIFY_TOKEN: '' });
+    const raw = '{}';
+    expect((await request(u).post('/webhooks/meta').set('content-type', 'application/json').set('x-hub-signature-256', sign(raw, '')).send(raw)).status).toBe(503);
+    expect((await request(u).post('/webhooks/telegram').set('x-telegram-bot-api-secret-token', '').send({})).status).toBe(503);
+    expect((await request(u).get('/webhooks/meta').query({ 'hub.mode': 'subscribe', 'hub.verify_token': '', 'hub.challenge': '1' })).status).toBe(503);
+  });
+});
+
+describe('interactive taps (T27)', () => {
+  const waMsg = (m: object) => ({ object: 'whatsapp_business_account', entry: [{ changes: [{ value: { contacts: [{ wa_id: '1555', profile: { name: 'Ravi' } }], messages: [{ id: 'wamid.T', from: '1555', ...m }] } }] }] });
+
+  it('WhatsApp button_reply, list_reply and template button carry an action', () => {
+    expect(parseMetaWebhook(waMsg({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: 'catalog', title: '🛍 Browse' } } })))
+      .toEqual([{ channel: 'whatsapp', from: '1555', text: '🛍 Browse', action: 'catalog', externalId: 'wamid.T', senderName: 'Ravi' }]);
+    expect(parseMetaWebhook(waMsg({ type: 'interactive', interactive: { type: 'list_reply', list_reply: { id: 'prod:abc', title: 'Red Tee', description: '₹499' } } }))[0])
+      .toMatchObject({ text: 'Red Tee', action: 'prod:abc' });
+    expect(parseMetaWebhook(waMsg({ type: 'button', button: { payload: 'menu', text: 'Menu' } }))[0]).toMatchObject({ text: 'Menu', action: 'menu' });
+    expect(parseMetaWebhook(waMsg({ type: 'interactive', interactive: { type: 'nfm_reply' } }))).toEqual([]);
+  });
+
+  it('Messenger/Instagram quick replies and postbacks carry an action', () => {
+    const page = { object: 'page', entry: [{ messaging: [
+      { sender: { id: 'PSID' }, message: { mid: 'm1', text: 'Browse', quick_reply: { payload: 'catalog' } } },
+      { sender: { id: 'PSID' }, timestamp: 1700000000000, postback: { mid: 'm2', title: 'Get Started', payload: 'menu' } },
+    ] }] };
+    expect(parseMetaWebhook(page)).toEqual([
+      { channel: 'messenger', from: 'PSID', text: 'Browse', action: 'catalog', externalId: 'm1' },
+      { channel: 'messenger', from: 'PSID', text: 'Get Started', action: 'menu', externalId: 'm2' },
+    ]);
+    expect(parseMetaWebhook({ ...page, object: 'instagram' })[0]).toMatchObject({ channel: 'instagram', action: 'catalog' });
+  });
+
+  it('Telegram callback_query becomes an action and exposes its id for answering', () => {
+    const update = { update_id: 5, callback_query: { id: 'cbq9', data: 'qty:abc:2', from: { first_name: 'Li' }, message: { message_id: 3, chat: { id: 77 } } } };
+    expect(parseTelegramUpdate(update)).toEqual({ channel: 'telegram', from: '77', text: 'qty:abc:2', action: 'qty:abc:2', externalId: 'tgcb:cbq9', senderName: 'Li' });
+    expect(telegramCallbackId(update)).toBe('cbq9');
+    expect(telegramCallbackId({ update_id: 6, message: { message_id: 1, chat: { id: 1 }, text: 'hi' } })).toBeUndefined();
+  });
+
+  it('plain text messages still have no action (unchanged v1 behaviour)', () => {
+    expect(parseMetaWebhook(waPayload('wamid.Z', 'stock TEE'))[0]).not.toHaveProperty('action');
+  });
+});
+
+describe('Telegram webhook answers callback queries (T27)', () => {
+  it('acknowledges the tap so the client spinner stops, then processes it once', async () => {
+    const f = fakeFetch();
+    const seen: string[] = [];
+    const tg = appWith({ TELEGRAM_BOT_TOKEN: '1:T' }, { fetch: f.fn, messenger: { send: async (_c, _t, text) => { seen.push(text); } } });
+    const update = { update_id: 7, callback_query: { id: 'cbq-x', data: 'help', from: { first_name: 'Li' }, message: { message_id: 3, chat: { id: 77 } } } };
+    const post = () => request(tg).post('/webhooks/telegram').set('x-telegram-bot-api-secret-token', 'tg-secret').send(update);
+    expect((await post()).status).toBe(200);
+    expect((await post()).status).toBe(200);
+    expect(f.calls.filter((c) => c.url.endsWith('/answerCallbackQuery')).map((c) => c.body)).toEqual([{ callback_query_id: 'cbq-x' }, { callback_query_id: 'cbq-x' }]);
+    expect(seen).toHaveLength(1);
   });
 });

@@ -1,0 +1,31 @@
+{
+  "id": "node-ts",
+  "label": "Node.js + TypeScript",
+  "description": "Node.js 22 LTS, TypeScript (strict), ESLint (typescript-eslint), Vitest",
+  "commands": {
+    "install": "npm ci",
+    "dev": "npm run dev",
+    "gates": [
+      { "name": "typecheck", "run": "npx tsc --noEmit", "required": true },
+      { "name": "lint", "run": "npm run lint", "required": true },
+      { "name": "test", "run": "npm test", "required": true },
+      { "name": "build", "run": "npm run build", "required": true },
+      { "name": "audit", "run": "npm audit --omit=dev --audit-level=high", "required": false }
+    ]
+  },
+  "conventions": [
+    "TypeScript strict mode with noUncheckedIndexedAccess; `any`, `@ts-ignore` and `eslint-disable` are forbidden (enforce `@typescript-eslint/no-explicit-any: error`).",
+    "Validate every external input (HTTP, env, webhooks) with a schema library (e.g. zod) at the boundary.",
+    "Read config only from a typed, validated env module; never `process.env.X` scattered in code.",
+    "Pin exact dependency versions and check peer-dependency compatibility before adding a package."
+  ],
+  "gitignore": ["node_modules/", "dist/", "build/", "coverage/", "*.log"],
+  "ci": {
+    "setup": [
+      "- uses: actions/setup-node@v4",
+      "  with:",
+      "    node-version: 22",
+      "    cache: npm"
+    ]
+  }
+}

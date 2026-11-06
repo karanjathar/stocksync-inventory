@@ -8,7 +8,7 @@ import { mockApi } from '../test/setup';
 
 vi.mock('../auth', () => ({ useAuth: () => ({ can: () => true, user: { id: 'u', role: 'admin' } }) }));
 
-const order = { id: 'o1', number: 42, customerId: 'c1', customerName: 'Asha', channel: 'whatsapp', status: 'PENDING', warehouseId: null,
+const order = { paymentMethod: 'COD', paymentStatus: 'UNPAID', publicToken: 't', id: 'o1', number: 42, customerId: 'c1', customerName: 'Asha', channel: 'whatsapp', status: 'PENDING', warehouseId: null,
   totalCents: 3000, notes: '', createdAt: '2026-11-06T10:00:00Z', updatedAt: '2026-11-06T10:00:00Z',
   items: [{ productId: 'p1', sku: 'TEE', name: 'T-Shirt', quantity: 2, unitPriceCents: 1500 }] };
 
@@ -33,7 +33,8 @@ describe('Orders', () => {
 describe('Settings', () => {
   it('edits alert recipients and custom fields and saves them', async () => {
     const calls = mockApi({
-      '/settings': { businessName: 'Shop', currency: 'USD', whatsappNumber: '', defaultWarehouseId: null, alertRecipients: [], customFields: [] },
+      '/settings': { businessName: 'Shop', currency: 'USD', whatsappNumber: '', defaultWarehouseId: null, alertRecipients: [], customFields: [], payments: { onlineEnabled: true, codEnabled: true, linkExpiryMinutes: 1440 } },
+      '/payments/config': { razorpayConfigured: false, onlineAvailable: false, codEnabled: true, reason: 'Razorpay keys are not configured on the server.' },
       '/warehouses': [], '/channels': [{ name: 'whatsapp', configured: true }, { name: 'telegram', configured: false }],
       'PUT /settings': (b: unknown) => b,
     });

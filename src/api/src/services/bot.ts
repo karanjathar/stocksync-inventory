@@ -1,17 +1,15 @@
 import type { InboundMessage, Order } from '../domain/types.js';
+import type { BotReply } from '../channels/reply.js';
 import { AppError } from '../domain/errors.js';
 import type { CustomersRepo } from '../repositories/customers.js';
 import type { ProductsRepo } from '../repositories/products.js';
 import type { OrdersService } from './orders.js';
 import type { SettingsService } from './settings.js';
 
-export function formatMoney(cents: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
-  } catch {
-    return `${(cents / 100).toFixed(2)} ${currency}`;
-  }
-}
+import { formatMoney } from './money.js';
+import type { ChatFlow } from './chatFlow.js';
+
+export { formatMoney };
 
 /** Chat command engine shared by every channel. Returns the reply text. */
 export class BotService {
@@ -20,9 +18,30 @@ export class BotService {
     private readonly orders: OrdersService,
     private readonly customers: CustomersRepo,
     private readonly settings: SettingsService,
+    private readonly flow?: ChatFlow,
   ) {}
 
-  async handle(msg: InboundMessage): Promise<string> {
+  /** Maps tapped actions (docs/3_SCHEMAS.md §3.12) to the command they stand for. */
+  private static readonly ACTION_COMMANDS: Record<string, string> = { catalog: 'catalog', menu: 'help', help: 'help' };
+
+  async handle(msg: InboundMessage): Promise<BotReply> {
+    if (msg.action !== undefined && this.flow) {
+      const flowReply = await this.flow.handle(msg);
+      if (flowReply) return flowReply;
+    }
+    const command = msg.action !== undefined ? BotService.ACTION_COMMANDS[msg.action] ?? 'help' : msg.text;
+    const text = await this.handleText({ ...msg, text: command });
+    const first = command.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
+    const known = ['stock', 'price', 'catalog', 'menu', 'order', 'status'];
+    const isWelcome = !known.includes(first);
+    const multiLineOrder = command.split('\n').filter((l) => l.trim()).length > 1 && /^order\s/im.test(command);
+    if (!isWelcome || multiLineOrder) return { text };
+    // FR-R2-7: the welcome carries the tap-to-order menu; text commands stay documented in the text.
+    const buttons = this.flow?.menu('').buttons ?? [{ id: 'catalog', title: '🛍 Browse' }];
+    return { text, buttons };
+  }
+
+  private async handleText(msg: InboundMessage): Promise<string> {
     const s = await this.settings.get();
     const money = (c: number) => formatMoney(c, s.currency);
 
@@ -59,7 +78,7 @@ export class BotService {
         const n = Number(args[0]?.replace('#', ''));
         const order = Number.isInteger(n) && n > 0 ? await this.orders.getByNumber(n) : undefined;
         const customer = await this.customers.findOrCreateByChannel(msg.channel, msg.from, msg.senderName);
-        if (!order || order.customerId !== customer.id) return `Sorry, we couldn't find order ${args[0] ?? ''} for you.`;
+        if (!order || order.customerId !== customer.id) return `Sorry, we couldn't find order ${(args[0] ?? '').slice(0, 20)} for you.`;
         return describeOrder(order, money);
       }
       default:

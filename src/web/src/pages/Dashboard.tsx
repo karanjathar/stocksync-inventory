@@ -17,6 +17,7 @@ function describe(e: RealtimeEvent): FeedItem {
     case 'order.created': return { at, tone: 'info', text: `New order #${e.number}` };
     case 'order.updated': return { at, tone: 'good', text: `Order #${e.number} → ${e.status}` };
     case 'message.received': return { at, tone: 'info', text: `${e.channel} message from ${e.from}: “${e.text.slice(0, 80)}”` };
+    case 'payment.updated': return { at, tone: e.paymentStatus === 'REFUND_DUE' ? 'warn' : 'good', text: `Order #${e.number} payment → ${e.paymentStatus}` };
   }
 }
 

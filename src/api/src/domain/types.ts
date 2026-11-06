@@ -2,6 +2,8 @@ export type Role = 'admin' | 'staff' | 'viewer';
 export type ChannelName = 'whatsapp' | 'messenger' | 'instagram' | 'telegram';
 export type OrderChannel = ChannelName | 'web' | 'manual';
 export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'FULFILLED' | 'CANCELLED';
+export type PaymentMethod = 'COD' | 'ONLINE';
+export type PaymentStatus = 'UNPAID' | 'PAID' | 'REFUND_DUE' | 'REFUNDED';
 export type MovementType = 'IN' | 'OUT' | 'ADJUST' | 'TRANSFER_IN' | 'TRANSFER_OUT';
 export interface User { id: string; email: string; name: string; role: Role; createdAt: string }
 export interface AuthUser { id: string; email: string; role: Role }
@@ -18,17 +20,24 @@ export interface Supplier { id: string; name: string; email: string | null; phon
 export interface Customer { id: string; name: string; phone: string | null; email: string | null; channel: OrderChannel | string; channelUserId: string | null }
 export interface OrderItem { productId: string; sku: string; name: string; quantity: number; unitPriceCents: number }
 export interface Order { id: string; number: number; customerId: string; customerName: string; channel: OrderChannel;
-  status: OrderStatus; warehouseId: string | null; totalCents: number; notes: string; items: OrderItem[]; createdAt: string; updatedAt: string }
+  status: OrderStatus; warehouseId: string | null; totalCents: number; notes: string; items: OrderItem[]; createdAt: string; updatedAt: string;
+  paymentMethod: PaymentMethod; paymentStatus: PaymentStatus; publicToken: string }
 export interface AlertRecipient { channel: ChannelName; to: string }
 export interface CustomFieldDef { key: string; label: string; type: 'text' | 'number' | 'select'; options?: string[] }
 export interface Settings { businessName: string; currency: string; whatsappNumber: string; defaultWarehouseId: string | null;
-  alertRecipients: AlertRecipient[]; customFields: CustomFieldDef[] }
+  alertRecipients: AlertRecipient[]; customFields: CustomFieldDef[]; payments: PaymentSettings }
 export interface ChannelMessage { id: string; channel: ChannelName; direction: 'in' | 'out'; externalUser: string; text: string; status: string; createdAt: string }
-export interface InboundMessage { channel: ChannelName; from: string; text: string; externalId?: string; senderName?: string }
+/** `action` is the id of a tapped button / list row / quick reply (docs/3_SCHEMAS.md §3.12); absent for typed text. */
+export interface InboundMessage { channel: ChannelName; from: string; text: string; action?: string; externalId?: string; senderName?: string }
 export type RealtimeEvent =
   | { type: 'stock.changed'; productId: string; sku: string; warehouseId: string; quantity: number; totalQuantity: number }
   | { type: 'stock.low'; productId: string; sku: string; name: string; totalQuantity: number; reorderLevel: number }
   | { type: 'order.created' | 'order.updated'; orderId: string; number: number; status: OrderStatus }
-  | { type: 'message.received'; channel: ChannelName; from: string; text: string };
+  | { type: 'message.received'; channel: ChannelName; from: string; text: string }
+  | { type: 'payment.updated'; orderId: string; number: number; paymentStatus: PaymentStatus };
 export interface DashboardStats { productCount: number; totalUnits: number; stockValueCents: number;
   lowStockCount: number; pendingOrders: number; ordersToday: number }
+export interface Payment { id: string; orderId: string; provider: 'razorpay'; providerRef: string; referenceId: string;
+  status: 'CREATED' | 'PAID' | 'EXPIRED' | 'CANCELLED'; amountCents: number; currency: string; shortUrl: string;
+  providerPaymentId: string | null; expiresAt: string; createdAt: string }
+export interface PaymentSettings { onlineEnabled: boolean; codEnabled: boolean; linkExpiryMinutes: number }

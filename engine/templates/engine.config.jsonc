@@ -1,0 +1,96 @@
+// AI Project Engine v2 — the ONLY file you edit to adapt the engine to a project.
+// After changing it run:  node engine/engine.mjs sync
+{
+  "version": 2,
+
+  "project": {
+    "name": {{name}},
+    // Filled during /engine-start (discovery). One paragraph: who it is for and what it must do.
+    "goal": "",
+    // web-api | fullstack | cli | mobile-backend | library | data-pipeline | other
+    "type": "",
+  },
+
+  // Stack profile from engine/profiles (node-ts, python, dotnet, go, java-gradle) — or edit freely.
+  "stack": {
+    "profile": {{profileId}},
+    "description": {{stackDescription}},
+    // Coding conventions rendered into AGENTS.md.
+    "conventions": [
+{{conventions}}
+    ],
+    "gitignore": {{gitignore}},
+    // GitHub Actions steps that install the toolchain (rendered into .github/workflows/engine-ci.yml).
+    "ci": { "setup": {{ciSetup}} },
+  },
+
+  "commands": {
+    "install": {{install}},
+    "dev": {{dev}},
+    // Quality gates, run in order by `engine gate` and `engine done`. required:false = warn only.
+    // Add e2e (e.g. "npx playwright test"), secret scanning (e.g. "gitleaks detect --no-banner") etc.
+    "gates": [
+{{gates}}
+    ],
+  },
+
+  // How far the AI may go without you:
+  //   "task"  = stop after every task · "phase" = stop at the end of each phase · "all" = run until done/blocked
+  "autonomy": { "mode": "phase", "maxFixAttempts": 3 },
+
+  // Human approval points enforced by the engine (remove one to skip it):
+  //   after-plan    → `engine next` refuses to start until `engine approve plan`
+  //   after-phase   → the next phase can't start until `engine approve phase "<name>"`
+  //   before-deploy → /engine-deploy requires `engine approve deploy`
+  "checkpoints": ["after-plan", "after-phase", "before-deploy"],
+
+  // Token & context budget.
+  "context": {
+    "stateSummaryKeep": 15,     // newest log entries kept in 6_STATE_SUMMARY.md (older → docs/archive)
+    "gateOutputLines": 60,      // failing gate output is truncated to the last N lines
+    "clearAfter": "phase",      // suggest /clear after: "phase" | "task" | "never"
+  },
+
+  // Model routing. Claude Code: opus | sonnet | haiku | inherit (or a full model id).
+  // Copilot: the model name exactly as shown in the VS Code model picker; empty = use the picker.
+  "models": {
+    "claude": { "planning": "opus", "coding": "sonnet", "review": "sonnet", "fast": "haiku" },
+    "copilot": { "planning": "", "coding": "", "review": "", "fast": "" },
+  },
+
+  "git": {
+    "commitPerTask": true,
+    // Optional trailer appended to every engine commit, e.g. "Co-authored-by: AI <ai@example.com>"
+    "commitTrailer": "",
+  },
+
+  // azure-container-apps | aws-ecs | gcp-cloud-run | vercel | fly | docker-vm | kubernetes | none
+  "deploy": {
+    "target": "",
+    "environments": ["staging", "production"],
+    "notes": "",
+  },
+
+  "security": {
+    "secretFiles": [".env", ".env.*", "*.pem", "*.key", "*.pfx", "*secrets*.json"],
+    "allowSecretFiles": [".env.example"],
+  },
+
+  // Set generateWorkflow to false if the project already has its own CI that runs the gates.
+  "ci": { "generateWorkflow": true },
+
+  // Claude Code hooks installed by `engine sync`.
+  "hooks": { "guardSecrets": true, "gateOnStop": true },
+
+  // MCP servers written once to .mcp.json (Claude Code) and .vscode/mcp.json (Copilot).
+  // context7 = up-to-date library docs (fights version drift) · playwright = drive a real browser for UI checks.
+  "mcp": {
+    "servers": {
+      "context7": { "command": "npx", "args": ["-y", "@upstash/context7-mcp"] },
+      "playwright": { "command": "npx", "args": ["-y", "@playwright/mcp@latest"] },
+    },
+  },
+
+  // Project-specific rules you discover along the way (rendered into AGENTS.md).
+  "projectRules": [],
+}

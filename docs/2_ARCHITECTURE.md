@@ -74,3 +74,18 @@ Docker image → Azure Container Registry → **Azure Container Apps**. Uses Azu
 PostgreSQL Flexible Server, Azure Blob Storage, Azure Key Vault (secrets via managed identity),
 and Azure Application Insights + Log Analytics. Provisioned with `infra/main.bicep`. CI/CD runs on
 GitHub Actions with Azure OIDC federated credentials.
+
+---
+## 2.8 Release 2 additions (payments & tap-to-order)
+```
+WhatsApp/Telegram/Messenger tap ─► /webhooks/* ─► parse (action ids) ─► InboxService ─► ChatFlow (menu·catalog·cart·checkout·orders)
+                                                                          │                  └─► ChatCartsRepo (chat_carts)
+                                                                          └─► BotReply ─► ChannelHub.reply ─► adapter renders buttons/list/url (or numbered text)
+Checkout (chat or web, ONLINE) ─► PaymentService ─► RazorpayClient POST /v1/payment_links ─► short_url ─► customer pays (UPI/card)
+Razorpay ─► POST /webhooks/razorpay (HMAC, event-id idempotent) ─► payment PAID ─► OrdersService.confirm (stock) ─► notify customer + SSE
+                                                                                  └─ confirm fails ─► REFUND_DUE + staff alert
+```
+- New modules: `channels/reply.ts`, `services/chatFlow.ts`, `repositories/chatCarts.ts`, `payments/razorpay.ts`, `services/payments.ts`, `http/routes/payments.ts`, web `pages/ShopOrder.tsx`.
+- New env: `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAY_API_BASE` (tests/E2E only). In Azure they are Key Vault secrets via the Bicep `channelSecrets` mechanism.
+- Online payments require shop currency `INR` (Razorpay Payment Links). Otherwise the online option is hidden and `GET /api/payments/config` explains why.
+- Decisions: `docs/8_DECISIONS.md` D-001…D-008.

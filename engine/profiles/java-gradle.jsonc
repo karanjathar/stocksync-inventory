@@ -1,0 +1,30 @@
+{
+  "id": "java-gradle",
+  "label": "Java / Kotlin (Gradle)",
+  "description": "Java 21 (Temurin), Gradle wrapper, JUnit 5, Spotless/Checkstyle via `check`",
+  "commands": {
+    "install": "./gradlew --no-daemon dependencies -q",
+    "dev": "./gradlew bootRun",
+    "gates": [
+      { "name": "build", "run": "./gradlew --no-daemon assemble", "required": true },
+      { "name": "test", "run": "./gradlew --no-daemon test", "required": true },
+      { "name": "check", "run": "./gradlew --no-daemon check -x test", "required": true }
+    ]
+  },
+  "conventions": [
+    "No raw types, no `@SuppressWarnings` without a recorded decision; prefer immutable records/data classes.",
+    "Validate input with Bean Validation (jakarta.validation) at controller boundaries.",
+    "Configuration via typed @ConfigurationProperties bound from environment.",
+    "Dependency versions pinned in a version catalog (gradle/libs.versions.toml)."
+  ],
+  "gitignore": ["build/", ".gradle/", "out/", "*.iml", ".idea/"],
+  "ci": {
+    "setup": [
+      "- uses: actions/setup-java@v4",
+      "  with:",
+      "    distribution: temurin",
+      "    java-version: '21'",
+      "    cache: gradle"
+    ]
+  }
+}

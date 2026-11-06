@@ -1,10 +1,13 @@
 import type pg from 'pg';
 import { withTx } from '../db/tx.js';
-import { ConflictError, NotFoundError, ValidationError } from '../domain/errors.js';
-import type { Order, OrderChannel, OrderItem, OrderStatus } from '../domain/types.js';
+import { AppError, ConflictError, NotFoundError, ValidationError } from '../domain/errors.js';
+import type { Order, OrderChannel, OrderItem, OrderStatus, PaymentMethod } from '../domain/types.js';
 import type { EventBus } from '../realtime/bus.js';
 import type { SettingsService } from './settings.js';
 import type { StockService } from './stock.js';
+
+/** Abuse guard: a customer can have at most this many PENDING orders (chat, web). Staff-entered orders are exempt. */
+export const MAX_OPEN_ORDERS = 15;
 
 export interface NewOrder {
   customerId: string;
@@ -12,6 +15,7 @@ export interface NewOrder {
   items: { productId: string; quantity: number }[];
   notes?: string;
   warehouseId?: string | null;
+  paymentMethod?: PaymentMethod;
 }
 
 export type OrderStatusObserver = (order: Order, previous: OrderStatus | null) => void | Promise<void>;
@@ -19,7 +23,8 @@ export type OrderStatusObserver = (order: Order, previous: OrderStatus | null) =
 const ORDER_SELECT = `
   SELECT o.id, o.number, o.customer_id AS "customerId", c.name AS "customerName", o.channel, o.status,
          o.warehouse_id AS "warehouseId", o.total_cents AS "totalCents", o.notes,
-         o.created_at AS "createdAt", o.updated_at AS "updatedAt"
+         o.created_at AS "createdAt", o.updated_at AS "updatedAt",
+         o.payment_method AS "paymentMethod", o.payment_status AS "paymentStatus", o.public_token AS "publicToken"
   FROM orders o JOIN customers c ON c.id = o.customer_id`;
 
 type OrderRow = Omit<Order, 'items'>;
@@ -43,8 +48,15 @@ export class OrdersService {
     if (!merged.size) throw new ValidationError('Order must contain at least one item');
 
     const id = await withTx(this.pool, async (c) => {
-      const cust = await c.query('SELECT 1 FROM customers WHERE id = $1', [input.customerId]);
+      // Row lock: concurrent requests for one customer queue up here, so the cap below cannot be raced past.
+      const cust = await c.query('SELECT 1 FROM customers WHERE id = $1 FOR NO KEY UPDATE', [input.customerId]);
       if (!cust.rowCount) throw new NotFoundError('Customer');
+      if (input.channel !== 'manual') {
+        const open = await c.query<{ n: number }>("SELECT count(*)::int AS n FROM orders WHERE customer_id = $1 AND status = 'PENDING'", [input.customerId]);
+        if (open.rows[0]!.n >= MAX_OPEN_ORDERS) {
+          throw new AppError(429, 'TOO_MANY_OPEN_ORDERS', `Too many open orders (${MAX_OPEN_ORDERS}). Please wait until some are confirmed or cancelled, or contact us.`);
+        }
+      }
       const { rows: products } = await c.query<{ id: string; sku: string; priceCents: number; isActive: boolean }>(
         'SELECT id, sku, price_cents AS "priceCents", is_active AS "isActive" FROM products WHERE id = ANY($1::uuid[])', [[...merged.keys()]]);
       if (products.length !== merged.size) throw new NotFoundError('Product');
@@ -52,9 +64,9 @@ export class OrdersService {
       if (inactive.length) throw new ConflictError(`Product not available: ${inactive.map((p) => p.sku).join(', ')}`);
       const total = products.reduce((sum, p) => sum + p.priceCents * merged.get(p.id)!, 0);
       const { rows } = await c.query<{ id: string }>(
-        `INSERT INTO orders (customer_id, channel, status, warehouse_id, total_cents, notes)
-         VALUES ($1, $2, 'PENDING', $3, $4, $5) RETURNING id`,
-        [input.customerId, input.channel, input.warehouseId ?? null, total, input.notes ?? '']);
+        `INSERT INTO orders (customer_id, channel, status, warehouse_id, total_cents, notes, payment_method)
+         VALUES ($1, $2, 'PENDING', $3, $4, $5, $6) RETURNING id`,
+        [input.customerId, input.channel, input.warehouseId ?? null, total, input.notes ?? '', input.paymentMethod ?? 'COD']);
       const orderId = rows[0]!.id;
       for (const p of products) {
         await c.query('INSERT INTO order_items (order_id, product_id, quantity, unit_price_cents) VALUES ($1, $2, $3, $4)',
@@ -120,15 +132,23 @@ export class OrdersService {
     return rows[0] ? { ...rows[0], items: await this.items(this.pool, id) } : undefined;
   }
 
+  /** Lookup by the unguessable public token (shop order-status page). */
+  async getByPublicToken(token: string): Promise<Order | undefined> {
+    const { rows } = await this.pool.query<{ id: string }>('SELECT id FROM orders WHERE public_token = $1', [token]);
+    return rows[0] ? this.get(rows[0].id) : undefined;
+  }
+
   async getByNumber(n: number): Promise<Order | undefined> {
     const { rows } = await this.pool.query<{ id: string }>('SELECT id FROM orders WHERE number = $1', [n]);
     return rows[0] ? this.get(rows[0].id) : undefined;
   }
 
-  async list(f: { status?: OrderStatus; limit?: number } = {}): Promise<Order[]> {
+  async list(f: { status?: OrderStatus; customerId?: string; limit?: number } = {}): Promise<Order[]> {
     const values: unknown[] = [];
-    let where = '';
-    if (f.status) { values.push(f.status); where = 'WHERE o.status = $1'; }
+    const conds: string[] = [];
+    if (f.status) { values.push(f.status); conds.push(`o.status = $${values.length}`); }
+    if (f.customerId) { values.push(f.customerId); conds.push(`o.customer_id = $${values.length}`); }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
     values.push(Math.min(f.limit ?? 200, 500));
     const { rows } = await this.pool.query<OrderRow>(`${ORDER_SELECT} ${where} ORDER BY o.number DESC LIMIT $${values.length}`, values);
     if (!rows.length) return [];

@@ -1,0 +1,23 @@
+# Generated once by the AI Project Engine (`engine sync`). It's yours now — extend freely
+# (add service containers such as postgres, E2E, docker build, deploy jobs via /engine-deploy).
+name: Engine CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    name: Quality gates ({{gateNames}})
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+{{ciSetup}}
+      - name: Install dependencies
+        run: {{installCmd}}
+      - name: Engine quality gates
+        run: node engine/engine.mjs gate --ci

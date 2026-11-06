@@ -14,6 +14,8 @@ import { OrdersService } from './services/orders.js';
 import { AlertService } from './services/alerts.js';
 import type { Messenger } from './services/messenger.js';
 import { BotService } from './services/bot.js';
+import { ChatFlow } from './services/chatFlow.js';
+import { ChatCartsRepo } from './repositories/chatCarts.js';
 import { InboxService } from './services/inbox.js';
 import { OrderNotifier } from './services/orderNotifier.js';
 import { MessagesRepo } from './repositories/messages.js';
@@ -22,6 +24,8 @@ import { WhatsAppAdapter } from './channels/whatsapp.js';
 import { MetaPageAdapter } from './channels/metaPage.js';
 import { TelegramAdapter } from './channels/telegram.js';
 import { ImageStorage } from './storage/blob.js';
+import { RazorpayClient } from './payments/razorpay.js';
+import { PaymentService } from './services/payments.js';
 
 export interface ContainerOverrides {
   logger?: Logger;
@@ -56,9 +60,9 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const messages = new MessagesRepo(pool);
   const fetchFn = opts.fetch ?? fetch;
   const hub = new ChannelHub([
-    new WhatsAppAdapter({ token: env.WHATSAPP_TOKEN, phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID, graphVersion: env.META_GRAPH_VERSION }, fetchFn),
-    new MetaPageAdapter('messenger', { token: env.MESSENGER_PAGE_TOKEN, graphVersion: env.META_GRAPH_VERSION }, fetchFn),
-    new MetaPageAdapter('instagram', { token: env.INSTAGRAM_PAGE_TOKEN, graphVersion: env.META_GRAPH_VERSION }, fetchFn),
+    new WhatsAppAdapter({ token: env.WHATSAPP_TOKEN, phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID, graphVersion: env.META_GRAPH_VERSION, graphBase: env.META_GRAPH_BASE }, fetchFn),
+    new MetaPageAdapter('messenger', { token: env.MESSENGER_PAGE_TOKEN, graphVersion: env.META_GRAPH_VERSION, graphBase: env.META_GRAPH_BASE }, fetchFn),
+    new MetaPageAdapter('instagram', { token: env.INSTAGRAM_PAGE_TOKEN, graphVersion: env.META_GRAPH_VERSION, graphBase: env.META_GRAPH_BASE }, fetchFn),
     new TelegramAdapter({ token: env.TELEGRAM_BOT_TOKEN }, fetchFn),
   ], messages);
   const messenger: Messenger = opts.messenger ?? hub;
@@ -66,10 +70,16 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   stock.onChanged((changes) => alerts.onStockChanged(changes));
   const notifier = new OrderNotifier(customers, settings, messenger);
   orders.onStatusChange((order, previous) => notifier.onStatusChange(order, previous));
-  const bot = new BotService(repos.products, orders, customers, settings);
+  const carts = new ChatCartsRepo(pool);
+  const chatFlow = new ChatFlow(repos.products, repos.categories, customers, carts, settings, orders);
+  const bot = new BotService(repos.products, orders, customers, settings, chatFlow);
   const inbox = new InboxService(messages, events, bot, messenger, logger);
+  const razorpay = new RazorpayClient({ keyId: env.RAZORPAY_KEY_ID, keySecret: env.RAZORPAY_KEY_SECRET, webhookSecret: env.RAZORPAY_WEBHOOK_SECRET, apiBase: env.RAZORPAY_API_BASE }, fetchFn);
+  const payments = new PaymentService(pool, razorpay, settings, orders, customers, env.PUBLIC_BASE_URL, logger, events, messenger);
   const images = new ImageStorage(env.AZURE_STORAGE_CONNECTION_STRING, env.AZURE_STORAGE_CONTAINER);
-  return { env, pool, logger, repos, auth, stock, customers, settings, events, orders, alerts, messages, hub, messenger, bot, inbox, images };
+  chatFlow.setPaymentOptions(payments.chatOptions());
+  orders.onStatusChange((order, previous) => payments.onOrderStatusChange(order, previous));
+  return { env, pool, logger, repos, auth, stock, customers, settings, events, orders, alerts, messages, hub, messenger, bot, inbox, images, carts, chatFlow, razorpay, payments };
 }
 
 export type Container = ReturnType<typeof createContainer>;

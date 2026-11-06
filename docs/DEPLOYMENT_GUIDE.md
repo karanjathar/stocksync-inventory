@@ -126,9 +126,9 @@ All webhooks are served by the app itself:
 ### 5.1 Meta (one app covers all three)
 1. In [developers.facebook.com](https://developers.facebook.com), create an app of type **Business** and note the **App secret** (App settings → Basic).
 2. Pick a random **verify token**: `openssl rand -hex 16`.
-3. **WhatsApp:** add the *WhatsApp* product, then note the **Phone number ID**. Create a **System User** in Business Settings with a **permanent access token** that has `whatsapp_business_messaging`. Under WhatsApp → Configuration → Webhook, enter the callback URL above and your verify token, then subscribe to **messages**.
-4. **Messenger:** add *Messenger*, link your Facebook Page, generate a **Page access token**, set the same webhook and subscribe the page to **messages**.
-5. **Instagram:** connect an Instagram **professional** account to the Page, add *Instagram* messaging, use a Page token with `instagram_manage_messages`, and subscribe to **messages**.
+3. **WhatsApp:** add the *WhatsApp* product, then note the **Phone number ID**. Create a **System User** in Business Settings with a **permanent access token** that has `whatsapp_business_messaging`. Under WhatsApp → Configuration → Webhook, enter the callback URL above and your verify token, then subscribe to **messages** (button and list taps arrive as `messages` too).
+4. **Messenger:** add *Messenger*, link your Facebook Page, generate a **Page access token**, set the same webhook and subscribe the page to **messages** and **messaging_postbacks** (quick-reply taps arrive as messages; postbacks cover menu and "Get Started" taps).
+5. **Instagram:** connect an Instagram **professional** account to the Page, add *Instagram* messaging, use a Page token with `instagram_manage_messages`, and subscribe to **messages** and **messaging_postbacks**.
 
 ### 5.2 Telegram
 1. Talk to **@BotFather** → `/newbot` → copy the bot token.
@@ -144,7 +144,10 @@ Create `infra/channels.secrets.json`. It is git-ignored, so never commit it. Inc
   "MESSENGER_PAGE_TOKEN": "…",
   "INSTAGRAM_PAGE_TOKEN": "…",
   "TELEGRAM_BOT_TOKEN": "…",
-  "TELEGRAM_WEBHOOK_SECRET": "…"
+  "TELEGRAM_WEBHOOK_SECRET": "…",
+  "RAZORPAY_KEY_ID": "rzp_test_…",
+  "RAZORPAY_KEY_SECRET": "…",
+  "RAZORPAY_WEBHOOK_SECRET": "…"
 }
 ```
 ```bash
@@ -155,7 +158,8 @@ az deployment group create -g "$RG" -f infra/main.bicep \
 
 # Telegram: register the webhook (the Meta webhooks are registered in the Meta dashboard)
 curl -fsS "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
-  -d "url=$APP_URL/webhooks/telegram" -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>"
+  -d "url=$APP_URL/webhooks/telegram" -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>" \
+  -d 'allowed_updates=["message","callback_query"]'   # callback_query = taps on inline buttons
 ```
 The secrets go to Key Vault, and the app reads them through its managed identity. **Settings → Messaging channels** turns green for each configured channel.
 
@@ -164,6 +168,51 @@ Send `help`, `catalog`, `stock <SKU>`, `price <SKU>`, `order <SKU> 2` and `statu
 
 > **WhatsApp 24-hour rule:** WhatsApp only delivers free-form messages (alerts, order updates) to people who messaged your number in the last 24 hours. Customers who just ordered are always inside the window. For staff alerts, either message the bot daily or register approved Meta message templates.
 
+### 5.5 Payments with Razorpay (test first, then live)
+Customers can pay online from the shop and from chat (UPI, cards, netbanking) through **Razorpay Payment Links**; cash on delivery stays available. Online payment needs **all** of: the three Razorpay secrets on the server, the shop currency set to **INR**, and the switch turned on in Settings → Payments. Settings → Payments tells you which one is missing.
+
+**Step 1 — test mode (free, no real money)**
+1. Create a Razorpay account and switch the dashboard to **Test Mode**.
+2. Generate **test API keys** (look for *API Keys* in Settings). You get a Key ID (`rzp_test_…`) and a Key Secret (shown once — store it).
+3. Add a **webhook** (look for *Webhooks* in Settings):
+   - URL: `$APP_URL/webhooks/razorpay` (Settings → Payments in StockSync shows the exact URL)
+   - Secret: any long random string, e.g. `openssl rand -hex 24` — keep it, it is `RAZORPAY_WEBHOOK_SECRET`
+   - Events: **`payment_link.paid`**, **`payment_link.expired`**, **`payment_link.cancelled`**
+4. Put `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` and `RAZORPAY_WEBHOOK_SECRET` into `infra/channels.secrets.json` and redeploy as in 5.3 (they go to Key Vault).
+5. In StockSync: **Settings** → currency `INR`, set a **default warehouse** (paid orders are confirmed from it automatically), and check the Payments card shows ✅ *Online payments are available*.
+6. Test it: place an order on `$APP_URL/shop` choosing **Pay online**, pay with Razorpay's test card or test UPI details (they are listed in Razorpay's Test Mode documentation), and watch the order page change to *Payment received — your order is confirmed*. Then check **Orders** (badge *paid*, status *confirmed*, stock reduced) and repeat from WhatsApp by tapping **Browse → … → Checkout → Pay online**.
+
+**Step 2 — go live**
+1. Complete Razorpay's KYC/activation for your business.
+2. Switch the dashboard to **Live Mode** and generate **live keys** (`rzp_live_…`). Create a **new** webhook there (same URL and events) with a **new** secret — test and live use separate keys and secrets.
+3. Replace the three secrets (`az keyvault secret set` or update the JSON and redeploy as in 5.3).
+4. Make one small real payment end to end, then refund it from the Razorpay dashboard and press **Mark refunded** in StockSync (see 5.7).
+5. Keep a separate staging copy on test keys for trying changes.
+
+**How money is kept safe (so you know what to expect)**
+- The amount always comes from the order on the server; customers cannot change it.
+- Only Razorpay's **signed webhook** marks an order paid — never the page the customer lands on after paying.
+- A paid order is confirmed automatically and stock is deducted once, even if Razorpay sends the event several times.
+- Payment links expire after the validity set in Settings (default 24 h). Shoppers can get a fresh link from their order page; chat customers can tap **Try again** or ask staff to use **Send link** on the order.
+
+### 5.6 Tap-to-order in chat
+Customers say "hi" and tap **Browse / My cart / My orders**, choose a category and product, pick a quantity, and check out with **Pay online** or **Cash on delivery** — no typing needed. The old text commands (`catalog`, `stock TEE`, `order TEE 2`, `status 12`) still work.
+- **WhatsApp** shows real buttons, scrolling list menus and a **Pay** button. **Telegram** shows inline buttons. **Messenger/Instagram** show quick-reply chips. Anywhere else, options appear as a numbered list and the customer replies with the number.
+- WhatsApp only allows free-form and interactive messages within **24 hours of the customer's last message**. Customers who are shopping are always inside that window; for staff alerts or later follow-ups, either register approved message templates with Meta or have staff message the bot daily.
+- Telegram needs `callback_query` in `allowed_updates` (see 5.2) and Messenger/Instagram need the `messaging_postbacks` subscription (see 5.1), otherwise taps are not delivered.
+- To test without a phone: `npm run e2e` runs a scripted WhatsApp conversation against local fakes (see section 6).
+
+### 5.7 What staff do when a payment alert arrives
+| Alert / badge | Meaning | What to do |
+|---|---|---|
+| ⚠️ *Order #N was paid online but could not be confirmed (insufficient stock…)* — order shows **Refund due** | The customer paid but the goods ran out before confirmation | Refund in the Razorpay dashboard (Payments → the payment → Refund), then press **Mark refunded** on the order. The customer is told automatically |
+| ⚠️ *Paid order #N was cancelled — refund the customer* | You cancelled an order that was already paid | Same: refund in Razorpay, then **Mark refunded** |
+| ⚠️ *Duplicate payment for order #N: pay_… was paid after the order was already paid* | The customer paid two different links | Refund the **second** payment (the `pay_…` id in the alert) in Razorpay. The order itself is fine |
+| ⚠️ *Order #N is PAID but could not be auto-confirmed: no default warehouse is set* | Payment received, but no warehouse was configured | Set a default warehouse in Settings, then **Confirm** the order manually |
+| Order shows **unpaid** for a long time | The customer opened the payment page but never paid | Press **Send link** to remind them in chat, or **Cancel** the order (the link is cancelled automatically) |
+
+Refunds are **not** issued automatically: you do them in Razorpay and then record them in StockSync.
+
 ## 6. Local development
 ```bash
 cp .env.example .env               # fill in values; .env is git-ignored
@@ -171,6 +220,8 @@ docker compose up --build          # app + PostgreSQL + Azurite (Blob emulator) 
 ```
 Or without Docker: run PostgreSQL locally, then `npm install && npm run dev` (API on :8080, Vite on :5173 with proxy).
 Quality gate (same as CI): `npm run typecheck && npm run lint && npm test`. Tests need PostgreSQL at `TEST_DATABASE_URL` (default `postgres://postgres@localhost:5432/inventory_test`).
+
+**End-to-end test (payments and chat).** `npm run build && npm run e2e` starts the production build against a fresh database with local stand-ins for Razorpay and WhatsApp, then drives a real browser through *shop → pay online → order confirmed* and a scripted WhatsApp conversation (28 checks). It needs PostgreSQL (`E2E_DATABASE_URL`, default `postgres://postgres@localhost:5432/inventory_e2e`, recreated each run) and Playwright: `npm i --no-save playwright && npx playwright install chromium`. CI runs it on every push. It proves StockSync's own flows; a run against real Razorpay test keys (section 5.5) is still the final check.
 
 To test webhooks from a laptop, expose port 8080 with a tunnel (e.g. `devtunnel host -p 8080 --allow-anonymous` or ngrok) and use that HTTPS URL in Meta and Telegram.
 
@@ -181,6 +232,10 @@ To test webhooks from a laptop, expose port 8080 with a tunnel (e.g. `devtunnel 
 | Metrics, traces, failures | Azure Portal → Application Insights `stocksync-ai-*` |
 | Roll back | `az containerapp update -n stocksync-app -g $RG --image $ACR_NAME.azurecr.io/stocksync:<previous-sha>` |
 | Rotate a secret | `az keyvault secret set --vault-name <kv> -n jwt-secret --value …` then `az containerapp revision restart …` |
+| Payment health | Razorpay Dashboard → Webhooks shows delivery failures; StockSync's Orders page shows **Refund due** orders (highlighted red). Check both daily at first |
+| Clean old webhook records | `DELETE FROM webhook_events WHERE received_at < now() - interval '30 days';` monthly (Razorpay retries for about a day) |
+| Abandoned online orders | Unpaid online orders are not cancelled automatically. Review *unpaid* orders weekly and cancel stale ones (a customer is limited to 15 open orders) |
+| Prove the payment flows | `npm run build && npm run e2e` runs the browser end-to-end test against local fakes (also a CI job) |
 | Database backups | Automatic, 7-day point-in-time restore (raise in Bicep `backupRetentionDays`) |
 | Scale | Single replica by design (in-process realtime bus). Add Azure Web PubSub before raising `maxReplicas` |
 | Harden networking | Move PostgreSQL to VNet integration / private endpoint and drop the `AllowAzureServices` firewall rule |

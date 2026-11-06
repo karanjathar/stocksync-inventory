@@ -13,6 +13,7 @@ describe('loadEnv', () => {
     expect(env.NODE_ENV).toBe('development');
     expect(env.CORS_ORIGINS).toEqual([]);
     expect(env.META_GRAPH_VERSION).toBe('v21.0');
+    expect(env.META_GRAPH_BASE).toBe('https://graph.facebook.com');
     expect(env.DATABASE_SSL).toBe(false);
   });
 
@@ -35,5 +36,32 @@ describe('loadEnv', () => {
     const env = loadEnv({ ...base, WHATSAPP_TOKEN: '', AZURE_STORAGE_CONNECTION_STRING: '' });
     expect(env.WHATSAPP_TOKEN).toBeUndefined();
     expect(env.AZURE_STORAGE_CONNECTION_STRING).toBeUndefined();
+  });
+});
+
+describe('provider base URLs must be https in production (T56)', () => {
+  const prod = { ...base, NODE_ENV: 'production' };
+
+  it.each(['RAZORPAY_API_BASE', 'META_GRAPH_BASE'])('%s: plain http to a remote host is refused in production, with a clear message', (name) => {
+    expect(() => loadEnv({ ...prod, [name]: 'http://payments.evil.example' })).toThrow(new RegExp(`${name}.*https`, 'i'));
+    expect(() => loadEnv({ ...prod, [name]: 'http://203.0.113.9:8080/api' })).toThrow(/https/);
+    expect(() => loadEnv({ ...prod, [name]: 'ftp://example.com' })).toThrow(/https/);
+  });
+
+  it.each(['RAZORPAY_API_BASE', 'META_GRAPH_BASE'])('%s: https and loopback (local E2E fakes) are accepted in production', (name) => {
+    for (const ok of ['https://api.razorpay.com', 'https://proxy.internal.example:8443/base', 'http://127.0.0.1:9999', 'http://localhost:3000', 'http://[::1]:4000']) {
+      expect(() => loadEnv({ ...prod, [name]: ok })).not.toThrow();
+    }
+    expect(() => loadEnv(prod)).not.toThrow(); // the defaults are https
+  });
+
+  it('is not enforced outside production (development and tests may use plain http fakes)', () => {
+    for (const NODE_ENV of ['development', 'test']) {
+      expect(() => loadEnv({ ...base, NODE_ENV, RAZORPAY_API_BASE: 'http://fake.example', META_GRAPH_BASE: 'http://fake.example' })).not.toThrow();
+    }
+  });
+
+  it('reports every offending variable at once', () => {
+    expect(() => loadEnv({ ...prod, RAZORPAY_API_BASE: 'http://a.example', META_GRAPH_BASE: 'http://b.example' })).toThrow(/RAZORPAY_API_BASE[\s\S]*META_GRAPH_BASE/);
   });
 });
