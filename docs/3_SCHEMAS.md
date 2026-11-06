@@ -397,3 +397,41 @@ Settings keys added: `minOrderCents`, `deliveryFeeCents`. Slot booking: `UPDATE 
 | POST /api/counter-sales, GET /api/counter-sales/:id | staff | creates order + Razorpay UPI QR |
 
 Razorpay UPI QR (verify against test keys before enabling): `POST /v1/payments/qr_codes` with `type: "upi_qr"`, `usage: "single_use"`, `fixed_amount: true`, `payment_amount` (paise), `close_by`; paid state arrives on the signed `qr_code.credited` webhook. Razorpay's pages describe two creation paths and a note about webhooks on close; contract tests pin what we implement and the feature flag stays off until a real test run confirms it.
+
+## 3.20 Release 3 Catalogue depth — `src/api/migrations/010_catalogue.sql`
+```sql
+ALTER TABLE products ADD COLUMN unit text NOT NULL DEFAULT 'pcs' CHECK (unit IN ('pcs','kg','g','l','ml','pack')),
+  ADD COLUMN unit_scale integer NOT NULL DEFAULT 1 CHECK (unit_scale IN (1,10,100,1000)), ADD COLUMN item_group_id uuid REFERENCES item_groups(id), ADD COLUMN variant_values jsonb;
+CREATE TABLE item_groups (id uuid PK, name text NOT NULL UNIQUE, attributes jsonb NOT NULL, -- {"size":["S","M"],"colour":["Red"]}
+  category_id uuid REFERENCES categories(id), description text NOT NULL DEFAULT '');
+CREATE TABLE stocktakes (id uuid PK, warehouse_id uuid NOT NULL REFERENCES warehouses(id), category_id uuid REFERENCES categories(id),
+  status text NOT NULL CHECK (status IN ('OPEN','POSTED','CANCELLED')), started_at timestamptz NOT NULL DEFAULT now(), posted_at timestamptz, created_by uuid REFERENCES users(id));
+CREATE TABLE stocktake_lines (stocktake_id uuid REFERENCES stocktakes(id) ON DELETE CASCADE, product_id uuid REFERENCES products(id),
+  expected integer NOT NULL, counted integer, PRIMARY KEY (stocktake_id, product_id));
+CREATE TABLE supplier_prices (supplier_id uuid REFERENCES suppliers(id), product_id uuid REFERENCES products(id), unit_cost_cents integer NOT NULL CHECK (unit_cost_cents >= 0),
+  min_quantity integer NOT NULL DEFAULT 1, lead_days integer NOT NULL DEFAULT 0, active boolean NOT NULL DEFAULT true, PRIMARY KEY (supplier_id, product_id));
+CREATE TABLE cost_history (id bigserial PK, product_id uuid, supplier_id uuid, unit_cost_cents integer NOT NULL, at timestamptz NOT NULL DEFAULT now(), reference text);
+```
+Units: quantities are always integers in base units. A product with `unit='kg'`, `unit_scale=1000` stores 1.5 kg as 1500. Price is per display unit (price_cents per kg); line total = round-half-up(`quantity_base × price_cents / unit_scale`). Pieces use scale 1, so all existing behaviour and tests are unchanged.
+Stocktake posting: for each line with `counted IS NOT NULL` and `counted <> expected`, call StockService.adjust with reference `STOCKTAKE-<id>`; the status flips OPEN→POSTED in the same transaction (a second post is 409).
+
+| Method & Path | Role | Notes |
+|---|---|---|
+| GET/POST/PATCH /api/item-groups, POST /api/item-groups/:id/variants | staff | variants generated from attribute combinations |
+| POST /api/stocktakes, PUT /api/stocktakes/:id/lines, POST /api/stocktakes/:id/post, /cancel | staff | |
+| GET/PUT /api/suppliers/:id/prices | staff | |
+| list endpoints | any | `q`, filters, `after` (keyset cursor), `limit` ≤ 100 |
+
+## 3.21 Release 3 Credit, communication, operations — `src/api/migrations/011_credit.sql`
+```sql
+ALTER TABLE customers ADD COLUMN credit_limit_cents integer NOT NULL DEFAULT 0, ADD COLUMN language text NOT NULL DEFAULT 'en';
+CREATE TABLE credit_entries (id bigserial PK, customer_id uuid NOT NULL REFERENCES customers(id), kind text NOT NULL CHECK (kind IN ('SALE','RETURN','RECEIPT','ADJUSTMENT')),
+  amount_cents integer NOT NULL, -- positive = customer owes more, negative = owes less
+  order_id uuid REFERENCES orders(id), request_id text UNIQUE, note text NOT NULL DEFAULT '', at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE document_links (token text PRIMARY KEY, kind text NOT NULL, ref_id uuid NOT NULL, expires_at timestamptz NOT NULL);
+CREATE TABLE send_log (id bigserial PK, kind text, ref_id uuid, channel text, recipient text, ok boolean, at timestamptz NOT NULL DEFAULT now());
+```
+Balance = Σ amount_cents; the ledger is append-only. Orders gain payment method `CREDIT`. A credit sale is allowed only if `balance + total <= credit_limit` (checked under a customer row lock).
+Languages: message catalogues `en`, `hi`; every key must exist in `en`; fallback is `en`. Accounting export: Tally voucher XML (sales, purchase, receipt, payment) plus CSV; the totals must equal the invoice, bill and ledger totals.
+Retention: `RETENTION_WEBHOOK_DAYS` (default 30) and `RETENTION_MESSAGE_DAYS` (default 365); deletion requests anonymise name, phone, email and channel id but keep order and invoice amounts.
+Email provider env: `ACS_EMAIL_ENDPOINT`, `ACS_EMAIL_KEY`, `EMAIL_FROM` (all optional; sending is disabled when unset).

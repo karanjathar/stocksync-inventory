@@ -53,3 +53,12 @@ _One entry per significant decision. Newest at the bottom._
 
 ## D-016 Retail ideas chosen from public evidence only (2026-11-06)
 **Context:** The owner asked to learn from DMart and similar retailers. A web search gave public descriptions of DMart Ready (home delivery in time slots or free pick-up point, discount versus MRP, order minimums) but nothing verifiable about its scanning or repeat-order features. **Decision:** Implement the generic patterns the evidence supports (MRP and savings, minimum order and fee, pick-up or delivery with slots, order again) plus QR features that fit StockSync's own flows (product and shop QR, camera scanning, handover QR, UPI QR at the counter). **Consequences:** Features are modelled on common retail practice, not a copy of any app. Loyalty and coupons are deferred.
+
+## D-017 Fractional quantities as scaled integers (2026-11-06)
+**Context:** Grocery needs 1.5 kg or 250 ml, but all stock, order and ledger code uses integer quantities with atomic conditional updates. **Decision:** Keep every stored quantity an integer in base units and add `unit` and `unit_scale` to products; convert only at the edges (input, display, price per display unit). **Consequences:** No change to StockService, constraints or concurrency proofs; scale 1 products are untouched. Very large weights are bounded by integer limits (documented). Mixed-unit conversion (kg to g across products) is not supported.
+
+## D-018 Credit is a customer sub-ledger, not an accounting system (2026-11-06)
+**Context:** Many shops sell on credit. A general ledger is out of scope (D-010). **Decision:** An append-only `credit_entries` ledger per customer with a limit check under a customer row lock, receipts, statements and ageing, and an accounting export for the real books. **Consequences:** Balances are exact and auditable; no chart of accounts, journals or tax filing.
+
+## D-019 GST filing and counter POS are out of scope for Release 3 (2026-11-06)
+**Context:** The owner chose to skip GST return filing and a POS counter mode. **Decision:** Keep tax calculation and invoices (D-011) but build no return filing, e-invoice, e-way bill, receipt-printer or offline billing. **Consequences:** A GST-registered business still files through its accountant using the accounting export (T101). The counter-sale UPI QR (T90) stays as a lightweight option.

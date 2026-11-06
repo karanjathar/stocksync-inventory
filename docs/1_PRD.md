@@ -153,3 +153,18 @@ WhatsApp Cloud API access as in v1. Until keys exist, everything is verified wit
 | FR-R3-19 | Handover QR: customer shows it, staff scan to complete pick-up or delivery |
 | FR-R3-20 | UPI QR payment at the counter, confirmed only by the signed webhook |
 **Not copied:** loyalty programs, coupons, store-level pricing and rider tracking (no verified detail, and they need data we do not have).
+
+### 1.9.2 Catalogue depth, credit and operations (added after review of what was missing)
+| ID | Requirement |
+|---|---|
+| FR-R3-21 | Units of measure and fractional quantities (kg, g, l, ml, pack) |
+| FR-R3-22 | Item groups with variants (size, colour) in admin, shop and chat |
+| FR-R3-23 | Stocktake with variance adjustments and scan-to-count |
+| FR-R3-24 | Supplier price lists, cost history, cheapest-supplier reorder |
+| FR-R3-25 | Search, filters, pagination and a load test at realistic size |
+| FR-R3-26 | Customer credit ledger, limits, receipts, statements, ageing, reminders |
+| FR-R3-27 | Send invoices, statements and POs by WhatsApp and email |
+| FR-R3-28 | Accounting export (CSV and Tally XML) |
+| FR-R3-29 | Hindi and regional-language shop, chat and documents |
+| FR-R3-30 | Backups with a tested restore, data retention and deletion requests |
+**Explicitly out of scope (owner decision):** GST return filing (GSTR, e-invoice, e-way bill) and a counter point-of-sale mode with receipt printer and offline billing. Tax on invoices (FR-R3-4) stays.
