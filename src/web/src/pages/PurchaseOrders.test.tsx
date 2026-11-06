@@ -128,6 +128,20 @@ describe('Purchase orders screen (T63)', () => {
     expect(calls.find((c) => c.method === 'POST')!.body).toEqual({ lines: [{ itemId: 'i1', quantity: 10, warehouseId: 'w2' }, { itemId: 'i2', quantity: 4, warehouseId: 'w2' }] });
   });
 
+  it('closes a partly received order short after confirmation (T106)', async () => {
+    auth.role = 'staff';
+    const partial = po({ status: 'PARTIALLY_RECEIVED', items: [item({ receivedQuantity: 4 })] });
+    const calls = mockApi({ ...base([partial]), 'POST /purchase-orders/po1/close': po({ status: 'CLOSED' }) });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    view();
+    fireEvent.click(await screen.findByRole('button', { name: 'Close short' }));
+    expect(calls.some((c) => c.path.endsWith('/close'))).toBe(false); // declined
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Close short' }));
+    await waitFor(() => expect(calls.some((c) => c.path === '/purchase-orders/po1/close')).toBe(true));
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull(); // a part-received order cannot be cancelled
+  });
+
   it('shows server errors', async () => {
     auth.role = 'staff';
     mockApi({ ...base([po({ status: 'SENT' })]), 'POST /purchase-orders/po1/cancel': new Response(JSON.stringify({ error: { code: 'CONFLICT', message: 'This purchase order cannot be cancelled (it is RECEIVED)' } }), { status: 409 }) });

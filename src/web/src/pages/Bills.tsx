@@ -182,7 +182,7 @@ function NewBill({ onDone, onCancel }: { onDone: () => void; onCancel: () => voi
           <Field label="Purchase order" hint="Bills the received goods that are not billed yet">
             <select required value={purchaseOrderId} onChange={(e) => setPurchaseOrderId(e.target.value)}>
               <option value="">Select…</option>
-              {orders.data?.filter((o) => o.status === 'PARTIALLY_RECEIVED' || o.status === 'RECEIVED')
+              {orders.data?.filter((o) => o.status === 'PARTIALLY_RECEIVED' || o.status === 'RECEIVED' || o.status === 'CLOSED')
                 .map((o) => <option key={o.id} value={o.id}>#{o.number} · {o.supplierName} · {money(o.totalCents, settings.currency)}</option>)}
             </select>
           </Field>

@@ -79,6 +79,12 @@ export class PurchasesService {
     return (await this.get(id))!;
   }
 
+  /** Ends a partly received order whose remaining goods will not arrive. Received goods stay received and billable. */
+  async close(id: string): Promise<PurchaseOrder> {
+    await this.transition(id, ['PARTIALLY_RECEIVED'], 'CLOSED', 'closed short');
+    return (await this.get(id))!;
+  }
+
   async cancel(id: string): Promise<PurchaseOrder> {
     await this.transition(id, ['DRAFT', 'SENT'], 'CANCELLED', 'cancelled');
     return (await this.get(id))!;

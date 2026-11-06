@@ -28,7 +28,7 @@ const receiveSchema = z.object({
   })).min(1).max(200),
 });
 const listSchema = z.object({
-  status: z.enum(['DRAFT', 'SENT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED']).optional(),
+  status: z.enum(['DRAFT', 'SENT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CLOSED', 'CANCELLED']).optional(),
   supplierId: z.string().uuid().optional(),
 });
 
@@ -49,6 +49,7 @@ export function purchaseRoutes(c: Container): Router {
   r.post('/:id/receive', write, async (req, res) => {
     res.json(await c.purchases.receive(idParam(req), parse(receiveSchema, req.body).lines, currentUser(req).id));
   });
+  r.post('/:id/close', write, async (req, res) => { res.json(await c.purchases.close(idParam(req))); });
   r.post('/:id/cancel', write, async (req, res) => { res.json(await c.purchases.cancel(idParam(req))); });
   return r;
 }

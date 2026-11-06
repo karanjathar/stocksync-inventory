@@ -7,8 +7,8 @@ import { dateTime, money, toCents } from '../format';
 import { Badge, Card, Empty, ErrorBanner, Field, Page } from '../components/ui';
 import type { Product, PurchaseOrder, PurchaseStatus, Supplier, Warehouse } from '../api/types';
 
-const FILTERS: (PurchaseStatus | 'ALL')[] = ['ALL', 'DRAFT', 'SENT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED'];
-const TONE = { DRAFT: 'neutral', SENT: 'info', PARTIALLY_RECEIVED: 'warn', RECEIVED: 'good', CANCELLED: 'bad' } as const;
+const FILTERS: (PurchaseStatus | 'ALL')[] = ['ALL', 'DRAFT', 'SENT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CLOSED', 'CANCELLED'];
+const TONE = { DRAFT: 'neutral', SENT: 'info', PARTIALLY_RECEIVED: 'warn', RECEIVED: 'good', CLOSED: 'neutral', CANCELLED: 'bad' } as const;
 const label = (s: string) => s.replace(/_/g, ' ');
 
 type Panel = { kind: 'new' } | { kind: 'edit'; po: PurchaseOrder } | { kind: 'receive'; po: PurchaseOrder } | null;
@@ -23,8 +23,9 @@ export function PurchaseOrders() {
   const action = useAction();
 
   const close = () => { setPanel(null); orders.reload(); };
-  const act = async (po: PurchaseOrder, verb: 'send' | 'cancel') => {
+  const act = async (po: PurchaseOrder, verb: 'send' | 'cancel' | 'close') => {
     if (verb === 'cancel' && !window.confirm(`Cancel purchase order #${po.number}?`)) return;
+    if (verb === 'close' && !window.confirm(`Close #${po.number} short? The goods still missing will no longer be expected and can be re-ordered. Goods already received stay in stock.`)) return;
     const ok = await action.run(() => api(`/purchase-orders/${po.id}/${verb}`, { body: {} }));
     if (ok) orders.reload();
   };
@@ -58,6 +59,7 @@ export function PurchaseOrders() {
                         {po.status === 'DRAFT' && <button className="small" disabled={action.busy} onClick={() => setPanel({ kind: 'edit', po })}>Edit</button>}
                         {po.status === 'DRAFT' && <button className="small primary" disabled={action.busy} onClick={() => void act(po, 'send')}>Send</button>}
                         {(po.status === 'SENT' || po.status === 'PARTIALLY_RECEIVED') && <button className="small primary" disabled={action.busy} onClick={() => setPanel({ kind: 'receive', po })}>Receive</button>}
+                        {po.status === 'PARTIALLY_RECEIVED' && <button className="small" disabled={action.busy} onClick={() => void act(po, 'close')}>Close short</button>}
                         {(po.status === 'DRAFT' || po.status === 'SENT') && <button className="small danger" disabled={action.busy} onClick={() => void act(po, 'cancel')}>Cancel</button>}
                       </div>
                     )}</td>

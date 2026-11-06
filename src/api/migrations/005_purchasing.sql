@@ -7,7 +7,7 @@ CREATE TABLE purchase_orders (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   number serial UNIQUE,
   supplier_id uuid NOT NULL REFERENCES suppliers(id),
-  status text NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT','SENT','PARTIALLY_RECEIVED','RECEIVED','CANCELLED')),
+  status text NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT','SENT','PARTIALLY_RECEIVED','RECEIVED','CLOSED','CANCELLED')),
   warehouse_id uuid NOT NULL REFERENCES warehouses(id),
   expected_date date,
   notes text NOT NULL DEFAULT '',

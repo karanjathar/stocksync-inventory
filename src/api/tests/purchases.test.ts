@@ -95,6 +95,27 @@ describe('purchase orders (T59)', () => {
     expect((await act(po.id, 'cancel')).status).toBe(409);
   });
 
+  it('can be closed short once partly received; nothing else can be closed (T106)', async () => {
+    const po = (await create()).body;
+    const close = (id: string, tok = staff) => request(t.app).post(`/api/purchase-orders/${id}/close`).set(auth(tok)).send({});
+    expect((await close(po.id)).status).toBe(409); // DRAFT
+    await act(po.id, 'send');
+    expect((await close(po.id)).status).toBe(409); // SENT, nothing received yet: cancel it instead
+    const itemId = (await request(t.app).get(`/api/purchase-orders/${po.id}`).set(auth(staff))).body.items[0].id;
+    await request(t.app).post(`/api/purchase-orders/${po.id}/receive`).set(auth(staff)).send({ lines: [{ itemId, quantity: 1 }] });
+    expect((await close(po.id, viewer)).status).toBe(403);
+    const closed = await close(po.id);
+    expect(closed.status).toBe(200);
+    expect(closed.body.status).toBe('CLOSED');
+    // closed is final: no more receiving, editing, cancelling or closing
+    expect((await close(po.id)).status).toBe(409);
+    expect((await act(po.id, 'cancel')).status).toBe(409);
+    expect((await act(po.id, 'send')).status).toBe(409);
+    expect((await request(t.app).patch(`/api/purchase-orders/${po.id}`).set(auth(staff)).send({ notes: 'x' })).status).toBe(409);
+    expect((await request(t.app).post(`/api/purchase-orders/${po.id}/receive`).set(auth(staff)).send({ lines: [{ itemId, quantity: 1 }] })).status).toBe(409);
+    expect((await request(t.app).get('/api/purchase-orders?status=CLOSED').set(auth(viewer))).body.some((p: { id: string }) => p.id === po.id)).toBe(true);
+  });
+
   it('is safe under concurrent sends: exactly one wins', async () => {
     const po = (await create()).body;
     const results = await Promise.all(Array.from({ length: 6 }, () => act(po.id, 'send')));

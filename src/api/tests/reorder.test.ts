@@ -94,6 +94,16 @@ describe('reorder suggestions (T62)', () => {
     expect(await find(p.id)).toMatchObject({ onHand: 0, incoming: 3, suggestedQuantity: 17 }); // 2 x 10 - 3
   });
 
+  it('stops counting goods that will never arrive once an order is closed short (T106)', async () => {
+    const p = await product({ level: 10, onHand: 0, reorderQuantity: 30, supplierId: acme });
+    const po = (await post('/api/purchase-orders', { supplierId: acme, warehouseId: main, items: [{ productId: p.id, quantity: 20, unitCostCents: 700 }] })).body;
+    await post(`/api/purchase-orders/${po.id}/send`, {});
+    await post(`/api/purchase-orders/${po.id}/receive`, { lines: [{ itemId: po.items[0].id, quantity: 4 }] });
+    expect(await find(p.id)).toBeUndefined(); // 4 on hand + 16 still expected is above the level
+    await post(`/api/purchase-orders/${po.id}/close`, {});
+    expect(await find(p.id)).toMatchObject({ onHand: 4, incoming: 0, suggestedQuantity: 30 }); // the missing 16 will not come
+  });
+
   it('suggests the most recent purchase cost', async () => {
     const p = await product({ level: 10, onHand: 0, reorderQuantity: 5, supplierId: acme });
     const po = (await post('/api/purchase-orders', { supplierId: acme, warehouseId: main, items: [{ productId: p.id, quantity: 5, unitCostCents: 640 }] })).body;
