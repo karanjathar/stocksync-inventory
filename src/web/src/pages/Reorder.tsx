@@ -10,7 +10,7 @@ import type { PurchaseOrder } from '../api/types';
 
 interface Suggestion {
   productId: string; sku: string; name: string; unit: string; onHand: number; incoming: number; reorderLevel: number;
-  suggestedQuantity: number; supplierId: string | null; supplierName: string | null; lastCostCents: number;
+  suggestedQuantity: number; supplierId: string | null; supplierName: string | null; lastCostCents: number; costKnown: boolean;
 }
 interface Result { orders: Pick<PurchaseOrder, 'id' | 'number' | 'supplierName' | 'totalCents'>[]; skipped: { productId: string; reason: string }[] }
 
@@ -49,6 +49,9 @@ export function Reorder() {
           <button className="ghost small" onClick={() => setResult(null)}>Dismiss</button>
         </div>
       )}
+      {list.data?.some((s) => !s.costKnown && selected.has(s.productId)) && (
+        <div className="banner" role="note">Some selected items have no known cost, so their draft lines are created at a cost of 0.00. Set the real cost on the draft before sending it.</div>
+      )}
       <Card>
         {list.data?.length ? (
           <div className="table-wrap">
@@ -64,7 +67,7 @@ export function Reorder() {
                     <td className="num">{s.onHand}</td>
                     <td className="num">{s.incoming}</td>
                     <td className="num">{s.reorderLevel}</td>
-                    <td className="num">{s.suggestedQuantity}</td>
+                    <td className="num">{s.suggestedQuantity}{!s.costKnown && <div className="small" style={{ color: 'var(--warn)' }}>cost unknown</div>}</td>
                     <td>{s.supplierName ?? <span className="muted">No preferred supplier</span>}</td>
                   </tr>
                 ))}

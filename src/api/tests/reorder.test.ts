@@ -104,11 +104,17 @@ describe('reorder suggestions (T62)', () => {
     expect(await find(p.id)).toMatchObject({ onHand: 4, incoming: 0, suggestedQuantity: 30 }); // the missing 16 will not come
   });
 
-  it('suggests the most recent purchase cost', async () => {
+  it('suggests the most recent real purchase cost, ignoring draft and cancelled orders (T107)', async () => {
     const p = await product({ level: 10, onHand: 0, reorderQuantity: 5, supplierId: acme });
-    const po = (await post('/api/purchase-orders', { supplierId: acme, warehouseId: main, items: [{ productId: p.id, quantity: 5, unitCostCents: 640 }] })).body;
-    await post(`/api/purchase-orders/${po.id}/cancel`, {});
-    expect((await find(p.id))!.lastCostCents).toBe(640);
+    expect(await find(p.id)).toMatchObject({ lastCostCents: 0, costKnown: false }); // no history at all
+    const line = (cost: number) => [{ productId: p.id, quantity: 5, unitCostCents: cost }];
+    const cancelled = (await post('/api/purchase-orders', { supplierId: acme, warehouseId: main, items: line(111) })).body;
+    await post(`/api/purchase-orders/${cancelled.id}/cancel`, {});
+    await post('/api/purchase-orders', { supplierId: acme, warehouseId: main, items: line(222) }); // stays DRAFT
+    expect(await find(p.id)).toMatchObject({ lastCostCents: 0, costKnown: false });
+    const real = (await post('/api/purchase-orders', { supplierId: acme, warehouseId: main, items: line(640) })).body;
+    await post(`/api/purchase-orders/${real.id}/send`, {});
+    expect(await find(p.id)).toMatchObject({ lastCostCents: 640, costKnown: true });
   });
 });
 

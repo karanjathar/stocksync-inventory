@@ -8,7 +8,7 @@ import type { SettingsService } from './settings.js';
 export interface ReorderSuggestion {
   productId: string; sku: string; name: string; unit: string;
   onHand: number; incoming: number; reorderLevel: number; reorderQuantity: number;
-  suggestedQuantity: number; supplierId: string | null; supplierName: string | null; lastCostCents: number;
+  suggestedQuantity: number; supplierId: string | null; supplierName: string | null; lastCostCents: number; costKnown: boolean;
 }
 export interface ReorderResult { orders: PurchaseOrder[]; skipped: { productId: string; reason: string }[] }
 
@@ -24,7 +24,7 @@ const SUGGESTION_SQL = `
          p.reorder_level AS "reorderLevel", p.reorder_quantity AS "reorderQuantity",
          CASE WHEN p.reorder_quantity > 0 THEN p.reorder_quantity
               ELSE GREATEST(1, 2 * p.reorder_level - (COALESCE(s.total, 0) + COALESCE(inc.qty, 0))) END::int AS "suggestedQuantity",
-         p.preferred_supplier_id AS "supplierId", sup.name AS "supplierName", COALESCE(lc.cost, 0)::int AS "lastCostCents"
+         p.preferred_supplier_id AS "supplierId", sup.name AS "supplierName", COALESCE(lc.cost, 0)::int AS "lastCostCents", (lc.cost IS NOT NULL) AS "costKnown"
   FROM products p
   LEFT JOIN (SELECT product_id, SUM(quantity) AS total FROM stock_levels GROUP BY product_id) s ON s.product_id = p.id
   LEFT JOIN (SELECT i.product_id, SUM(i.quantity - i.received_quantity) AS qty
@@ -32,7 +32,8 @@ const SUGGESTION_SQL = `
              WHERE o.status IN ('DRAFT', 'SENT', 'PARTIALLY_RECEIVED') GROUP BY i.product_id) inc ON inc.product_id = p.id
   LEFT JOIN suppliers sup ON sup.id = p.preferred_supplier_id
   LEFT JOIN LATERAL (SELECT i.unit_cost_cents AS cost FROM purchase_order_items i JOIN purchase_orders o ON o.id = i.purchase_order_id
-                     WHERE i.product_id = p.id ORDER BY o.created_at DESC, o.number DESC LIMIT 1) lc ON true
+                     WHERE i.product_id = p.id AND o.status IN ('SENT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CLOSED')
+                     ORDER BY o.created_at DESC, o.number DESC LIMIT 1) lc ON true
   WHERE p.is_active AND p.reorder_level > 0 AND COALESCE(s.total, 0) + COALESCE(inc.qty, 0) <= p.reorder_level`;
 
 export class ReorderService {

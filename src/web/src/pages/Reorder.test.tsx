@@ -7,7 +7,7 @@ import { mockApi } from '../test/setup';
 const auth = vi.hoisted(() => ({ role: 'staff' as 'staff' | 'viewer' }));
 vi.mock('../auth', () => ({ useAuth: () => ({ can: (r: string) => r === 'viewer' || auth.role === 'staff', user: { id: 'u', role: auth.role } }) }));
 
-const s = (over: object) => ({ productId: 'p1', sku: 'TEE', name: 'T-Shirt', unit: 'pcs', onHand: 2, incoming: 0, reorderLevel: 10, reorderQuantity: 30, suggestedQuantity: 30, supplierId: 's1', supplierName: 'Acme', lastCostCents: 900, ...over });
+const s = (over: object) => ({ productId: 'p1', sku: 'TEE', name: 'T-Shirt', unit: 'pcs', onHand: 2, incoming: 0, reorderLevel: 10, reorderQuantity: 30, suggestedQuantity: 30, supplierId: 's1', supplierName: 'Acme', lastCostCents: 900, costKnown: true, ...over });
 const rows = [s({}), s({ productId: 'p2', sku: 'MUG', name: 'Mug', supplierId: null, supplierName: null, suggestedQuantity: 12 })];
 const view = () => render(<MemoryRouter><Reorder /></MemoryRouter>);
 
@@ -36,6 +36,14 @@ describe('Reorder suggestions screen (T63)', () => {
     expect(await screen.findByText(/Created 1 draft purchase order/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /#9/ })).toHaveAttribute('href', '/purchase-orders');
     expect(screen.getByText(/No preferred supplier set/)).toBeInTheDocument();
+  });
+
+  it('warns when a selected item has no known cost (T107)', async () => {
+    auth.role = 'staff';
+    mockApi({ '/reorder-suggestions': [s({ lastCostCents: 0, costKnown: false })] });
+    view();
+    expect(await screen.findByText('cost unknown')).toBeInTheDocument();
+    expect(screen.getByRole('note')).toHaveTextContent(/cost of 0\.00/);
   });
 
   it('does nothing when nothing is selected', async () => {
