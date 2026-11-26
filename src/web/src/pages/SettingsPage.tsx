@@ -5,6 +5,7 @@ import { useSettings } from '../settings';
 import { Badge, Card, ErrorBanner, Field, Page } from '../components/ui';
 import { ChannelCredentials } from '../components/ChannelCredentials';
 import { Billing } from './Billing';
+import { DataRights } from './DataRights';
 import type { AlertRecipient, ChannelName, ChannelStatus, CustomFieldDef, PaymentsConfig, Settings, Warehouse } from '../api/types';
 
 const CHANNELS: ChannelName[] = ['whatsapp', 'messenger', 'instagram', 'telegram'];
@@ -217,6 +218,7 @@ export function SettingsPage() {
       </form>
       <Billing />
       <ChannelCredentials />
+      <DataRights />
     </Page>
   );
 }

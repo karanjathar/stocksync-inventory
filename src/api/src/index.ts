@@ -45,6 +45,8 @@ async function main(): Promise<void> {
   // Businesses whose payment stayed unpaid past the grace period go back to Free.
   const billingTimer = c.billingWebhooks ? setInterval(() => { void c.billingWebhooks!.expireGrace().catch((err: unknown) => logger.warn({ err: String(err) }, 'grace expiry failed')); }, 10 * 60_000) : undefined;
   billingTimer?.unref();
+  const eraseTimer = c.tenantEraser ? setInterval(() => { void c.tenantEraser!.runDue().catch((err: unknown) => logger.warn({ err: String(err) }, 'business erasure run failed')); }, 30 * 60_000) : undefined;
+  eraseTimer?.unref();
 
   const here = path.dirname(fileURLToPath(import.meta.url));
   const staticDir = path.resolve(here, '../../web/dist');

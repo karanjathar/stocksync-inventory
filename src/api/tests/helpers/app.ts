@@ -13,6 +13,8 @@ export interface TestApp {
   pool: pg.Pool;
   c: Container;
   env: Env;
+  /** The platform role's pool (no access to business data). */
+  platformPool: pg.Pool;
   /** Returns a bearer token for a freshly created user with the given role. */
   token(role: Role): Promise<string>;
   close(): Promise<void>;
@@ -40,7 +42,7 @@ export async function buildTestApp(envOverrides: Record<string, string> = {}, ov
   let n = 0;
   const tokens = new Map<Role, string>();
   return {
-    app, pool, c, env,
+    app, pool, c, env, platformPool,
     async token(role) {
       const cached = tokens.get(role);
       if (cached) return cached;

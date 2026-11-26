@@ -28,6 +28,14 @@ export class ImageStorage {
     await this.container?.createIfNotExists({ access: 'blob' });
   }
 
+  /** Deletes every image of one business (they all live under its id). Returns how many were removed. Not exercised against live storage in tests. */
+  async deleteTenantImages(tenantId: string): Promise<number> {
+    if (!this.container || !/^[0-9a-f-]{36}$/i.test(tenantId)) return 0;
+    let n = 0;
+    for await (const blob of this.container.listBlobsFlat({ prefix: `${tenantId}/` })) { await this.container.deleteBlob(blob.name); n++; }
+    return n;
+  }
+
   /** Blobs are named `<businessId>/<year>/<random>.<ext>`: unguessable, and one prefix per business for export and deletion. */
   async createUploadSas(contentType: string, tenantId: string): Promise<{ uploadUrl: string; blobUrl: string }> {
     if (!this.container) throw new NotConfiguredError('Azure Blob Storage');

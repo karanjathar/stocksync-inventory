@@ -130,7 +130,7 @@ describe('concurrency and transactions', () => {
 });
 
 describe('guard: every table is either tenant-scoped with RLS or explicitly platform-level', () => {
-  const PLATFORM_TABLES = ['schema_migrations', 'jobs', 'worker_heartbeats', 'tenants', 'platform_admins', 'signup_requests', 'plans', 'billing_events'];
+  const PLATFORM_TABLES = ['schema_migrations', 'jobs', 'worker_heartbeats', 'tenants', 'platform_admins', 'signup_requests', 'plans', 'billing_events', 'tenant_deletions'];
   // The job queue is shared by the workers, which claim work across businesses, so it is NOT row-level secured: it holds ids and kinds only,
   // jobs run inside their own tenant, and the tenant-facing views filter on current_tenant(). The platform queue view is the only cross-tenant read.
   const QUEUE_TABLES = ['jobs'];
@@ -142,7 +142,7 @@ describe('guard: every table is either tenant-scoped with RLS or explicitly plat
         AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = 'tenant_id' AND NOT a.attisdropped)`);
     expect(rows.length).toBeGreaterThan(20);
     for (const r of rows.filter((x) => !QUEUE_TABLES.includes(x.relname))) // These have two on purpose: one for the business, one for the platform role (subscriptions: webhooks write; usage_counters: the console reads).
-      expect(r, r.relname).toMatchObject({ relrowsecurity: true, policies: ['subscriptions', 'usage_counters'].includes(r.relname) ? 2 : 1 });
+      expect(r, r.relname).toMatchObject({ relrowsecurity: true, policies: ['subscriptions', 'usage_counters', 'deletion_requests'].includes(r.relname) ? 2 : 1 });
   });
 
   it('no other table exists unless it is on the platform list (a new table must choose)', async () => {

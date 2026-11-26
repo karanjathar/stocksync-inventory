@@ -47,6 +47,7 @@ import { OnboardingService } from './services/demoData.js';
 import { PlanAdmin, PlansService } from './services/plans.js';
 import { BillingService, BillingWebhooks } from './services/billing.js';
 import { AuditService } from './services/audit.js';
+import { DataRights, TenantEraser } from './services/tenantDeletion.js';
 import { RazorpaySubscriptions } from './payments/razorpaySubscriptions.js';
 
 export interface ContainerOverrides {
@@ -94,6 +95,7 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const reorder = new ReorderService(pool, purchaseOrders, settings);
   const stockCounts = new StockCountsService(pool, stock);
   const audit = new AuditService(pool);
+  const dataRights = new DataRights(pool);
   const plans = new PlansService(pool);
   const subscriptions = new RazorpaySubscriptions({ keyId: env.RAZORPAY_PLATFORM_KEY_ID, keySecret: env.RAZORPAY_PLATFORM_KEY_SECRET, webhookSecret: env.RAZORPAY_PLATFORM_WEBHOOK_SECRET, apiBase: env.RAZORPAY_API_BASE }, opts.fetch ?? fetch);
   const billing = new BillingService(pool, plans, subscriptions, env.BILLING_TRIAL_DAYS);
@@ -159,9 +161,10 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const onboarding = new OnboardingService(pool, repos.products, stock, async () => (await channelCredentials.summary()).some((k) => k.kind === 'whatsapp' && k.configured));
   const payments = new PaymentService(pool, razorpayProvider, settings, orders, customers, env.PUBLIC_BASE_URL, logger, events, messenger);
   const images = new ImageStorage(env.AZURE_STORAGE_CONNECTION_STRING, env.AZURE_STORAGE_CONTAINER);
+  const tenantEraser = opts.platformPool ? new TenantEraser(opts.platformPool, logger, async (tenantId) => { await images.deleteTenantImages(tenantId); }) : undefined;
   chatFlow.setPaymentOptions(payments.chatOptions());
   orders.onStatusChange((order, previous) => payments.onOrderStatusChange(order, previous));
-  return { env, pool, logger, repos, auth, platform, signup, onboarding, plans, planAdmin, audit, billing, billingWebhooks, subscriptions, emailSender, tenants, tenantDirectory, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpayProvider, channelCredentials, payments };
+  return { env, pool, logger, repos, auth, platform, signup, onboarding, plans, planAdmin, audit, dataRights, tenantEraser, billing, billingWebhooks, subscriptions, emailSender, tenants, tenantDirectory, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpayProvider, channelCredentials, payments };
 }
 
 export type Container = ReturnType<typeof createContainer>;

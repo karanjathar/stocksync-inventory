@@ -69,7 +69,7 @@ const MATRIX: Entry[] = [
   E('post', '/api/purchase-orders/:po/cancel', '/:id/cancel'), E('post', '/api/purchase-orders/:po/receive', '/:id/receive', (i) => ({ receiptId: 'evil', lines: [{ productId: i.product, quantity: 1 }] })),
   E('get', '/api/stock-counts/:count', '/:id'), E('put', '/api/stock-counts/:count/lines', '/:id/lines', (i) => ({ lines: [{ productId: i.product, countedQuantity: 0 }] })),
   E('post', '/api/stock-counts/:count/submit', '/:id/submit'), E('post', '/api/stock-counts/:count/cancel', '/:id/cancel'),
-  E('post', '/api/messages/:message/retry', '/:id/retry'),
+  E('post', '/api/messages/:message/retry', '/:id/retry'), E('post', '/api/data/customers/:customer/erase', '/customers/:id/erase'),
 ];
 /** Leaves that take a parameter but are capabilities, public by design, or not tenant data. Everything else with a parameter must be in the matrix. */
 const EXEMPT = new Set([
@@ -104,7 +104,7 @@ describe('guards: the matrix covers the real route table', () => {
   it('every top-level mount in app.ts is accounted for', () => {
     const src = readFileSync(new URL('../src/http/app.ts', import.meta.url), 'utf8');
     const mounts = [...src.matchAll(/api\.use\('\/([a-z-]+)'/g)].map((m) => m[1]!);
-    const known = ['auth', 'signup', 'public', 'platform', 'users', 'categories', 'products', 'warehouses', 'stock', 'suppliers', 'customers', 'settings', 'orders', 'messages', 'channels', 'uploads', 'payments', 'ops', 'channel-config', 'onboarding', 'usage', 'billing', 'audit-log', 'purchase-orders', 'reorder-suggestions', 'stock-counts'];
+    const known = ['auth', 'signup', 'public', 'platform', 'users', 'categories', 'products', 'warehouses', 'stock', 'suppliers', 'customers', 'settings', 'orders', 'messages', 'channels', 'uploads', 'payments', 'ops', 'channel-config', 'onboarding', 'usage', 'billing', 'audit-log', 'data', 'purchase-orders', 'reorder-suggestions', 'stock-counts'];
     expect(mounts.filter((m) => !known.includes(m)), 'a new API area must be added to this suite deliberately').toEqual([]);
   });
 });

@@ -14,6 +14,7 @@ import { onboardingRoutes } from './routes/onboarding.js';
 import { usageRoutes } from './routes/plans.js';
 import { billingRoutes } from './routes/billing.js';
 import { auditRoutes } from './routes/audit.js';
+import { dataRightsRoutes } from './routes/dataRights.js';
 import { auditTrail } from './middleware/audit.js';
 import { userRoutes } from './routes/users.js';
 import { stockRoutes } from './routes/stock.js';
@@ -118,6 +119,7 @@ export function createApp(c: Container, opts: AppOptions = {}): Express {
   api.use('/usage', secure, usageRoutes(c));
   api.use('/billing', secure, billingRoutes(c));
   api.use('/audit-log', secure, auditRoutes(c));
+  api.use('/data', secure, dataRightsRoutes(c));
   api.use('/channel-config', secure, channelConfigRoutes(c));
   api.use('/purchase-orders', secure, purchaseOrderRoutes(c));
   api.use('/reorder-suggestions', secure, reorderRoutes(c));
