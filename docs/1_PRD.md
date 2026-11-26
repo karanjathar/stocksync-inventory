@@ -210,12 +210,39 @@ None to build. Real verification of refunds reuses the Razorpay test keys (see 1
 
 ---
 
-## 1.11 Release 5 — Scale & intelligence (Tier 3 of the roadmap) — OUTLINE ONLY
+## 1.11 Release 5 — Scale & intelligence (Tier 3 of the roadmap)
 
-To be detailed with `/engine-replan` after Release 4, because it changes the data model and needs owner decisions first.
-- **Multi-tenant SaaS.** Many businesses in one installation: tenant id on every table with PostgreSQL row-level security, tenant-scoped users/settings/webhooks (per-tenant WhatsApp/Razorpay credentials in Key Vault), sign-up and onboarding wizard, plans and billing (Razorpay Subscriptions).
-- **Scale-out.** Realtime events across replicas (Azure Web PubSub or Postgres LISTEN/NOTIFY), httpOnly-cookie sessions with CSRF protection, separate worker revision.
-- **AI layer (Claude API).** Natural-language ordering in Hindi/English/Hinglish with the existing tap flows as fallback, reorder/demand forecasting, "ask your inventory" assistant. Cost caps per tenant, no PII in prompts beyond what the task needs.
-- **Analytics.** Margins, dead stock, best sellers, chat-to-purchase funnel.
-- **Polish.** WCAG 2.2 AA, Hindi and other languages, performance budgets, demo data.
-- **Open decisions for the owner:** tenancy model (shared schema + RLS, recommended, vs database per tenant), pricing/plans, which languages first, data-residency needs.
+### Decisions (owner, 2026-11-26)
+Tenancy: **one shared database with PostgreSQL row-level security**. Billing: **Free / Pro / Business plans, monthly, Razorpay Subscriptions**, prices configurable by the platform operator (not in code). Languages: **English + Hindi** for the app, and **English/Hindi/Hinglish** for AI chat ordering.
+
+### Goal
+Many independent businesses use one StockSync installation safely (a bug must not be able to leak one shop's data to another), can sign up and pay by themselves, scale beyond one server, and get an AI assistant for ordering and inventory questions, with analytics and an accessible, fast, bilingual UI.
+
+### Functional requirements
+- **FR-R5-1 Tenancy.** Every business table carries `tenant_id`. The app connects as a non-owner role, every query runs with `app.tenant_id` set, and RLS policies (`FORCE`d) refuse any row of another tenant for reads and writes, **even for raw SQL with no WHERE**. No tenant context means no rows. SKUs, barcodes, numbers (orders, POs, counts, invoices) and settings are unique **per tenant**. Platform staff are a separate role with their own routes.
+- **FR-R5-2 Per-tenant channels.** Each tenant stores its own WhatsApp, Messenger/Instagram, Telegram and Razorpay credentials, encrypted at rest (AES-256-GCM, key from Key Vault), write-only in the UI. Webhooks route to the right tenant (Meta by phone-number/page id, Razorpay and Telegram by tenant id in the URL) and are verified with that tenant's secret.
+- **FR-R5-3 Public shop per tenant** at `/shop/<slug>`; order links stay unguessable and global.
+- **FR-R5-4 Sign-up and onboarding.** Anyone can create a business (rate-limited, email verified), lands in a checklist wizard with optional demo data.
+- **FR-R5-5 Plans and limits.** Plan limits (products, staff users, monthly chat messages, monthly invoices) are enforced with clear errors and visible usage; trial 14 days; exceeding never deletes data.
+- **FR-R5-6 Billing.** Razorpay Subscriptions on the platform's own account: subscribe, change plan, cancel, failed-payment grace period then downgrade to Free (read-only over limit), all by signed webhook.
+- **FR-R5-7 Platform console and audit.** Platform staff list tenants, see usage, change plan, suspend/unsuspend; every tenant has an audit log of who changed what; no impersonation.
+- **FR-R5-8 Data rights.** A tenant admin can export all their data and request deletion (30-day hold); a customer's data can be erased on request.
+- **FR-R5-9 Scale-out.** Realtime events work across replicas (Postgres LISTEN/NOTIFY, tenant-filtered); API and worker can run as separate Container Apps; sessions use httpOnly cookies with CSRF protection and refresh rotation; per-tenant and per-plan rate limits.
+- **FR-R5-10 AI ordering (Claude API).** Free-text chat (English/Hindi/Hinglish) becomes a cart through a tool-using agent limited to the customer's own cart and the tenant's catalogue; **an order is never placed without the customer tapping a confirmation button**; customer text is treated as data (prompt-injection safe); per-tenant monthly AI budget with a hard stop and a kill switch; the tap menu always remains the fallback.
+- **FR-R5-11 Ask your inventory.** Staff ask questions in the dashboard; the assistant has read-only tools scoped to the tenant and cites the numbers it used.
+- **FR-R5-12 Forecasting.** Statistical demand forecast (trend + weekly seasonality, back-tested) improves reorder suggestions; the LLM only explains, never computes.
+- **FR-R5-13 Analytics.** Sales by day/product/channel, margins (from purchase cost), dead stock, best sellers, chat → order → paid funnel.
+- **FR-R5-14 Bilingual UI and bot.** Hindi translations for every screen and customer message, per-user and per-customer language; accessibility to WCAG 2.2 AA; performance budgets enforced in CI.
+
+### Acceptance criteria
+- Two-tenant isolation tests: for every route, tenant B can never read, change or even detect tenant A's data (404, not 403); raw SQL under tenant B's role returns zero of A's rows; a request with no tenant context sees nothing.
+- A webhook signed with tenant A's secret is rejected for tenant B.
+- Exceeding a plan limit returns a clear 402/403 and never loses data; a failed subscription payment downgrades after the grace period, by signed webhook only.
+- AI: a customer message that tries to change prices, read other customers, or place an order without confirmation is refused in the eval suite; spend stops at the budget.
+- Event delivered through a second replica; sessions survive CSRF attempts; all gates green and the multi-tenant browser e2e passes.
+
+### Non-goals (Release 5)
+White-label domains per tenant, a native mobile app, marketplace/multi-vendor carts, voice ordering, tax regimes outside India.
+
+### Credentials needed (human)
+Anthropic API key (AI), the platform's own Razorpay keys (subscription billing; separate from tenants' keys), an email-sending service for sign-up verification (Azure Communication Services Email recommended), and an encryption key generated into Key Vault.

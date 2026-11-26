@@ -411,3 +411,28 @@ Number: `${prefix}/${fy}/${seq padded to 6}`; the financial year runs 1 April–
 | `POST/GET /api/stock-counts`, `PUT /:id/lines`, `POST /:id/submit` · `/cancel` | staff | submit applies variances via StockService.adjust |
 | `POST /api/orders/:id/refund` | staff | REFUND_DUE only; amount = captured payment amount |
 Razorpay refund: `POST /v1/payments/{payment_id}/refund` body `{ amount, speed:'normal', receipt, notes }`, Basic auth; webhook events `refund.processed`, `refund.failed` carry `payload.refund.entity { id, payment_id, amount, status }`.
+
+# Release 5 contracts (tenancy, billing, AI)
+
+## 3.22 Tenancy
+```sql
+-- 010: tenants, tenant_id everywhere, per-tenant uniqueness, RLS
+CREATE TABLE tenants (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), slug text NOT NULL UNIQUE CHECK (slug ~ '^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$'),
+  name text NOT NULL, status text NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','SUSPENDED','DELETING')), plan text NOT NULL DEFAULT 'FREE',
+  created_at timestamptz NOT NULL DEFAULT now());
+-- Every business table gets: tenant_id uuid NOT NULL REFERENCES tenants(id), backfilled to the single existing tenant, plus an index on tenant_id.
+-- Uniques become (tenant_id, …): sku, barcode, warehouse code, category name, customer (channel, channel_user_id), settings key, invoice (fy, seq), invoice_counters fy.
+-- Human numbers (orders, POs, counts) come from tenant_counters(tenant_id, kind, last_number) instead of global serials.
+CREATE POLICY tenant_isolation ON <table> USING (tenant_id = current_setting('app.tenant_id', true)::uuid) WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+ALTER TABLE <table> ENABLE ROW LEVEL SECURITY; ALTER TABLE <table> FORCE ROW LEVEL SECURITY;
+```
+The app connects as role `stocksync_app` (not the table owner, no BYPASSRLS); migrations run as the owner. Context: an `AsyncLocalStorage` holds the tenant id; the pool wrapper issues `set_config('app.tenant_id', $1, false)` on checkout and resets it on release, so every existing service keeps its `pool.query` calls. Platform tables (`tenants`, `platform_admins`, `plans`) are outside RLS and reachable only from platform routes.
+
+## 3.23 Channels and secrets
+`tenant_channels(tenant_id, kind, config_encrypted bytea, key_version int, updated_at)`; `kind` in whatsapp|messenger|instagram|telegram|razorpay. Envelope: AES-256-GCM, 96-bit random nonce, tenant id as associated data (a ciphertext copied to another tenant fails to decrypt). Webhook routes: `POST /webhooks/meta` (resolved by `phone_number_id` / page id from the payload, then verified with that tenant's app secret), `POST /webhooks/razorpay/:tenantId`, `POST /webhooks/telegram/:tenantId`.
+
+## 3.24 Plans, usage, billing
+`plans(code, name, price_cents, limits jsonb)`, `usage_counters(tenant_id, period, metric, value)`, `subscriptions(tenant_id, razorpay_subscription_id, status, plan, current_end, grace_until)`. Limits keys: products, users, chatMessagesPerMonth, invoicesPerMonth. Errors: HTTP 402 `PLAN_LIMIT` with `{limit, used, plan}`.
+
+## 3.25 AI
+Anthropic Messages API with tool use (injectable fetch, model from env). Tools for ordering: `search_products(query)`, `add_to_cart(productId, quantity)`, `show_cart()`; a checkout always returns a confirmation button action id. Staff assistant tools are read-only. `ai_usage(tenant_id, month, input_tokens, output_tokens, cost_micro_usd)`; a hard budget per tenant per month; `ai_enabled` kill switch per tenant and globally. Logs store sizes and tool names, never message content.

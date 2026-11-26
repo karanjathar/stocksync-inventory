@@ -40,6 +40,8 @@
 
 - **PROGRESS 2026-11-26 (Release 4 COMPLETE except T67):** T69–T87 are built, tested and pushed (purchase orders + reorder, GST invoices with PDF in Latin/Devanagari and WhatsApp delivery, barcode + stock counts with offline capture, Razorpay refunds against fakes, security review 7.R4 with 2 fixes, docs). The browser e2e (`npm run e2e`, 37 checks incl. Release 2–4 flows) passes against the production build. Phases 12–16 approved by the owner; **Phase 17 awaits approval**. Only deferred Phase 18 remains: **T67 real-service run (blocked: needs Razorpay test keys + webhook secret and a WhatsApp test number/token from the owner; it also verifies refunds and the X-Refund-Idempotency header)**. Known gaps: invoice format needs an accountant's review; tax-exclusive pricing computed but not issued (D-017); offline counting needs the page loaded online first; other scripts than Latin/Devanagari print '?' in PDFs; infra/main.bicep changes uncompiled; nothing verified against real Razorpay/Meta. **Next:** owner supplies credentials (T67), then Release 5 / Tier 3 (multi-tenant SaaS, scale-out, AI ordering, analytics; PRD 1.11 outline) needs owner decisions first: tenancy model (shared schema + RLS recommended), plans/pricing, first languages, data residency.
 
+- **Replan 2026-11-26 (Release 5 = Tier 3):** owner decisions recorded: shared DB + row-level security, Free/Pro/Business plans billed by Razorpay Subscriptions, English + Hindi (+ Hinglish AI ordering). PRD 1.11 rewritten, schemas 3.22–3.25, decisions D-018..D-022, tasks T88–T115 in Phases 19–23 (tenancy, onboarding + billing, scale-out + sessions, AI layer, analytics/i18n/a11y/perf). Phase 17 approved. **Awaiting the owner's approval of this plan before building T88.** Credentials needed later (not for T88–T95): Anthropic API key, platform Razorpay keys, an email service (Azure Communication Services Email suggested), an encryption key in Key Vault. T67 (real Razorpay/WhatsApp run) still deferred. Biggest risk: T89 (RLS under a non-owner role) touches every service; run the whole suite as the app role before anything else.
+
 ## Approvals
 - plan — approved by Claude on 2026-11-06
 - phase Foundation — baseline (complete when the plan was approved)
@@ -58,6 +60,7 @@
 - phase Phase 14: GST invoicing — approved by Claude on 2026-11-26
 - phase Phase 15: Barcode & stock counts — approved by Claude on 2026-11-26
 - phase Phase 16: Automatic refunds — approved by Claude on 2026-11-26
+- phase Phase 17: Release 4 hardening — approved by Claude on 2026-11-26
 
 
 ## Log

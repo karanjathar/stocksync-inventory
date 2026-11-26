@@ -67,3 +67,18 @@ Decision: use the browser `BarcodeDetector` API when present and otherwise a tex
 Context: with exclusive prices the invoice total (taxable + tax) would exceed the order total the customer was actually charged, because checkout, payment links and chat carts all charge the stored price.
 Decision: `computeInvoice` supports both modes (tested), but the invoice service (T75) refuses to issue when `gst.pricesIncludeTax` is false and says why; the Settings UI (T78) does not offer the switch. Supporting exclusive pricing means adding tax on top at checkout everywhere, which is a separate, larger change.
 Consequences: invoices can never disagree with the amount paid; shops that quote prices before tax must wait for that follow-up.
+
+## D-018 Shared database with row-level security (2026-11-26)
+Context: Release 5 hosts many businesses. Decision (owner): one database, `tenant_id` on every table, FORCEd RLS, app connects as a non-owner role. Consequences: isolation holds even if a query forgets its WHERE; tests must run as the app role (a superuser bypasses RLS); one migration path for all tenants.
+
+## D-019 Tenant context through AsyncLocalStorage and a pool wrapper (2026-11-26)
+Decision: the authenticated request (or webhook/job) runs inside `tenantContext.run(id)`; the pool wrapper sets `app.tenant_id` on every checked-out connection and clears it on release. Consequence: no signature change across ~40 services; the risk is a forgotten context, which RLS turns into "no rows" instead of a leak.
+
+## D-020 Billing with Razorpay Subscriptions on the platform account (2026-11-26)
+Decision (owner): Free/Pro/Business monthly plans, 14-day trial, state changes only from signed subscription webhooks, prices editable by the operator. Failed payment: grace period then downgrade to Free; data is never deleted for exceeding limits.
+
+## D-021 AI is a tool-using agent with hard budgets (2026-11-26)
+Decision: Claude via tool use with strict schemas; customer text is untrusted data; tools can only touch the caller's own cart/tenant; orders need an explicit confirmation tap; per-tenant monthly spend cap and kill switch; forecasting is statistical, not LLM.
+
+## D-022 Realtime across replicas with Postgres LISTEN/NOTIFY (2026-11-26)
+Decision: no new service; events are published with `pg_notify` (tenant id in the payload) and each replica fans out to its own SSE clients. Revisit Azure Web PubSub only beyond a few thousand concurrent dashboards.
