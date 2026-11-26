@@ -77,7 +77,7 @@ export function StockOperation({ products, warehouses, initialProductId = '', on
       </div>
       <ErrorBanner error={error ?? scanError} />
       <Scanner onScan={(code) => void onScan(code)} label="Scan product barcode" />
-      {done && <div className="banner ok">{done}</div>}
+      {done && <div className="banner ok" role="status">{done}</div>}
       <div className="form-grid">
         <Field label="Product">
           <select required value={productId} onChange={(e) => setProductId(e.target.value)}>

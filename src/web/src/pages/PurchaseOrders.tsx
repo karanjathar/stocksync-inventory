@@ -112,7 +112,7 @@ export function PurchaseOrders() {
       <Card>
         {orders.data?.length ? (
           <table>
-            <thead><tr><th>PO</th><th>Supplier</th><th>Status</th><th>Items</th><th className="num">Total</th><th>Created</th>{canWrite && <th />}</tr></thead>
+            <thead><tr><th>PO</th><th>Supplier</th><th>Status</th><th>Items</th><th className="num">Total</th><th>Created</th>{canWrite && <th><span className="sr-only">Actions</span></th>}</tr></thead>
             <tbody>
               {orders.data.map((p) => (
                 <tr key={p.id}>

@@ -7,8 +7,8 @@
   --brand: #0f766e;
   --brand-ink: #ffffff;
   --brand-soft: #e6f4f2;
-  --good: #15803d;
-  --warn: #b45309;
+  --good: #166534;   /* 4.5:1 or better on its own 15 % tint (badges) as well as on white */
+  --warn: #92400e;
   --bad: #b91c1c;
   --info: #1d4ed8;
   --radius: 10px;
@@ -172,3 +172,30 @@ tr.row-alert td { background: color-mix(in srgb, var(--bad) 10%, transparent); }
 /* Text for screen readers only (table captions, chart helpers). */
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .funnel { padding-left: 1.2em; } .funnel li { margin: 4px 0; }
+
+/* ---- Accessibility (WCAG 2.2 AA) ------------------------------------------------------------------------------------------------------------ */
+/* Skip link: hidden until a keyboard user tabs to it, then first thing on screen. */
+.skip-link { position: absolute; left: 8px; top: -60px; z-index: 1000; padding: 10px 14px; background: var(--brand); color: var(--brand-ink); border-radius: 8px; font-weight: 600; }
+.skip-link:focus { top: 8px; }
+/* The target of the skip link is focused programmatically; it needs no ring of its own. */
+main:focus { outline: none; }
+/* Focus is always visible, on every control (2.4.7), and never hidden behind sticky bars (2.4.11). */
+a:focus-visible, summary:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; border-radius: 4px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+html { scroll-padding-top: 72px; scroll-padding-bottom: 24px; }
+/* Pointer targets are at least 24 × 24 CSS pixels (2.5.8); buttons and links in tables keep a comfortable height. */
+button, select, input:not([type='checkbox']):not([type='radio']), summary { min-height: 36px; }
+button.small, .small button { min-height: 28px; min-width: 28px; }
+input[type='checkbox'], input[type='radio'] { width: 20px; height: 20px; }
+/* Text can be resized to 200 % and reflowed to 320 px without scrolling sideways (1.4.4, 1.4.10). */
+table { max-width: 100%; }
+.card { overflow-wrap: anywhere; }
+/* Motion: people who ask for less get none (2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+/* Windows high-contrast / forced colours: keep borders and focus visible. */
+@media (forced-colors: active) {
+  button, input, select, textarea, .card { border: 1px solid ButtonText; }
+  :focus-visible { outline: 3px solid Highlight; }
+}

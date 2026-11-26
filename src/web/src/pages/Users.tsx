@@ -46,7 +46,7 @@ export function Users() {
       </form>
       <Card>
         <table>
-          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Added</th><th /></tr></thead>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Added</th><th><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>
             {users.data?.map((u) => (
               <tr key={u.id}>

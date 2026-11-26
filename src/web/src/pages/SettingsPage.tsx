@@ -86,7 +86,7 @@ export function SettingsPage() {
     <Page title="Settings">
       <form className="grid" onSubmit={submit} aria-label="Settings">
         <ErrorBanner error={error} />
-        {saved && <div className="banner ok">Settings saved — changes are live immediately.</div>}
+        {saved && <div className="banner ok" role="status">Settings saved — changes are live immediately.</div>}
         <Card title="Business">
           <div className="form-grid">
             <Field label="Business name"><input required value={form.businessName} onChange={(e) => set('businessName', e.target.value)} /></Field>

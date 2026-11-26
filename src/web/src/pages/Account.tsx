@@ -26,7 +26,7 @@ export function Account() {
         <p className="muted">{user?.name} · {user?.email} · {user?.role}</p>
         <h2>Change password</h2>
         <ErrorBanner error={error} />
-        {done && <div className="banner ok">Password changed.</div>}
+        {done && <div className="banner ok" role="status">Password changed.</div>}
         <Field label="Current password"><input type="password" required autoComplete="current-password" value={currentPassword} onChange={(e) => setCurrent(e.target.value)} /></Field>
         <Field label="New password" hint="At least 8 characters"><input type="password" required minLength={8} autoComplete="new-password" value={newPassword} onChange={(e) => setNew(e.target.value)} /></Field>
         <Field label="Confirm new password"><input type="password" required minLength={8} autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} /></Field>

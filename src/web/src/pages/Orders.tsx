@@ -89,7 +89,7 @@ export function Orders() {
         {orders.data?.length ? (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Order</th><th>Customer</th><th>Items</th><th className="num">Total</th><th>Status</th><th /></tr></thead>
+              <thead><tr><th>Order</th><th>Customer</th><th>Items</th><th className="num">Total</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>
                 {orders.data.map((o) => (
                   <tr key={o.id} className={o.paymentStatus === 'REFUND_DUE' ? 'row-alert' : undefined}>

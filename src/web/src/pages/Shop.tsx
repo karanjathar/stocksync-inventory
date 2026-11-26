@@ -135,7 +135,7 @@ export function Shop() {
             {visible.map((p) => (
               <article key={p.id} className="card product-card">
                 {p.imageUrl ? <img src={p.imageUrl} alt={p.name} loading="lazy" /> : <div className="ph" aria-hidden>📦</div>}
-                <h3 style={{ margin: 0 }}>{p.name}</h3>
+                <h2 style={{ margin: 0, fontSize: '1rem' }}>{p.name}</h2>
                 {p.description && <p className="muted small" style={{ margin: 0 }}>{p.description}</p>}
                 <div className="attrs">{Object.entries(p.attributes).map(([k, v]) => <Badge key={k}>{k}: {v}</Badge>)}</div>
                 <div className="row">

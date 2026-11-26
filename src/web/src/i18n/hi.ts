@@ -5,7 +5,7 @@ export const hi: Record<Key, string> = {
   'nav.dashboard': 'डैशबोर्ड', 'nav.products': 'उत्पाद', 'nav.inventory': 'इन्वेंटरी', 'nav.stockCounts': 'स्टॉक गिनती', 'nav.movements': 'स्टॉक हलचल', 'nav.orders': 'ऑर्डर',
   'nav.purchasing': 'खरीद', 'nav.inbox': 'इनबॉक्स', 'nav.customers': 'ग्राहक', 'nav.suppliers': 'आपूर्तिकर्ता', 'nav.warehouses': 'गोदाम', 'nav.settings': 'सेटिंग्स',
   'nav.users': 'उपयोगकर्ता', 'nav.analytics': 'विश्लेषण', 'nav.assistant': 'सहायक', 'nav.activity': 'गतिविधि लॉग', 'nav.usage': 'प्लान और उपयोग', 'nav.publicShop': 'सार्वजनिक दुकान',
-  'shell.toggleMenu': 'मेन्यू खोलें/बंद करें', 'shell.signOut': 'साइन आउट',
+  'shell.toggleMenu': 'मेन्यू खोलें/बंद करें', 'shell.signOut': 'साइन आउट', 'shell.skip': 'सीधे सामग्री पर जाएँ', 'shell.mainNav': 'मुख्य मेन्यू',
   'login.title': 'साइन इन', 'login.intro': 'अपनी इन्वेंटरी संभालने के लिए साइन इन करें।', 'login.email': 'ईमेल', 'login.password': 'पासवर्ड', 'login.submit': 'साइन इन', 'login.busy': 'साइन इन हो रहा है…',
   'login.newHere': 'नए हैं? व्यापार खाता बनाएँ', 'login.visitShop': 'दुकान देखें →',
   'signup.title': 'अपना खाता बनाएँ', 'signup.intro': 'अपना व्यापार खाता बनाएँ। शुरुआत मुफ़्त है।', 'signup.businessName': 'व्यापार का नाम', 'signup.webAddress': 'वेब पता',

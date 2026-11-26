@@ -34,9 +34,10 @@ export function Layout() {
 
   return (
     <div className={`shell ${open ? 'nav-open' : ''}`}>
-      <aside className="sidebar">
+      <a className="skip-link" href="#main">{t('shell.skip')}</a>
+      <aside className="sidebar" id="sidebar-nav">
         <div className="brand">📦 {settings.businessName}</div>
-        <nav onClick={() => setOpen(false)}>
+        <nav aria-label={t('shell.mainNav')} onClick={() => setOpen(false)}>
           {NAV.filter((n) => can(n.role)).map((n) => (
             <NavLink key={n.to} to={n.to} end={n.to === '/'}>
               <span aria-hidden>{n.icon}</span> {t(n.label)}
@@ -47,13 +48,13 @@ export function Layout() {
       </aside>
       <div className="main">
         <header className="topbar">
-          <button className="ghost menu" aria-label={t('shell.toggleMenu')} onClick={() => setOpen((o) => !o)}>☰</button>
+          <button className="ghost menu" aria-label={t('shell.toggleMenu')} aria-expanded={open} aria-controls="sidebar-nav" onClick={() => setOpen((o) => !o)}>☰</button>
           <div className="spacer" />
           <LanguageSwitch />
           <NavLink className="muted small" to="/account">{user?.name} · {user?.role}</NavLink>
           <button className="ghost" onClick={logout}>{t('shell.signOut')}</button>
         </header>
-        <main><Outlet /></main>
+        <main id="main" tabIndex={-1}><Outlet /></main>
       </div>
     </div>
   );

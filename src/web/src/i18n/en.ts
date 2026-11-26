@@ -5,7 +5,7 @@ export const en = {
   'nav.dashboard': 'Dashboard', 'nav.products': 'Products', 'nav.inventory': 'Inventory', 'nav.stockCounts': 'Stock counts', 'nav.movements': 'Movements', 'nav.orders': 'Orders',
   'nav.purchasing': 'Purchasing', 'nav.inbox': 'Inbox', 'nav.customers': 'Customers', 'nav.suppliers': 'Suppliers', 'nav.warehouses': 'Warehouses', 'nav.settings': 'Settings',
   'nav.users': 'Users', 'nav.analytics': 'Analytics', 'nav.assistant': 'Assistant', 'nav.activity': 'Activity log', 'nav.usage': 'Plan & usage', 'nav.publicShop': 'Public shop',
-  'shell.toggleMenu': 'Toggle menu', 'shell.signOut': 'Sign out',
+  'shell.toggleMenu': 'Toggle menu', 'shell.signOut': 'Sign out', 'shell.skip': 'Skip to content', 'shell.mainNav': 'Main menu',
   // sign in / sign up
   'login.title': 'Sign in', 'login.intro': 'Sign in to manage your inventory.', 'login.email': 'Email', 'login.password': 'Password', 'login.submit': 'Sign in', 'login.busy': 'Signing in…',
   'login.newHere': 'New here? Create a business account', 'login.visitShop': 'Visit the shop →',

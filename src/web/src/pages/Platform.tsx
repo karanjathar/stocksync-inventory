@@ -53,7 +53,7 @@ export function Platform() {
       <ErrorBanner error={error} />
       <Card title={`${rows.length} businesses`}>
         <table>
-          <thead><tr><th>Business</th><th>Status</th><th>Plan</th><th>Billing</th><th>Messages (month)</th><th>Invoices (month)</th><th /></tr></thead>
+          <thead><tr><th>Business</th><th>Status</th><th>Plan</th><th>Billing</th><th>Messages (month)</th><th>Invoices (month)</th><th><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id}>

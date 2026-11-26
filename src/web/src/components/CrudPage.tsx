@@ -74,7 +74,7 @@ export function CrudPage<T extends { id: string }>({ title, path, fields, column
         {list.data?.length ? (
           <div className="table-wrap">
             <table>
-              <thead><tr>{columns.map((c) => <th key={c.label}>{c.label}</th>)}<th /></tr></thead>
+              <thead><tr>{columns.map((c) => <th key={c.label}>{c.label}</th>)}<th><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>
                 {list.data.map((row) => (
                   <tr key={row.id}>

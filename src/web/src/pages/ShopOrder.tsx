@@ -113,15 +113,15 @@ function Message({ order, gaveUp, redirectedAsPaid }: { order: PublicOrderStatus
     return <div className="banner error">This order was cancelled.{refundNote}</div>;
   }
   if (order.paymentStatus === 'REFUNDED') {
-    return <div className="banner ok">Your payment has been refunded. It can take a few days to show up in your account.</div>;
+    return <div className="banner ok" role="status">Your payment has been refunded. It can take a few days to show up in your account.</div>;
   }
   if (order.paymentStatus === 'REFUND_DUE') {
     return <div className="banner error">We received your payment but couldn't complete the order. A refund is on its way — sorry for the trouble.</div>;
   }
   if (order.paymentStatus === 'PAID') {
     return order.status === 'PENDING'
-      ? <div className="banner ok">✅ Payment received. We'll confirm your order shortly.</div>
-      : <div className="banner ok">✅ Payment received — your order is {order.status === 'FULFILLED' ? 'fulfilled' : 'confirmed'}. Thank you!</div>;
+      ? <div className="banner ok" role="status">✅ Payment received. We'll confirm your order shortly.</div>
+      : <div className="banner ok" role="status">✅ Payment received — your order is {order.status === 'FULFILLED' ? 'fulfilled' : 'confirmed'}. Thank you!</div>;
   }
   if (order.paymentMethod === 'ONLINE') {
     if (redirectedAsPaid && !gaveUp) return <p>⏳ Confirming your payment with the bank… this usually takes a few seconds.</p>;

@@ -60,7 +60,7 @@ export function Products() {
         {products.data?.length ? (
           <div className="table-wrap">
             <table>
-              <thead><tr><th /><th>Product</th><th>Category</th><th>Attributes</th><th className="num">Price</th><th className="num">Stock</th><th /></tr></thead>
+              <thead><tr><th><span className="sr-only">Image</span></th><th>Product</th><th>Category</th><th>Attributes</th><th className="num">Price</th><th className="num">Stock</th><th><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>
                 {products.data.map((p) => {
                   const low = p.reorderLevel > 0 && p.totalQuantity <= p.reorderLevel;
