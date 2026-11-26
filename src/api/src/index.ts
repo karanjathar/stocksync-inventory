@@ -30,6 +30,8 @@ async function main(): Promise<void> {
     void c.images.ensureContainer().catch((err: unknown) => logger.warn({ err: String(err) }, 'could not ensure blob container'));
   }
 
+  c.jobs.start({ concurrency: 4, pollMs: 1000 });
+
   const here = path.dirname(fileURLToPath(import.meta.url));
   const staticDir = path.resolve(here, '../../web/dist');
   const app = createApp(c, { staticDir });
@@ -44,7 +46,7 @@ async function main(): Promise<void> {
     stopping = true;
     logger.info({ signal }, 'shutting down');
     server.close(() => {
-      pool.end().finally(() => process.exit(0));
+      c.jobs.stop().finally(() => pool.end().finally(() => process.exit(0)));
     });
     server.closeIdleConnections();
     setTimeout(() => process.exit(1), 10_000).unref();

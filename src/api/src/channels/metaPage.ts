@@ -16,12 +16,12 @@ export class MetaPageAdapter implements ChannelAdapter {
 
   isConfigured(): boolean { return Boolean(this.cfg.token); }
 
-  async send(to: string, text: string): Promise<void> {
-    await this.post(to, { text: text.slice(0, MAX_TEXT) });
+  async send(to: string, text: string): Promise<string | undefined> {
+    return this.post(to, { text: text.slice(0, MAX_TEXT) });
   }
 
   /** Options → quick replies (titles ≤ 20); list details and links are written into the text so nothing is lost. */
-  async sendReply(to: string, input: BotReply): Promise<void> {
+  async sendReply(to: string, input: BotReply): Promise<string | undefined> {
     const r = normaliseReply(input);
     const parts = [r.text];
     if (r.list) {
@@ -34,14 +34,15 @@ export class MetaPageAdapter implements ChannelAdapter {
     }
     if (r.link) parts.push(`${r.link.label}: ${r.link.url}`);
     const quickReplies = optionsOf(r).slice(0, MAX_QUICK_REPLIES).map((o) => ({ content_type: 'text', title: truncate(o.title, 20), payload: o.id }));
-    await this.post(to, { text: parts.join('\n\n').slice(0, MAX_TEXT), ...(quickReplies.length ? { quick_replies: quickReplies } : {}) });
+    return this.post(to, { text: parts.join('\n\n').slice(0, MAX_TEXT), ...(quickReplies.length ? { quick_replies: quickReplies } : {}) });
   }
 
-  private async post(to: string, message: Record<string, unknown>): Promise<void> {
-    await postJson(this.name, this.fetchFn, `${(this.cfg.graphBase ?? 'https://graph.facebook.com').replace(/\/$/, '')}/${this.cfg.graphVersion}/me/messages`, {
+  private async post(to: string, message: Record<string, unknown>): Promise<string | undefined> {
+    const res = await postJson(this.name, this.fetchFn, `${(this.cfg.graphBase ?? 'https://graph.facebook.com').replace(/\/$/, '')}/${this.cfg.graphVersion}/me/messages`, {
       recipient: { id: to },
       messaging_type: 'RESPONSE',
       message,
-    }, { authorization: `Bearer ${this.cfg.token}` });
+    }, { authorization: `Bearer ${this.cfg.token}` }) as { message_id?: string } | undefined;
+    return res?.message_id;
   }
 }

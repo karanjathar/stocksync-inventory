@@ -10,33 +10,34 @@ export class WhatsAppAdapter implements ChannelAdapter {
 
   isConfigured(): boolean { return Boolean(this.cfg.token && this.cfg.phoneNumberId); }
 
-  async send(to: string, text: string): Promise<void> {
-    await this.post(to, { type: 'text', text: { preview_url: false, body: text.slice(0, 4096) } });
+  async send(to: string, text: string): Promise<string | undefined> {
+    return this.post(to, { type: 'text', text: { preview_url: false, body: text.slice(0, 4096) } });
   }
 
-  async sendReply(to: string, input: BotReply): Promise<void> {
+  async sendReply(to: string, input: BotReply): Promise<string | undefined> {
     const r = normaliseReply(input);
     const body = { text: r.text };
     if (r.buttons) {
-      await this.post(to, { type: 'interactive', interactive: { type: 'button', body,
+      return this.post(to, { type: 'interactive', interactive: { type: 'button', body,
         action: { buttons: r.buttons.map((b) => ({ type: 'reply', reply: { id: b.id, title: b.title } })) } } });
     } else if (r.list) {
-      await this.post(to, { type: 'interactive', interactive: { type: 'list', body,
+      return this.post(to, { type: 'interactive', interactive: { type: 'list', body,
         action: { button: r.list.button, sections: r.list.sections } } });
     } else if (r.link) {
-      await this.post(to, { type: 'interactive', interactive: { type: 'cta_url', body,
+      return this.post(to, { type: 'interactive', interactive: { type: 'cta_url', body,
         action: { name: 'cta_url', parameters: { display_text: r.link.label, url: r.link.url } } } });
     } else {
-      await this.send(to, r.text);
+      return this.send(to, r.text);
     }
   }
 
-  private async post(to: string, message: Record<string, unknown>): Promise<void> {
-    await postJson(this.name, this.fetchFn, `${(this.cfg.graphBase ?? 'https://graph.facebook.com').replace(/\/$/, '')}/${this.cfg.graphVersion}/${this.cfg.phoneNumberId}/messages`, {
+  private async post(to: string, message: Record<string, unknown>): Promise<string | undefined> {
+    const res = await postJson(this.name, this.fetchFn, `${(this.cfg.graphBase ?? 'https://graph.facebook.com').replace(/\/$/, '')}/${this.cfg.graphVersion}/${this.cfg.phoneNumberId}/messages`, {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
       to: to.replace(/[^0-9]/g, ''),
       ...message,
-    }, { authorization: `Bearer ${this.cfg.token}` });
+    }, { authorization: `Bearer ${this.cfg.token}` }) as { messages?: { id?: string }[] } | undefined;
+    return res?.messages?.[0]?.id;
   }
 }

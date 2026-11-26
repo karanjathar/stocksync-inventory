@@ -9,12 +9,12 @@ export class TelegramAdapter implements ChannelAdapter {
 
   isConfigured(): boolean { return Boolean(this.cfg.token); }
 
-  async send(to: string, text: string): Promise<void> {
-    await this.call('sendMessage', { chat_id: to, text: text.slice(0, 4096) });
+  async send(to: string, text: string): Promise<string | undefined> {
+    return this.call('sendMessage', { chat_id: to, text: text.slice(0, 4096) });
   }
 
   /** Options become one inline button per row (callback_data = action id, ≤ 64 bytes); links become url buttons. */
-  async sendReply(to: string, input: BotReply): Promise<void> {
+  async sendReply(to: string, input: BotReply): Promise<string | undefined> {
     const r = normaliseReply(input);
     let keyboard: InlineButton[][] = [];
     if (r.buttons) keyboard = r.buttons.map((b) => [{ text: b.title, callback_data: b.id }]);
@@ -25,10 +25,9 @@ export class TelegramAdapter implements ChannelAdapter {
       }]);
     } else if (r.link) keyboard = [[{ text: r.link.label, url: r.link.url }]];
     if (!keyboard.length || !optionsOf(r).length && !r.link) {
-      await this.send(to, r.text);
-      return;
+      return this.send(to, r.text);
     }
-    await this.call('sendMessage', { chat_id: to, text: r.text, reply_markup: { inline_keyboard: keyboard } });
+    return this.call('sendMessage', { chat_id: to, text: r.text, reply_markup: { inline_keyboard: keyboard } });
   }
 
   /** Stops the loading spinner on the tapped inline button. */
@@ -36,7 +35,8 @@ export class TelegramAdapter implements ChannelAdapter {
     await this.call('answerCallbackQuery', { callback_query_id: callbackQueryId });
   }
 
-  private async call(method: string, body: Record<string, unknown>): Promise<void> {
-    await postJson(this.name, this.fetchFn, `https://api.telegram.org/bot${this.cfg.token}/${method}`, body);
+  private async call(method: string, body: Record<string, unknown>): Promise<string | undefined> {
+    const res = await postJson(this.name, this.fetchFn, `https://api.telegram.org/bot${this.cfg.token}/${method}`, body) as { result?: { message_id?: number } } | undefined;
+    return res?.result?.message_id === undefined ? undefined : String(res.result.message_id);
   }
 }

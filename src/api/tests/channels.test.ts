@@ -76,8 +76,8 @@ describe('ChannelHub', () => {
 
   it('logs failures and rethrows', async () => {
     const repo = new MessagesRepo(pool);
-    const hub = new ChannelHub([new TelegramAdapter({ token: 't' }, fakeFetch(500).fn)], repo);
-    await expect(hub.send('telegram', '9', 'boom')).rejects.toThrow(/500/);
+    const hub = new ChannelHub([new TelegramAdapter({ token: 't' }, fakeFetch(400).fn)], repo);
+    await expect(hub.send('telegram', '9', 'boom')).rejects.toThrow(/400/);
     expect((await repo.list({ channel: 'telegram', limit: 1 }))[0]!.status).toBe('failed');
   });
 
