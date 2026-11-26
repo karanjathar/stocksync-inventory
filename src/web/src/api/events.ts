@@ -1,11 +1,10 @@
 import type { RealtimeEvent } from './types';
-import { getToken } from './client';
+import { apiFetch, AUTH_EXPIRED_EVENT } from './client';
 
 export type StreamStatus = 'connecting' | 'live' | 'offline';
 
 /**
- * Subscribes to /api/events. Uses fetch streaming (not EventSource) so the JWT travels in the
- * Authorization header instead of the URL. Reconnects with capped exponential backoff.
+ * Subscribes to /api/events. Uses fetch streaming (not EventSource) so the session cookie and a transparent refresh work and nothing secret is in the URL. Reconnects with capped exponential backoff.
  */
 export function subscribeEvents(onEvent: (e: RealtimeEvent) => void, onStatus: (s: StreamStatus) => void = () => {}): () => void {
   let stopped = false;
@@ -14,12 +13,11 @@ export function subscribeEvents(onEvent: (e: RealtimeEvent) => void, onStatus: (
 
   const run = async () => {
     while (!stopped) {
-      const token = getToken();
-      if (!token) { onStatus('offline'); return; }
       controller = new AbortController();
       onStatus('connecting');
       try {
-        const res = await fetch('/api/events', { headers: { authorization: `Bearer ${token}` }, signal: controller.signal });
+        const res = await apiFetch('/events', { signal: controller.signal });
+        if (res.status === 401) { onStatus('offline'); window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT)); return; } // session ended: stop, do not hammer
         if (!res.ok || !res.body) throw new Error(`status ${res.status}`);
         onStatus('live');
         attempt = 0;

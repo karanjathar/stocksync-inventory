@@ -64,7 +64,7 @@ const MATRIX: Entry[] = [
   E('patch', '/api/users/:user', '/:id', () => ({ name: 'hacked', role: 'admin' })), E('delete', '/api/users/:user', '/:id'),
   E('get', '/api/orders/:order', '/:id'), E('post', '/api/orders/:order/confirm', '/:id/confirm', (i) => ({ warehouseId: i.warehouse })), E('post', '/api/orders/:order/fulfill', '/:id/fulfill'),
   E('post', '/api/orders/:order/cancel', '/:id/cancel'), E('post', '/api/orders/:order/payment-link', '/:id/payment-link', () => ({ notify: false })), E('post', '/api/orders/:order/refund', '/:id/refund'),
-  E('post', '/api/orders/:order/refunded', '/:id/refunded'), E('get', '/api/orders/:order/invoice', '/:id/invoice'), E('get', '/api/orders/:order/invoice.pdf', '/:id/invoice.pdf'),
+  E('post', '/api/orders/:order/refunded', '/:id/refunded'), E('get', '/api/orders/:order/invoice', '/:id/invoice'), E('post', '/api/orders/:order/invoice', '/:id/invoice'), E('post', '/api/orders/:order/invoice.pdf', '/:id/invoice.pdf'), E('get', '/api/orders/:order/invoice.pdf', '/:id/invoice.pdf'),
   E('get', '/api/purchase-orders/:po', '/:id'), E('patch', '/api/purchase-orders/:po', '/:id', () => ({ notes: 'hacked' })), E('post', '/api/purchase-orders/:po/send', '/:id/send'),
   E('post', '/api/purchase-orders/:po/cancel', '/:id/cancel'), E('post', '/api/purchase-orders/:po/receive', '/:id/receive', (i) => ({ receiptId: 'evil', lines: [{ productId: i.product, quantity: 1 }] })),
   E('get', '/api/stock-counts/:count', '/:id'), E('put', '/api/stock-counts/:count/lines', '/:id/lines', (i) => ({ lines: [{ productId: i.product, countedQuantity: 0 }] })),

@@ -103,17 +103,17 @@ describe('limits stop new records and never delete anything', () => {
       await request(t.app).post(`/api/orders/${o}/confirm`).set(h(adminA)).send({ warehouseId: wh });
       confirmed.push(o);
     }
-    const first = await request(t.app).get(`/api/orders/${confirmed[0]}/invoice`).set(h(adminA));
+    const first = await request(t.app).post(`/api/orders/${confirmed[0]}/invoice`).set(h(adminA));
     expect(first.status).toBe(200);
-    expect((await request(t.app).get(`/api/orders/${confirmed[0]}/invoice`).set(h(adminA))).status).toBe(200); // already issued: not counted again
-    const second = await request(t.app).get(`/api/orders/${confirmed[1]}/invoice`).set(h(adminA));
+    expect((await request(t.app).post(`/api/orders/${confirmed[0]}/invoice`).set(h(adminA))).status).toBe(200); // already issued: not counted again
+    const second = await request(t.app).post(`/api/orders/${confirmed[1]}/invoice`).set(h(adminA));
     expect(second.status).toBe(402);
     expect(second.body.error.details).toMatchObject({ metric: 'invoices', limit: 1, used: 1 });
     const count = (await inTenant(A, () => t.pool.query('SELECT count(*)::int AS n FROM invoices'))).rows[0].n;
     expect(count).toBe(1); // the refused invoice left nothing behind, and its number was not used
     expect((await request(t.app).get('/api/usage').set(h(adminA))).body.usage.invoices).toBe(1);
     await editPlan('FREE', { maxInvoices: 20 });
-    expect((await request(t.app).get(`/api/orders/${confirmed[1]}/invoice`).set(h(adminA))).body.number).toMatch(/AAA/); // issued after the limit is raised
+    expect((await request(t.app).post(`/api/orders/${confirmed[1]}/invoice`).set(h(adminA))).body.number).toMatch(/AAA/); // issued after the limit is raised
   });
 
   it('chat messages: sends beyond the monthly limit are stored as failed with PLAN_LIMIT, nothing is sent', async () => {

@@ -99,7 +99,7 @@ describe('R4-03 signed invoice links', () => {
 describe('R4-04 hostile text in documents and lookups', () => {
   it('names with PDF syntax, quotes, newlines and non-Latin text produce a normal PDF and never break the download', async () => {
     const o = await confirmed(") Tj /Evil << /S /JavaScript /JS (app.alert(1)) >> (\\" + ' रवि ' + String.fromCharCode(0x202e));
-    const res = await request(t.app).get(`/api/orders/${o.id}/invoice.pdf`).set(h(staff)).buffer(true).parse(bin);
+    const res = await request(t.app).post(`/api/orders/${o.id}/invoice.pdf`).set(h(staff)).buffer(true).parse(bin);
     expect(res.status).toBe(200);
     const text = (res.body as Buffer).toString('latin1');
     expect(text.startsWith('%PDF-')).toBe(true);

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api, AUTH_EXPIRED_EVENT, getToken, setToken } from './api/client';
+import { api, AUTH_EXPIRED_EVENT, hasSessionHint, markSignedIn } from './api/client';
 import type { Role, User } from './api/types';
 
 const RANK: Record<Role, number> = { viewer: 1, staff: 2, admin: 3 };
@@ -9,6 +9,8 @@ interface AuthState {
   ready: boolean;
   login(email: string, password: string): Promise<void>;
   logout(): void;
+  /** Ends this user's sessions on every device. */
+  logoutEverywhere(): Promise<void>;
   /** True when the signed-in user has at least this role. */
   can(role: Role): boolean;
 }
@@ -20,8 +22,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    if (!getToken()) { setReady(true); return; }
-    api<User>('/auth/me').then(setUser, () => setToken(null)).finally(() => setReady(true));
+    // The session is a cookie: ask the server who we are (it refreshes the cookie itself when needed), but only if there is one.
+    if (!hasSessionHint()) { setReady(true); return; }
+    api<User>('/auth/me').then((u) => { markSignedIn(true); setUser(u); }, () => markSignedIn(false)).finally(() => setReady(true));
   }, []);
 
   useEffect(() => {
@@ -31,15 +34,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
-    const res = await api<{ token: string; user: User }>('/auth/login', { body: { email, password } });
-    setToken(res.token);
+    const res = await api<{ user: User }>('/auth/login', { body: { email, password } }); // the response also carries a bearer token for API clients; the web app does not keep it
+    markSignedIn(true);
     setUser(res.user);
   }, []);
 
-  const logout = useCallback(() => { setToken(null); setUser(null); }, []);
+  const logout = useCallback(() => {
+    markSignedIn(false); setUser(null);
+    void api('/auth/logout', { method: 'POST' }).catch(() => undefined); // ends the session on the server and clears the cookies
+  }, []);
+  const logoutEverywhere = useCallback(async () => { await api('/auth/logout-all', { method: 'POST' }); markSignedIn(false); setUser(null); }, []);
   const can = useCallback((role: Role) => (user ? RANK[user.role] >= RANK[role] : false), [user]);
 
-  const value = useMemo(() => ({ user, ready, login, logout, can }), [user, ready, login, logout, can]);
+  const value = useMemo(() => ({ user, ready, login, logout, logoutEverywhere, can }), [user, ready, login, logout, logoutEverywhere, can]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

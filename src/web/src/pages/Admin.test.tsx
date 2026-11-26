@@ -156,18 +156,18 @@ describe('GST invoicing UI (T78)', () => {
       legalName: 'Corner Shop Pvt Ltd', gstin: '27AAPFU0939F1ZV', address: '12 MG Road, Pune', stateCode: '27', invoicePrefix: 'CS', pricesIncludeTax: true });
   });
 
-  it('opens the invoice PDF for a confirmed order using the login token', async () => {
+  it('opens the invoice PDF for a confirmed order by asking for it with POST (issuing is a change)', async () => {
     const open = vi.fn();
     vi.stubGlobal('open', open);
     URL.createObjectURL = vi.fn(() => 'blob:invoice');
     URL.revokeObjectURL = vi.fn();
     const confirmed = { ...order, status: 'CONFIRMED' };
-    const calls = mockApi({ '/orders': [confirmed], '/warehouses': [], '/customers': [], '/products': [], '/orders/o1/invoice.pdf': { ok: true } });
+    const calls = mockApi({ '/orders': [confirmed], '/warehouses': [], '/customers': [], '/products': [], 'POST /orders/o1/invoice.pdf': { ok: true } });
     render(<MemoryRouter><Orders /></MemoryRouter>);
     const row = (await screen.findByText('#42')).closest('tr')!;
     fireEvent.click(within(row).getByRole('button', { name: 'Invoice' }));
     await waitFor(() => expect(open).toHaveBeenCalledWith('blob:invoice', '_blank', 'noopener'));
-    expect(calls.some((c) => c.path === '/orders/o1/invoice.pdf')).toBe(true);
+    expect(calls.some((c) => c.path === '/orders/o1/invoice.pdf' && c.method === 'POST')).toBe(true);
   });
 
   it('pending orders have no Invoice button', async () => {

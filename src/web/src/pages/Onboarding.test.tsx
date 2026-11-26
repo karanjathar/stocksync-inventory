@@ -2,14 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { AuthProvider } from '../auth';
-import { setToken } from '../api/client';
 import { OnboardingCard } from './Onboarding';
 import { mockApi } from '../test/setup';
 
 const steps = (done: string[]) => ['profile', 'warehouse', 'product', 'whatsapp', 'gst'].map((id) => ({ id, done: done.includes(id), optional: id === 'gst' }));
 const admin = { id: 'u1', email: 'a@b.c', name: 'Ann', role: 'admin', createdAt: '2026-01-01T00:00:00Z' };
 function renderCard() {
-  setToken('t');
+  document.cookie = 'ss_csrf=test; path=/'; // a session exists
   return render(<AuthProvider><MemoryRouter><OnboardingCard /></MemoryRouter></AuthProvider>);
 }
 const withMe = (routes: Record<string, unknown>) => mockApi({ '/auth/me': admin, ...routes });

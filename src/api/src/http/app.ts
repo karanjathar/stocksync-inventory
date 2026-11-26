@@ -100,7 +100,7 @@ export function createApp(c: Container, opts: AppOptions = {}): Express {
   api.use('/platform', platformRoutes(c));
 
   // Each group below requires a valid token.
-  const secure = [requireAuth(c.auth), auditTrail(c)];
+  const secure = [requireAuth(c.auth, c.sessions), auditTrail(c)];
   api.use('/users', secure, userRoutes(c));
   api.use('/categories', secure, categoryRoutes(c));
   api.use('/products', secure, productRoutes(c));

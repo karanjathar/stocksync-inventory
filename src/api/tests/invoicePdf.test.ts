@@ -116,22 +116,22 @@ describe('invoice download endpoints', () => {
 
   it('staff download a PDF with safe headers; JSON invoice is available too', async () => {
     const o = await mk('Download Buyer');
-    const res = await request(t.app).get(`/api/orders/${o.id}/invoice.pdf`).set(h(staff)).buffer(true).parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); });
+    const res = await request(t.app).post(`/api/orders/${o.id}/invoice.pdf`).set(h(staff)).buffer(true).parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); });
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toBe('application/pdf');
     expect(res.headers['cache-control']).toContain('no-store');
     expect(res.headers['content-disposition']).toMatch(/inline; filename="invoice-INV-2026-27-\d{6}\.pdf"/);
     expect(res.headers['x-content-type-options']).toBe('nosniff');
     expect(binary(res).subarray(0, 5).toString()).toBe('%PDF-');
-    const json = await request(t.app).get(`/api/orders/${o.id}/invoice`).set(h(staff));
+    const json = await request(t.app).post(`/api/orders/${o.id}/invoice`).set(h(staff));
     expect(json.body).toMatchObject({ orderId: o.id, status: 'ISSUED' });
   });
 
   it('is staff-only, 409 before confirmation, 404 for unknown orders', async () => {
     const o = await mk('Early Buyer', false);
-    expect((await request(t.app).get(`/api/orders/${o.id}/invoice.pdf`).set(h(staff))).status).toBe(409);
-    expect((await request(t.app).get(`/api/orders/${o.id}/invoice.pdf`).set(h(await t.token('viewer')))).status).toBe(403);
-    expect((await request(t.app).get(`/api/orders/${o.id}/invoice.pdf`)).status).toBe(401);
+    expect((await request(t.app).post(`/api/orders/${o.id}/invoice.pdf`).set(h(staff))).status).toBe(409);
+    expect((await request(t.app).post(`/api/orders/${o.id}/invoice.pdf`).set(h(await t.token('viewer')))).status).toBe(403);
+    expect((await request(t.app).post(`/api/orders/${o.id}/invoice.pdf`)).status).toBe(401);
     expect((await request(t.app).get('/api/orders/00000000-0000-4000-8000-000000000000/invoice.pdf').set(h(staff))).status).toBe(404);
   });
 

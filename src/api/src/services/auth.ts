@@ -47,23 +47,25 @@ export class AuthService {
     return this.createUser({ email, password, name: 'Administrator', role: 'admin' });
   }
 
-  async login(email: string, password: string): Promise<{ token: string; user: User }> {
+  async login(email: string, password: string): Promise<{ token: string; user: User; tenantId: string }> {
     const found = await this.users.findForLogin(email.trim().toLowerCase());
     const ok = await bcrypt.compare(password, found?.passwordHash ?? DUMMY_HASH);
     if (!found || !ok) throw new UnauthorizedError('Invalid email or password');
     // Only after the password is right, so a wrong guess never reveals that an account exists or is suspended.
     if (found.tenantStatus !== 'ACTIVE') throw new ForbiddenError('This business account is suspended. Please contact support.');
     const { passwordHash: _omit, tenantId, tenantStatus: _status, ...user } = found;
-    const token = jwt.sign({ typ: 'tenant', tid: tenantId, email: user.email, role: user.role }, this.secret, {
-      subject: user.id,
-      expiresIn: this.expiresIn as SignOptions['expiresIn'],
-      algorithm: 'HS256',
+    return { token: this.sign(user, tenantId, this.expiresIn), user, tenantId };
+  }
+
+  /** A signed token. `sid` ties a browser access token to its session family (so ending the session ends the token); `at` lets "log out everywhere" void older tokens. */
+  sign(user: { id: string; email: string; role: Role }, tenantId: string, expiresIn: string, sid?: string): string {
+    return jwt.sign({ typ: 'tenant', tid: tenantId, email: user.email, role: user.role, at: Date.now(), ...(sid ? { sid } : {}) }, this.secret, {
+      subject: user.id, expiresIn: expiresIn as SignOptions['expiresIn'], algorithm: 'HS256',
     });
-    return { token, user };
   }
 
   /** Checks signature, type and tenant claim only (no database). Business tokens are `typ: tenant` with a tenant id; anything else is refused. */
-  verify(token: string): { sub: string; tid: string } {
+  verify(token: string): { sub: string; tid: string; sid?: string; at?: number } {
     let payload: unknown;
     try {
       payload = jwt.verify(token, this.secret, { algorithms: ['HS256'] });
@@ -72,16 +74,17 @@ export class AuthService {
     }
     const p = typeof payload === 'object' && payload ? (payload as Record<string, unknown>) : {};
     if (p.typ !== 'tenant' || typeof p.sub !== 'string' || typeof p.tid !== 'string' || !UUID_RE.test(p.tid)) throw new UnauthorizedError('Invalid or expired token');
-    return { sub: p.sub, tid: p.tid };
+    return { sub: p.sub, tid: p.tid, ...(typeof p.sid === 'string' && UUID_RE.test(p.sid) ? { sid: p.sid } : {}), ...(typeof p.at === 'number' ? { at: p.at } : {}) };
   }
 
   /**
    * Must run inside `runWithTenant(claims.tid)`. Confirms the user still exists IN THAT BUSINESS (a user id from another business, with
    * this tenant's claim, finds nothing), takes the current role from the database, and refuses suspended businesses.
    */
-  async authenticateClaims(claims: { sub: string; tid: string }): Promise<AuthUser> {
-    const user = await this.users.findById(claims.sub);
+  async authenticateClaims(claims: { sub: string; tid: string; at?: number }): Promise<AuthUser> {
+    const user = await this.users.findForAuth(claims.sub);
     if (!user) throw new UnauthorizedError('Invalid or expired token');
+    if (user.validAfterMs > 0 && (claims.at === undefined || claims.at < user.validAfterMs)) throw new UnauthorizedError('Invalid or expired token'); // logged out everywhere since this token was issued
     const status = await this.tenants?.currentStatus();
     if (status !== undefined && status !== 'ACTIVE') throw new ForbiddenError('This business account is suspended. Please contact support.');
     return { id: user.id, email: user.email, role: user.role, tenantId: claims.tid };

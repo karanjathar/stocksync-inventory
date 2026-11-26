@@ -8,7 +8,7 @@ import { CustomersRepo } from './repositories/customers.js';
 import type { Category, Supplier, Warehouse } from './domain/types.js';
 import { AuthService } from './services/auth.js';
 import { PlatformService } from './services/platform.js';
-import { currentTenantId, DEFAULT_TENANT_ID } from './db/tenant.js';
+import { currentTenantId, DEFAULT_TENANT_ID, runWithTenant } from './db/tenant.js';
 import { TenantDirectory, TenantsRepo } from './repositories/tenants.js';
 import { StockService } from './services/stock.js';
 import { SettingsService } from './services/settings.js';
@@ -47,6 +47,7 @@ import { OnboardingService } from './services/demoData.js';
 import { PlanAdmin, PlansService } from './services/plans.js';
 import { BillingService, BillingWebhooks } from './services/billing.js';
 import { AuditService } from './services/audit.js';
+import { SessionService } from './services/sessions.js';
 import { DataRights, TenantEraser } from './services/tenantDeletion.js';
 import { RazorpaySubscriptions } from './payments/razorpaySubscriptions.js';
 
@@ -95,6 +96,7 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const reorder = new ReorderService(pool, purchaseOrders, settings);
   const stockCounts = new StockCountsService(pool, stock);
   const audit = new AuditService(pool);
+  const sessions = new SessionService(pool, env.JWT_SECRET, runWithTenant);
   const dataRights = new DataRights(pool);
   const plans = new PlansService(pool);
   const subscriptions = new RazorpaySubscriptions({ keyId: env.RAZORPAY_PLATFORM_KEY_ID, keySecret: env.RAZORPAY_PLATFORM_KEY_SECRET, webhookSecret: env.RAZORPAY_PLATFORM_WEBHOOK_SECRET, apiBase: env.RAZORPAY_API_BASE }, opts.fetch ?? fetch);
@@ -164,7 +166,7 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const tenantEraser = opts.platformPool ? new TenantEraser(opts.platformPool, logger, async (tenantId) => { await images.deleteTenantImages(tenantId); }) : undefined;
   chatFlow.setPaymentOptions(payments.chatOptions());
   orders.onStatusChange((order, previous) => payments.onOrderStatusChange(order, previous));
-  return { env, pool, logger, repos, auth, platform, signup, onboarding, plans, planAdmin, audit, dataRights, tenantEraser, billing, billingWebhooks, subscriptions, emailSender, tenants, tenantDirectory, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpayProvider, channelCredentials, payments };
+  return { env, pool, logger, repos, auth, platform, signup, onboarding, plans, planAdmin, audit, sessions, dataRights, tenantEraser, billing, billingWebhooks, subscriptions, emailSender, tenants, tenantDirectory, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpayProvider, channelCredentials, payments };
 }
 
 export type Container = ReturnType<typeof createContainer>;

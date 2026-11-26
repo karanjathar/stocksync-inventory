@@ -36,6 +36,12 @@ export class UsersRepo {
     return rows[0];
   }
 
+  /** The user plus the moment before which every token is void ("log out everywhere"), in milliseconds. */
+  async findForAuth(id: string): Promise<(User & { validAfterMs: number }) | undefined> {
+    const { rows } = await this.db.query<User & { validAfterMs: number }>(`SELECT ${COLS}, (extract(epoch FROM sessions_valid_after) * 1000)::float8 AS "validAfterMs" FROM users WHERE id = $1`, [id]);
+    return rows[0];
+  }
+
   async list(): Promise<User[]> {
     const { rows } = await this.db.query<User>(`SELECT ${COLS} FROM users ORDER BY created_at`);
     return rows;

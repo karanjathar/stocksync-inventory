@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { api, getToken } from '../api/client';
+import { api, apiFetch } from '../api/client';
 import { useAction, useApi } from '../hooks';
 import { dateTime } from '../format';
 import { Card, ErrorBanner, Field } from '../components/ui';
@@ -17,7 +17,7 @@ export function DataRights() {
   const slug = d.slug;
 
   const download = () => act.run(async () => {
-    const res = await fetch('/api/data/export', { method: 'POST', headers: { authorization: `Bearer ${getToken() ?? ''}` } });
+    const res = await apiFetch('/data/export', { method: 'POST' });
     if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: { message?: string } }).error?.message ?? `Export failed (${res.status})`);
     const url = URL.createObjectURL(await res.blob());
     const a = document.createElement('a');

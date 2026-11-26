@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import type { Container } from '../../container.js';
+import type { Response } from 'express';
 import { NotFoundError } from '../../domain/errors.js';
+import type { Invoice } from '../../services/invoices.js';
 import { currentUser, requireRole } from '../middleware/auth.js';
 import { idParam } from '../params.js';
 import { parse } from '../validate.js';
@@ -15,6 +17,18 @@ const createSchema = z.object({
 });
 const confirmSchema = z.object({ warehouseId: z.string().uuid().optional() });
 const listSchema = z.object({ status: z.enum(['PENDING', 'CONFIRMED', 'FULFILLED', 'CANCELLED']).optional() });
+
+async function existingInvoice(c: Container, orderId: string): Promise<Invoice> {
+  const invoice = await c.invoices.getByOrder(orderId);
+  if (!invoice) throw new NotFoundError('Invoice');
+  return invoice;
+}
+
+async function sendInvoicePdf(res: Response, invoice: Invoice): Promise<void> {
+  const pdf = await renderInvoicePdf(invoice);
+  res.set({ 'content-type': 'application/pdf', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff',
+    'content-disposition': `inline; filename="invoice-${invoice.number.replace(/[^A-Za-z0-9-]/g, '-')}.pdf"` }).send(pdf);
+}
 
 export function orderRoutes(c: Container): Router {
   const r = Router();
@@ -37,13 +51,11 @@ export function orderRoutes(c: Container): Router {
     res.json(await c.payments.sendLink(idParam(req), notify ?? false));
   });
   // GST invoice (T75/T76): issued on demand for confirmed or fulfilled orders, idempotently.
-  r.get('/:id/invoice', write, async (req, res) => { res.json(await c.invoices.issue(idParam(req))); });
-  r.get('/:id/invoice.pdf', write, async (req, res) => {
-    const invoice = await c.invoices.issue(idParam(req));
-    const pdf = await renderInvoicePdf(invoice);
-    res.set({ 'content-type': 'application/pdf', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff',
-      'content-disposition': `inline; filename="invoice-${invoice.number.replace(/[^A-Za-z0-9-]/g, '-')}.pdf"` }).send(pdf);
-  });
+  // Issuing changes data, so it is a POST (a browser must never create an invoice from a plain link or image). GET only reads an invoice that already exists.
+  r.post('/:id/invoice', write, async (req, res) => { res.json(await c.invoices.issue(idParam(req))); });
+  r.get('/:id/invoice', write, async (req, res) => { res.json(await existingInvoice(c, idParam(req))); });
+  r.post('/:id/invoice.pdf', write, async (req, res) => { await sendInvoicePdf(res, await c.invoices.issue(idParam(req))); });
+  r.get('/:id/invoice.pdf', write, async (req, res) => { await sendInvoicePdf(res, await existingInvoice(c, idParam(req))); });
   r.post('/:id/refund', write, async (req, res) => { res.json(await c.payments.refund(idParam(req))); });
   r.post('/:id/refunded', write, async (req, res) => { res.json(await c.payments.markRefunded(idParam(req))); });
   r.post('/:id/fulfill', write, async (req, res) => { res.json(await c.orders.fulfill(idParam(req))); });

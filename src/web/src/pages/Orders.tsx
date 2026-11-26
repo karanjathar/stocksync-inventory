@@ -119,7 +119,7 @@ export function Orders() {
                           </>
                         )}
                         {o.status === 'CONFIRMED' && <button className="small primary" disabled={action.busy} onClick={() => void transition(o, 'fulfill')}>Fulfil</button>}
-                        {(o.status === 'CONFIRMED' || o.status === 'FULFILLED') && <button className="small" disabled={action.busy} onClick={() => void action.run(() => openPdf(`/orders/${o.id}/invoice.pdf`))}>Invoice</button>}
+                        {(o.status === 'CONFIRMED' || o.status === 'FULFILLED') && <button className="small" disabled={action.busy} onClick={() => void action.run(() => openPdf(`/orders/${o.id}/invoice.pdf`, 'POST'))}>Invoice</button>}
                         {(o.status === 'PENDING' || o.status === 'CONFIRMED') && <button className="small danger" disabled={action.busy} onClick={() => void transition(o, 'cancel')}>Cancel</button>}
                         {o.paymentStatus === 'REFUND_DUE' && o.refundStatus === 'PENDING' && <Badge tone="info">Refund in progress</Badge>}
                         {o.paymentStatus === 'REFUND_DUE' && o.refundStatus === 'FAILED' && <Badge tone="bad">Refund failed</Badge>}

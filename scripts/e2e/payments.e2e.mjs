@@ -244,7 +244,7 @@ async function main() {
     const buyer = await admin('POST', '/api/customers', { name: 'Invoice Buyer' });
     const gstOrder = await admin('POST', '/api/orders', { customerId: buyer.id, items: [{ productId: tee.id, quantity: 1 }] });
     await admin('POST', `/api/orders/${gstOrder.id}/confirm`, { warehouseId: wh.id });
-    const pdfRes = await fetch(`${APP}/api/orders/${gstOrder.id}/invoice.pdf`, { headers: { authorization: `Bearer ${token}` } });
+    const pdfRes = await fetch(`${APP}/api/orders/${gstOrder.id}/invoice.pdf`, { method: 'POST', headers: { authorization: `Bearer ${token}` } });
     const pdfBytes = Buffer.from(await pdfRes.arrayBuffer());
     check(pdfRes.status === 200 && pdfRes.headers.get('content-type') === 'application/pdf' && pdfBytes.subarray(0, 5).toString() === '%PDF-', 'staff can download the GST invoice as a PDF');
     const invoice = await admin('GET', `/api/orders/${gstOrder.id}/invoice`);
