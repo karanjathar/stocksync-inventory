@@ -18,6 +18,7 @@ const NAV: { to: string; label: string; icon: string; role: Role }[] = [
   { to: '/warehouses', label: 'Warehouses', icon: '🏬', role: 'viewer' },
   { to: '/settings', label: 'Settings', icon: '⚙️', role: 'admin' },
   { to: '/users', label: 'Users', icon: '🔐', role: 'admin' },
+  { to: '/analytics', label: 'Analytics', icon: '📈', role: 'staff' },
   { to: '/assistant', label: 'Assistant', icon: '✨', role: 'viewer' },
   { to: '/activity', label: 'Activity log', icon: '🧾', role: 'admin' },
   { to: '/usage', label: 'Plan & usage', icon: '📊', role: 'admin' },

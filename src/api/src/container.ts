@@ -53,6 +53,7 @@ import { AiBudget } from './ai/budget.js';
 import { AiGateway } from './ai/gateway.js';
 import { OrderingAgent } from './ai/orderingAgent.js';
 import { InventoryAssistant } from './ai/inventoryAssistant.js';
+import { AnalyticsService } from './services/analytics.js';
 import { LoginGuard } from './services/loginGuard.js';
 import { PlanRateLimits } from './http/middleware/rateLimit.js';
 import { SessionService } from './services/sessions.js';
@@ -163,6 +164,7 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const chatFlow = new ChatFlow(repos.products, repos.categories, customers, carts, settings, orders);
   const bot = new BotService(repos.products, orders, customers, settings, chatFlow);
   bot.setAgent(new OrderingAgent(ai, repos.products, carts, customers, chatFlow, settings, pool, logger)); // answers only when AI is configured, on and within budget
+  const analytics = new AnalyticsService(pool);
   const assistant = new InventoryAssistant(ai, pool, repos.products, reorder, orders, settings);
   const inbox = new InboxService(messages, events, bot, messenger, logger);
   const razorpayCache = new Map<string, { sig: string; client: RazorpayClient }>();
@@ -184,7 +186,7 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const tenantEraser = opts.platformPool ? new TenantEraser(opts.platformPool, logger, async (tenantId) => { await images.deleteTenantImages(tenantId); }) : undefined;
   chatFlow.setPaymentOptions(payments.chatOptions());
   orders.onStatusChange((order, previous) => payments.onOrderStatusChange(order, previous));
-  return { env, pool, logger, repos, auth, platform, signup, onboarding, plans, planAdmin, audit, sessions, ai, aiClient, assistant, loginGuard, rateLimits, dataRights, tenantEraser, billing, billingWebhooks, subscriptions, emailSender, tenants, tenantDirectory, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpayProvider, channelCredentials, payments };
+  return { env, pool, logger, repos, auth, platform, signup, onboarding, plans, planAdmin, audit, sessions, ai, aiClient, assistant, analytics, loginGuard, rateLimits, dataRights, tenantEraser, billing, billingWebhooks, subscriptions, emailSender, tenants, tenantDirectory, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpayProvider, channelCredentials, payments };
 }
 
 export type Container = ReturnType<typeof createContainer>;

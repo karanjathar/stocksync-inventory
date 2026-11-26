@@ -16,6 +16,7 @@ import { billingRoutes } from './routes/billing.js';
 import { auditRoutes } from './routes/audit.js';
 import { dataRightsRoutes } from './routes/dataRights.js';
 import { assistantRoutes } from './routes/assistant.js';
+import { analyticsRoutes } from './routes/analytics.js';
 import { auditTrail } from './middleware/audit.js';
 import { tenantRateLimit } from './middleware/rateLimit.js';
 import { userRoutes } from './routes/users.js';
@@ -124,6 +125,7 @@ export function createApp(c: Container, opts: AppOptions = {}): Express {
   api.use('/audit-log', secure, auditRoutes(c));
   api.use('/data', secure, dataRightsRoutes(c));
   api.use('/assistant', secure, assistantRoutes(c));
+  api.use('/analytics', secure, analyticsRoutes(c));
   api.use('/channel-config', secure, channelConfigRoutes(c));
   api.use('/purchase-orders', secure, purchaseOrderRoutes(c));
   api.use('/reorder-suggestions', secure, reorderRoutes(c));
