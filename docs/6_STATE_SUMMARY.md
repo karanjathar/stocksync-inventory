@@ -52,6 +52,7 @@
 - phase Phase 10: Durable messaging — approved by Claude on 2026-11-26
 - phase Phase 11: WhatsApp templates & maintenance — approved by Claude on 2026-11-26
 - phase Phase 12: Operations & release — approved by Claude on 2026-11-26
+- phase Phase 13: Purchase orders — approved by Claude on 2026-11-26
 
 
 ## Log
@@ -71,6 +72,7 @@
 - **T70** Purchase order service and API (2026-11-26): Added the purchase order service and /api/purchase-orders API: create and edit DRAFTs, send, cancel (refused after any receipt) and receive, which goes only through StockService.applyMany in one transaction with the PO number as ledger reference. Receipts are idempotent on a client receipt id, over-receiving or unknown lines are refused atomically without consuming the receipt id, and the PO row lock makes concurrent receipts safe (three parallel receipts: one wins).
 - **T71** Reorder suggestions (2026-11-26): Added GET /api/reorder-suggestions (low products with suggested quantity, usual supplier and last unit cost) and POST /api/reorder-suggestions/create-pos, which creates one DRAFT PO per supplier, returns products with no supplier history as unassigned instead of dropping them, and is serialised by an advisory lock so repeated or simultaneous clicks create nothing twice. Decision: quantity already on open POs is subtracted from the suggestion (so ordered products stop being suggested); PRD 1.10 updated to match.
 - **T72** Purchase orders and reorder UI (2026-11-26): Added a Purchasing page (list, create draft with lines, send, cancel, and receive with a per-form receipt id so double clicks cannot receive twice; only entered quantities are sent) and a Dashboard Reorder suggestions card that creates draft purchase orders in one click and reports products with no usual supplier. Viewers get read-only views, and the nav gained a Purchasing entry.
+- **T73** Migration 007 and GST settings (2026-11-26): Added migration 007 (products hsn_code and gst_rate_bp 0-2800, customers gstin/state_code, invoices with unique order/number/(fy,seq) and invoice_counters) plus validated settings.gst (GSTIN format, state code, prefix, and GSTIN-vs-state agreement) and product/customer API fields with HSN (4-8 digits) and rate validation. Existing data keeps working: products default to no HSN and 0% GST.
 
 
 ## Blocked

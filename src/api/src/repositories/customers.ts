@@ -5,7 +5,7 @@ import { SimpleRepo } from './simple.js';
 export class CustomersRepo extends SimpleRepo<Customer> {
   constructor(private readonly q: Queryable) {
     super(q, 'customers',
-      { name: 'name', phone: 'phone', email: 'email', channel: 'channel', channelUserId: 'channel_user_id' },
+      { name: 'name', phone: 'phone', email: 'email', channel: 'channel', channelUserId: 'channel_user_id', gstin: 'gstin', stateCode: 'state_code' },
       'created_at DESC', ['name', 'phone', 'email']);
   }
 

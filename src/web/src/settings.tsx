@@ -3,7 +3,8 @@ import { useApi } from './hooks';
 import type { Settings } from './api/types';
 
 const DEFAULTS: Settings = { businessName: 'StockSync', currency: 'USD', whatsappNumber: '', defaultWarehouseId: null, alertRecipients: [], customFields: [], payments: { onlineEnabled: true, codEnabled: true, linkExpiryMinutes: 1440 },
-  whatsappTemplates: {}, maintenance: { unpaidOrderTtlHours: 48, chatRetentionDays: 365 } };
+  whatsappTemplates: {}, maintenance: { unpaidOrderTtlHours: 48, chatRetentionDays: 365 },
+  gst: { legalName: '', gstin: '', address: '', stateCode: '', invoicePrefix: 'INV', pricesIncludeTax: true } };
 
 interface SettingsState { settings: Settings; reload: () => void }
 const SettingsContext = createContext<SettingsState>({ settings: DEFAULTS, reload: () => {} });

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Container } from '../../container.js';
 import { NotFoundError } from '../../domain/errors.js';
 import { crudRoutes } from '../crud.js';
+import { GSTIN_RE, STATE_CODE_RE } from '../../services/settings.js';
 import { requireRole } from '../middleware/auth.js';
 import { idParam } from '../params.js';
 import { parse } from '../validate.js';
@@ -23,6 +24,8 @@ const productBase = z.object({
   priceCents: z.number().int().min(0).max(1_000_000_000),
   reorderLevel: z.number().int().min(0).max(1_000_000).optional(),
   imageUrl: z.string().url().max(2000).refine((u) => /^(https:\/\/|http:\/\/(localhost|127\.0\.0\.1)[:/])/.test(u), 'must be an https URL').nullable().optional(),
+  hsnCode: z.string().regex(/^[0-9]{4,8}$/, 'HSN/SAC code: 4 to 8 digits').nullable().optional(),
+  gstRateBp: z.number().int().min(0).max(2800).optional(),
   attributes: z.record(z.string().trim().min(1).max(64), z.string().max(500))
     .refine((a) => Object.keys(a).length <= 50, 'at most 50 attributes').optional(),
   isActive: z.boolean().optional(),
@@ -78,6 +81,10 @@ export function supplierRoutes(c: Container): Router {
 }
 
 export function customerRoutes(c: Container): Router {
-  const s = z.object({ name, email: optEmail, phone: optPhone });
-  return crudRoutes({ entity: 'Customer', repo: c.customers, create: s, patch: s.partial() });
+  const gstin = z.string().trim().toUpperCase().refine((v) => GSTIN_RE.test(v), 'not a valid GSTIN').nullable().optional();
+  const stateCode = z.string().trim().refine((v) => STATE_CODE_RE.test(v), '2-digit GST state code, e.g. 27').nullable().optional();
+  const match = (v: { gstin?: string | null; stateCode?: string | null }) => !v.gstin || !v.stateCode || v.gstin.slice(0, 2) === v.stateCode;
+  const mismatch = { message: 'state code must match the first two digits of the GSTIN', path: ['stateCode'] };
+  const s = z.object({ name, email: optEmail, phone: optPhone, gstin, stateCode });
+  return crudRoutes({ entity: 'Customer', repo: c.customers, create: s.refine(match, mismatch), patch: s.partial().refine(match, mismatch) });
 }

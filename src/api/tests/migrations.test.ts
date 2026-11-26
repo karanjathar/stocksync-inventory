@@ -34,7 +34,7 @@ describe('migrations 003–004 on an existing Release 1 database (T29, T58)', ()
     // Release 1/2 rows: outbound messages were logged as 'ok' (T59 normalises them to 'sent').
     await pool.query("INSERT INTO channel_messages (channel, direction, external_user, text, status) VALUES ('whatsapp','out','91999','legacy','ok'), ('whatsapp','in','91999','hello','ok')");
 
-    expect(await migrate(pool)).toEqual(['003_payments_chat.sql', '004_refunded.sql', '005_outbox_jobs.sql', '006_purchase_orders.sql']);
+    expect(await migrate(pool)).toEqual(['003_payments_chat.sql', '004_refunded.sql', '005_outbox_jobs.sql', '006_purchase_orders.sql', '007_gst_invoices.sql']);
     expect(await migrate(pool)).toEqual([]);
 
     const { rows } = await pool.query<{ payment_method: string; payment_status: string; public_token: string }>('SELECT payment_method, payment_status, public_token FROM orders ORDER BY number');
@@ -109,6 +109,28 @@ describe('migration 006 purchase orders (T69)', () => {
     // deleting a PO removes its lines and receipts
     await q('DELETE FROM purchase_orders WHERE id = $1', [po.id]);
     expect((await q('SELECT 1 FROM purchase_order_lines WHERE po_id = $1', [po.id])).rowCount).toBe(0);
+  });
+});
+
+describe('migration 007 GST invoices (T73)', () => {
+  it('keeps existing products and customers, and guards invoices', async () => {
+    const q = (sql: string, args: unknown[] = []) => pool.query(sql, args);
+    const prod = (await q("SELECT hsn_code, gst_rate_bp FROM products WHERE sku = 'PO-1'")).rows[0];
+    expect(prod).toEqual({ hsn_code: null, gst_rate_bp: 0 });
+    await expect(q("UPDATE products SET gst_rate_bp = 2900 WHERE sku = 'PO-1'")).rejects.toMatchObject({ code: '23514' });
+    await q("UPDATE products SET gst_rate_bp = 1800, hsn_code = '6109' WHERE sku = 'PO-1'");
+    const cust = (await q("INSERT INTO customers (name, gstin, state_code) VALUES ('B2B', '27AAPFU0939F1ZV', '27') RETURNING id")).rows[0].id as string;
+    const order = (await q("INSERT INTO orders (customer_id, channel, status, total_cents) VALUES ($1, 'manual', 'CONFIRMED', 1000) RETURNING id", [cust])).rows[0].id as string;
+    const inv = (n: number, number: string, orderId: string, fy = '2026-27', status = 'ISSUED') => q(
+      `INSERT INTO invoices (order_id, fy, seq, number, status, snapshot, taxable_cents, tax_cents, total_cents) VALUES ($1, $2, $3, $4, $5, '{}', 847, 153, 1000)`, [orderId, fy, n, number, status]);
+    await inv(1, 'INV/2026-27/000001', order);
+    await expect(inv(2, 'INV/2026-27/000002', order)).rejects.toMatchObject({ code: '23505' });           // one invoice per order
+    const order2 = (await q("INSERT INTO orders (customer_id, channel, status, total_cents) VALUES ($1, 'manual', 'CONFIRMED', 500) RETURNING id", [cust])).rows[0].id as string;
+    await expect(inv(1, 'INV/2026-27/000009', order2)).rejects.toMatchObject({ code: '23505' });           // (fy, seq) unique: no duplicate sequence
+    await expect(inv(3, 'INV/2026-27/000001', order2)).rejects.toMatchObject({ code: '23505' });           // number unique
+    await expect(inv(3, 'INV/2026-27/000003', order2, '2026-27', 'LOST')).rejects.toMatchObject({ code: '23514' });
+    await q("INSERT INTO invoice_counters (fy, last_number) VALUES ('2026-27', 1)");
+    await expect(q("INSERT INTO invoice_counters (fy, last_number) VALUES ('2026-27', 2)")).rejects.toMatchObject({ code: '23505' });
   });
 });
 

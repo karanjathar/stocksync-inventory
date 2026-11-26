@@ -11,7 +11,8 @@ const EVENTS: { key: string; label: string }[] = [
   { key: 'payment_received', label: 'Payment received' }, { key: 'payment_link', label: 'Payment link' }, { key: 'refund_due', label: 'Refund on its way' },
   { key: 'refunded', label: 'Refund issued' }, { key: 'low_stock_alert', label: 'Low-stock alert (staff)' },
 ];
-const RELEASE3_DEFAULTS = { whatsappTemplates: {}, maintenance: { unpaidOrderTtlHours: 48, chatRetentionDays: 365 } };
+const RELEASE3_DEFAULTS = { whatsappTemplates: {}, maintenance: { unpaidOrderTtlHours: 48, chatRetentionDays: 365 },
+  gst: { legalName: '', gstin: '', address: '', stateCode: '', invoicePrefix: 'INV', pricesIncludeTax: true } };
 interface FieldDraft { key: string; label: string; type: CustomFieldDef['type']; options: string }
 
 export function SettingsPage() {

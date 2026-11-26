@@ -14,6 +14,7 @@ describe('settings', () => {
       businessName: 'StockSync', currency: 'USD', whatsappNumber: '', defaultWarehouseId: null, alertRecipients: [], customFields: [],
       payments: { onlineEnabled: true, codEnabled: true, linkExpiryMinutes: 1440 }, // Release 2
       whatsappTemplates: {}, maintenance: { unpaidOrderTtlHours: 48, chatRetentionDays: 365 }, // Release 3
+      gst: { legalName: '', gstin: '', address: '', stateCode: '', invoicePrefix: 'INV', pricesIncludeTax: true }, // Release 4
     });
   });
 
