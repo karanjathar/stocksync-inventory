@@ -6,6 +6,7 @@ import { money, dateTime } from '../format';
 import { subscribeEvents, type StreamStatus } from '../api/events';
 import { Badge, Card, Empty, ErrorBanner, Page, STATUS_TONE } from '../components/ui';
 import { OpsCard } from '../components/OpsCard';
+import { OnboardingCard } from './Onboarding';
 import { ReorderCard } from '../components/ReorderCard';
 import type { DashboardStats, Order, Product, RealtimeEvent } from '../api/types';
 
@@ -95,6 +96,7 @@ export function Dashboard() {
           ) : <Empty>No pending orders.</Empty>}
         </Card>
       </div>
+      <OnboardingCard />
       <ReorderCard />
       <OpsCard />
       <Card title="Live activity">

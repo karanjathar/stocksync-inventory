@@ -43,6 +43,7 @@ import type { ChannelAdapter } from './channels/types.js';
 import { PaymentService } from './services/payments.js';
 import { AcsEmailSender, LogEmailSender, type EmailSender } from './services/email.js';
 import { SignupService } from './services/signup.js';
+import { OnboardingService } from './services/demoData.js';
 
 export interface ContainerOverrides {
   /** Connection for the platform console (role with no access to business data). */
@@ -145,11 +146,12 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
       return client;
     },
   };
+  const onboarding = new OnboardingService(pool, repos.products, stock, async () => (await channelCredentials.summary()).some((k) => k.kind === 'whatsapp' && k.configured));
   const payments = new PaymentService(pool, razorpayProvider, settings, orders, customers, env.PUBLIC_BASE_URL, logger, events, messenger);
   const images = new ImageStorage(env.AZURE_STORAGE_CONNECTION_STRING, env.AZURE_STORAGE_CONTAINER);
   chatFlow.setPaymentOptions(payments.chatOptions());
   orders.onStatusChange((order, previous) => payments.onOrderStatusChange(order, previous));
-  return { env, pool, logger, repos, auth, platform, signup, emailSender, tenants, tenantDirectory, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpayProvider, channelCredentials, payments };
+  return { env, pool, logger, repos, auth, platform, signup, onboarding, emailSender, tenants, tenantDirectory, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpayProvider, channelCredentials, payments };
 }
 
 export type Container = ReturnType<typeof createContainer>;

@@ -10,6 +10,7 @@ import { requireAuth } from './middleware/auth.js';
 import { requestLog } from './middleware/requestLog.js';
 import { authRoutes } from './routes/auth.js';
 import { signupRoutes } from './routes/signup.js';
+import { onboardingRoutes } from './routes/onboarding.js';
 import { userRoutes } from './routes/users.js';
 import { stockRoutes } from './routes/stock.js';
 import { settingsRoutes } from './routes/settings.js';
@@ -109,6 +110,7 @@ export function createApp(c: Container, opts: AppOptions = {}): Express {
   api.use('/uploads', secure, uploadRoutes(c));
   api.use('/payments', secure, paymentRoutes(c));
   api.use('/ops', secure, opsRoutes(c));
+  api.use('/onboarding', secure, onboardingRoutes(c));
   api.use('/channel-config', secure, channelConfigRoutes(c));
   api.use('/purchase-orders', secure, purchaseOrderRoutes(c));
   api.use('/reorder-suggestions', secure, reorderRoutes(c));
