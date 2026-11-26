@@ -64,3 +64,8 @@ export interface PurchaseOrderLine { productId: string; sku: string; name: strin
 export interface PurchaseOrder { id: string; number: number; supplierId: string; supplierName: string; warehouseId: string; status: PurchaseOrderStatus;
   notes: string; lines: PurchaseOrderLine[]; totalCents: number; createdAt: string; updatedAt: string }
 
+// ---- Release 4: stock counts (docs/3_SCHEMAS.md 3.19) ----
+export type StockCountStatus = 'OPEN' | 'SUBMITTED' | 'CANCELLED';
+export interface StockCountLine { productId: string; sku: string; name: string; countedQuantity: number; systemQuantity: number; variance: number }
+export interface StockCount { id: string; number: number; warehouseId: string; warehouseCode: string; status: StockCountStatus; createdAt: string; submittedAt: string | null; lineCount: number; lines: StockCountLine[] }
+

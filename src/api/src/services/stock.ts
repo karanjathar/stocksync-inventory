@@ -81,6 +81,31 @@ export class StockService {
     return out;
   }
 
+  /**
+   * Sets absolute quantities inside an existing transaction (stock counts). Rows are locked first in a fixed order, then each is moved to
+   * its new quantity by an ADJUST movement (none when it already matches). Returns what each product had just before.
+   * Caller must call notify() after commit.
+   */
+  async setQuantities(c: pg.PoolClient, items: { productId: string; warehouseId: string; newQuantity: number; reason: string; reference: string; userId: string | null }[]):
+    Promise<{ changes: StockChange[]; before: Map<string, number> }> {
+    const sorted = [...items].sort((a, b) => (a.productId + a.warehouseId).localeCompare(b.productId + b.warehouseId));
+    for (const i of sorted) {
+      await this.assertExists(c, i.productId, [i.warehouseId]);
+      await this.lockRows(c, i.productId, [i.warehouseId]);
+    }
+    const changes: StockChange[] = [];
+    const before = new Map<string, number>();
+    for (const i of sorted) {
+      const { rows } = await c.query<{ quantity: number }>('SELECT quantity FROM stock_levels WHERE product_id = $1 AND warehouse_id = $2', [i.productId, i.warehouseId]);
+      const current = rows[0]!.quantity;
+      before.set(i.productId, current);
+      if (i.newQuantity !== current) {
+        changes.push(await this.applyDelta(c, { productId: i.productId, warehouseId: i.warehouseId, delta: i.newQuantity - current, type: 'ADJUST', reason: i.reason, reference: i.reference, userId: i.userId }));
+      }
+    }
+    return { changes, before };
+  }
+
   async notify(changes: StockChange[]): Promise<void> {
     for (const o of this.observers) {
       try { await o(changes); } catch (err) { this.onError(err); }
