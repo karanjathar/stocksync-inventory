@@ -1,30 +1,36 @@
-import type { ReactNode } from 'react';
+import { lazy, Suspense, type ComponentType, type ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation, useParams } from 'react-router';
 import { useAuth } from './auth';
 import { SettingsProvider } from './settings';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
-import { Signup, VerifyEmail } from './pages/Signup';
-import { Dashboard } from './pages/Dashboard';
-import { Products } from './pages/Products';
-import { Inventory } from './pages/Inventory';
-import { Movements } from './pages/Movements';
-import { StockCounts } from './pages/StockCounts';
-import { Customers, Suppliers, Warehouses } from './pages/Parties';
-import { Orders } from './pages/Orders';
-import { PurchaseOrders } from './pages/PurchaseOrders';
-import { Inbox } from './pages/Inbox';
-import { SettingsPage } from './pages/SettingsPage';
-import { Users } from './pages/Users';
-import { Usage } from './pages/Usage';
-import { Assistant } from './pages/Assistant';
-import { Analytics } from './pages/Analytics';
-import { AuditLog } from './pages/AuditLog';
-import { Platform } from './pages/Platform';
-import { Shop } from './pages/Shop';
-import { ShopOrder } from './pages/ShopOrder';
-import { Account } from './pages/Account';
 import type { Role } from './api/types';
+
+// Route-level code splitting: a shopper never downloads the administration screens, and the shell loads before any page does.
+const page = <T extends Record<string, unknown>, K extends keyof T>(load: () => Promise<T>, name: K) => lazy(async () => ({ default: (await load())[name] as ComponentType }));
+const Dashboard = page(() => import('./pages/Dashboard'), 'Dashboard');
+const Products = page(() => import('./pages/Products'), 'Products');
+const Inventory = page(() => import('./pages/Inventory'), 'Inventory');
+const Movements = page(() => import('./pages/Movements'), 'Movements');
+const StockCounts = page(() => import('./pages/StockCounts'), 'StockCounts');
+const Orders = page(() => import('./pages/Orders'), 'Orders');
+const PurchaseOrders = page(() => import('./pages/PurchaseOrders'), 'PurchaseOrders');
+const Inbox = page(() => import('./pages/Inbox'), 'Inbox');
+const SettingsPage = page(() => import('./pages/SettingsPage'), 'SettingsPage');
+const Users = page(() => import('./pages/Users'), 'Users');
+const Shop = page(() => import('./pages/Shop'), 'Shop');
+const ShopOrder = page(() => import('./pages/ShopOrder'), 'ShopOrder');
+const Account = page(() => import('./pages/Account'), 'Account');
+const Usage = page(() => import('./pages/Usage'), 'Usage');
+const Assistant = page(() => import('./pages/Assistant'), 'Assistant');
+const Analytics = page(() => import('./pages/Analytics'), 'Analytics');
+const AuditLog = page(() => import('./pages/AuditLog'), 'AuditLog');
+const Platform = page(() => import('./pages/Platform'), 'Platform');
+const Customers = page(() => import('./pages/Parties'), 'Customers');
+const Suppliers = page(() => import('./pages/Parties'), 'Suppliers');
+const Warehouses = page(() => import('./pages/Parties'), 'Warehouses');
+const Signup = page(() => import('./pages/Signup'), 'Signup');
+const VerifyEmail = page(() => import('./pages/Signup'), 'VerifyEmail');
 
 function RequireAuth({ children, role = 'viewer' }: { children: ReactNode; role?: Role }) {
   const { user, ready, can } = useAuth();
@@ -43,6 +49,7 @@ function ShopBySlug() {
 
 export function App() {
   return (
+    <Suspense fallback={<div className="center muted" role="status">Loading…</div>}>
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/platform" element={<Platform />} />
@@ -73,5 +80,6 @@ export function App() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
   );
 }

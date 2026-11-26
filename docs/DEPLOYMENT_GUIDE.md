@@ -312,3 +312,22 @@ The same image runs in three modes selected by `PROCESS_ROLE`: `all` (default: H
 4. Windows "High contrast" and the browser's forced-colours emulation: all controls still visible.
 5. Reduce motion on in the OS: no animation remains.
 6. Spot-check colour contrast of any new colour with a tool, and add its pair to `contrast.test.ts`.
+
+## Performance budgets (T114)
+**Front end.** Every screen is its own lazily loaded chunk (a shopper never downloads the administration screens). `npm run build` ends with `scripts/check-bundle.mjs`, so CI and the build gate fail when gzip sizes pass: initial JavaScript (entry + preloads) 100 KB, any one route chunk 15 KB, all JavaScript 170 KB. Reference build: initial 88.4 KB (was 117 KB as one file), largest route chunk 7.1 KB (Settings), total 132 KB. Raise a budget only deliberately, in that script.
+**Back end.** `src/api/tests/perf.test.ts` seeds 10,000 products (two warehouses, 5,000 historic orders with 20,000 lines) into a real PostgreSQL and times each operation 40 times through the whole HTTP stack; the 95th percentile must stay under the budget. Reference run (single developer VM, Postgres 16 on the same host; ms):
+
+| Operation | p50 | p95 | Budget |
+|---|---|---|---|
+| Product list (first page) | 41 | 48 | 250 |
+| Search by name | 25 | 42 | 200 |
+| Search by SKU | 26 | 40 | 200 |
+| Barcode lookup | 11 | 13 | 60 |
+| Dashboard figures | 18 | 29 | 150 |
+| Low-stock list | 12 | 16 | 100 |
+| Stock levels (all) | 69 | 94 | 400 |
+| Create an order of 3 lines | 7.5 | 11 | 80 |
+| Analytics: sales / best sellers / funnel | 18 / 32 / 6 | 27 / 46 / 7.5 | 150 / 200 / 60 |
+| Reorder suggestions with forecasting | 38 | 57 | 400 |
+
+Indexes: the analytics indexes (migration 028) plus the existing key indexes were enough at this size; no further index was needed. Name and SKU search use `ILIKE '%…%'`, which scans the product table (~25 ms at 10,000); beyond roughly 100,000 products add a `pg_trgm` GIN index (the extension must be allow-listed on Azure Database for PostgreSQL via `azure.extensions`). The budgets are 4–6× the reference numbers so a slower CI runner passes but a lost index or an accidental N+1 query does not. Production latency also includes the network and Azure's database tier; these numbers are a regression guard, not a promise. To record a new reference run: `PERF_REPORT=perf.json npx vitest run tests/perf.test.ts` in `src/api`.

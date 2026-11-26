@@ -14,9 +14,10 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
     "test": "npm run test --workspaces --if-present",
-    "build": "npm run build -w @stocksync/web && npm run build -w @stocksync/api",
+    "build": "npm run build -w @stocksync/web && node scripts/check-bundle.mjs && npm run build -w @stocksync/api",
     "start": "npm run start -w @stocksync/api",
-    "e2e": "node scripts/e2e/payments.e2e.mjs"
+    "e2e": "node scripts/e2e/payments.e2e.mjs",
+    "check:bundle": "node scripts/check-bundle.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

@@ -42,7 +42,7 @@ jobs:
         run: npm run lint
       - name: Unit & integration tests
         run: npm test
-      - name: Production build
+      - name: Build (also enforces the bundle-size budget)
         run: npm run build
       - name: Validate infrastructure (Bicep)
         run: az bicep build --file infra/main.bicep --stdout > /dev/null
