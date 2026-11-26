@@ -6,6 +6,7 @@ import { money, dateTime } from '../format';
 import { subscribeEvents, type StreamStatus } from '../api/events';
 import { Badge, Card, Empty, ErrorBanner, Page, STATUS_TONE } from '../components/ui';
 import { OpsCard } from '../components/OpsCard';
+import { ReorderCard } from '../components/ReorderCard';
 import type { DashboardStats, Order, Product, RealtimeEvent } from '../api/types';
 
 interface FeedItem { at: string; text: string; tone: 'neutral' | 'good' | 'warn' | 'info' }
@@ -94,6 +95,7 @@ export function Dashboard() {
           ) : <Empty>No pending orders.</Empty>}
         </Card>
       </div>
+      <ReorderCard />
       <OpsCard />
       <Card title="Live activity">
         {feed.length ? (

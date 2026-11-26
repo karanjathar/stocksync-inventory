@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { Dashboard } from './Dashboard';
 import { mockApi } from '../test/setup';
@@ -8,11 +8,28 @@ const auth = vi.hoisted(() => ({ role: 'admin' as 'admin' | 'staff' }));
 vi.mock('../auth', () => ({ useAuth: () => ({ can: (r: string) => r !== 'admin' || auth.role === 'admin', user: { id: 'u', role: auth.role } }) }));
 const base = {
   '/dashboard': { productCount: 1, totalUnits: 1, stockValueCents: 100, lowStockCount: 0, pendingOrders: 0, ordersToday: 0 },
-  '/products?lowStock=true': [], '/orders?status=PENDING': [],
+  '/products?lowStock=true': [], '/orders?status=PENDING': [], '/reorder-suggestions': { suggestions: [] },
 };
 
 describe('Dashboard', () => {
   const ops = { queue: { pending: 3, running: 1, dead: 0, oldestPendingSec: 12 }, messages: { failed24h: 2, queued: 1 }, maintenance: [{ task: 'prune', ranAt: '2026-11-26T03:00:00Z', result: {} }] };
+
+  it('suggests reorders and creates draft purchase orders in one click', async () => {
+    auth.role = 'staff';
+    const calls = mockApi({ ...base,
+      '/reorder-suggestions': { suggestions: [
+        { productId: 'p1', sku: 'TEE', name: 'T-Shirt', unit: 'pcs', totalQuantity: 3, reorderLevel: 5, suggestedQuantity: 7, supplierName: 'Acme' },
+        { productId: 'p2', sku: 'LAMP', name: 'Lamp', unit: 'pcs', totalQuantity: 1, reorderLevel: 4, suggestedQuantity: 7, supplierName: null } ] },
+      'POST /reorder-suggestions/create-pos': { created: [{ id: 'po1' }], unassigned: [{ productId: 'p2' }] } });
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+    expect(await screen.findByText('Reorder suggestions')).toBeInTheDocument();
+    expect(screen.getByText('Acme')).toBeInTheDocument();
+    expect(screen.getByText('none yet')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create purchase orders' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Created 1 draft purchase order');
+    expect(screen.getByRole('status')).toHaveTextContent('1 product has no usual supplier');
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/reorder-suggestions/create-pos')).toBe(true);
+  });
 
   it('shows system health to admins', async () => {
     auth.role = 'admin';

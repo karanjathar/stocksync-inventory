@@ -10,6 +10,7 @@ const NAV: { to: string; label: string; icon: string; role: Role }[] = [
   { to: '/inventory', label: 'Inventory', icon: '📦', role: 'viewer' },
   { to: '/movements', label: 'Movements', icon: '🔁', role: 'viewer' },
   { to: '/orders', label: 'Orders', icon: '🧾', role: 'viewer' },
+  { to: '/purchase-orders', label: 'Purchasing', icon: '🛒', role: 'viewer' },
   { to: '/inbox', label: 'Inbox', icon: '💬', role: 'staff' },
   { to: '/customers', label: 'Customers', icon: '👥', role: 'viewer' },
   { to: '/suppliers', label: 'Suppliers', icon: '🚚', role: 'viewer' },
