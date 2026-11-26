@@ -7,6 +7,7 @@ import { migrate } from './db/migrate.js';
 import { createContainer } from './container.js';
 import { createApp } from './http/app.js';
 import { startScheduler } from './jobs/scheduler.js';
+import { createShutdown } from './shutdown.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -42,20 +43,15 @@ async function main(): Promise<void> {
   });
   server.keepAliveTimeout = 65_000; // longer than the Azure load balancer idle timeout
 
-  let stopping = false;
-  const shutdown = (signal: string) => {
-    if (stopping) return;
-    stopping = true;
-    logger.info({ signal }, 'shutting down');
-    server.close(() => {
-      stopScheduler();
-      c.jobs.stop().finally(() => pool.end().finally(() => process.exit(0)));
-    });
-    server.closeIdleConnections();
-    setTimeout(() => process.exit(1), 10_000).unref();
-  };
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+  // Container Apps sends SIGTERM and waits terminationGracePeriodSeconds (30 s): stop taking requests, stop scheduling, drain jobs, close the pool.
+  const shutdown = createShutdown([
+    { name: 'http', run: () => new Promise<void>((resolve) => { server.close(() => resolve()); server.closeIdleConnections(); }) },
+    { name: 'scheduler', run: async () => { stopScheduler(); } },
+    { name: 'jobs', run: () => c.jobs.stop() },
+    { name: 'database', run: () => pool.end() },
+  ], { timeoutMs: 25_000, exit: (code) => process.exit(code), log: (msg, data) => logger.info(data ?? {}, msg) });
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('unhandledRejection', (err) => logger.error({ err }, 'unhandled promise rejection'));
 }
 

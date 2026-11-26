@@ -308,6 +308,8 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = if (deployApp) {
       secrets: concat(coreSecrets, channelAppSecrets)
     }
     template: {
+      // SIGTERM → the app stops taking requests and drains background jobs (25 s budget) before this deadline.
+      terminationGracePeriodSeconds: 30
       containers: [
         {
           name: 'stocksync'
@@ -315,9 +317,9 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = if (deployApp) {
           resources: { cpu: json('0.5'), memory: '1Gi' }
           env: concat(coreEnv, channelEnv)
           probes: [
-            { type: 'Startup', httpGet: { path: '/healthz', port: 8080 }, periodSeconds: 5, failureThreshold: 24 }
+            { type: 'Startup', httpGet: { path: '/readyz', port: 8080 }, periodSeconds: 5, failureThreshold: 24 }
             { type: 'Liveness', httpGet: { path: '/healthz', port: 8080 }, periodSeconds: 30, failureThreshold: 3 }
-            { type: 'Readiness', httpGet: { path: '/healthz', port: 8080 }, periodSeconds: 10, failureThreshold: 3 }
+            { type: 'Readiness', httpGet: { path: '/readyz', port: 8080 }, periodSeconds: 10, failureThreshold: 3 }
           ]
         }
       ]

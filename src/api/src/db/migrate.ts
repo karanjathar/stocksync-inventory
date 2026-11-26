@@ -6,6 +6,14 @@ import { withTx } from './tx.js';
 
 const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../migrations');
 
+/** Names of migration files that have not been applied yet (all of them if the bookkeeping table is missing). */
+export async function pendingMigrations(pool: pg.Pool, dir: string = MIGRATIONS_DIR): Promise<string[]> {
+  const files = (await readdir(dir)).filter((f) => f.endsWith('.sql')).sort();
+  const { rows } = await pool.query<{ name: string }>('SELECT name FROM schema_migrations').catch(() => ({ rows: [] as { name: string }[] }));
+  const done = new Set(rows.map((r) => r.name));
+  return files.filter((f) => !done.has(f));
+}
+
 /** Applies pending *.sql migrations in filename order. Returns the names applied. */
 export async function migrate(pool: pg.Pool, dir: string = MIGRATIONS_DIR): Promise<string[]> {
   await pool.query(

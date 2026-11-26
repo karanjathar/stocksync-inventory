@@ -19,6 +19,8 @@ import { webhookRoutes } from './routes/webhooks.js';
 import { channelRoutes, messageRoutes } from './routes/messages.js';
 import { publicRoutes, uploadRoutes } from './routes/public.js';
 import { paymentRoutes } from './routes/payments.js';
+import { opsRoutes } from './routes/ops.js';
+import { pendingMigrations } from '../db/migrate.js';
 import { categoryRoutes, customerRoutes, productRoutes, supplierRoutes, warehouseRoutes } from './routes/catalog.js';
 
 export interface AppOptions {
@@ -64,6 +66,20 @@ export function createApp(c: Container, opts: AppOptions = {}): Express {
     }
   });
 
+  // Readiness: should this replica receive traffic? Never leaks error details.
+  app.get('/readyz', async (_req, res) => {
+    const checks = { db: false, migrations: false, worker: false };
+    try {
+      await pool.query('SELECT 1');
+      checks.db = true;
+      checks.migrations = (await pendingMigrations(pool)).length === 0;
+      const hb = await pool.query("SELECT 1 FROM worker_heartbeats WHERE worker_id = $1 AND seen_at > now() - interval '60 seconds'", [c.jobs.workerId]);
+      checks.worker = (hb.rowCount ?? 0) > 0;
+    } catch { /* a failed check stays false */ }
+    const ready = checks.db && checks.migrations && checks.worker;
+    res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'unavailable', checks });
+  });
+
   const api = Router();
   api.use(rateLimit({ windowMs: 60_000, limit: env.NODE_ENV === 'test' ? 10_000 : 600, standardHeaders: true, legacyHeaders: false }));
   api.use('/auth', authRoutes(c));
@@ -85,6 +101,7 @@ export function createApp(c: Container, opts: AppOptions = {}): Express {
   api.use('/channels', secure, channelRoutes(c));
   api.use('/uploads', secure, uploadRoutes(c));
   api.use('/payments', secure, paymentRoutes(c));
+  api.use('/ops', secure, opsRoutes(c));
   api.get('/dashboard', secure, async (_req, res) => { res.json(await dashboardStats(pool)); });
 
   app.use('/api', api);

@@ -31,6 +31,8 @@ export class JobQueue {
 
   constructor(private readonly db: Queryable, private readonly opts: QueueOptions) {}
 
+  get workerId(): string { return this.opts.workerId; }
+
   register(kind: string, handler: JobHandler): void { this.handlers.set(kind, handler); }
 
   /** Returns the new job id, or null when an open job with the same dedupe key already exists. */
