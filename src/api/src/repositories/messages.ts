@@ -1,9 +1,13 @@
 import type { Queryable } from '../db/pool.js';
-import type { ChannelMessage, ChannelName, InboundMessage } from '../domain/types.js';
+import type { ChannelMessage, ChannelName, InboundMessage, NotificationEvent, TemplateParam } from '../domain/types.js';
 import type { BotReply, ReplyOption } from '../channels/reply.js';
 
 /** What is needed to (re)send a stored outbound message. */
-export type OutboundPayload = { kind: 'text'; text: string } | { kind: 'reply'; reply: BotReply };
+export type OutboundPayload = (
+  | { kind: 'text'; text: string }
+  | { kind: 'reply'; reply: BotReply }
+  | { kind: 'template'; name: string; language: string; params: string[] }
+) & { notify?: { event: NotificationEvent; params: Partial<Record<TemplateParam, string>> } };
 
 // Legacy outbound rows written as 'ok' read as 'sent' (docs/3_SCHEMAS.md 3.15).
 const COLS = `id, channel, direction, external_user AS "externalUser", text,
@@ -35,11 +39,12 @@ export class MessagesRepo {
    * Stores an outbound message. `queued` messages get their `message.send` job in the SAME statement, so a crash
    * between storing and sending still ends in exactly one send by the worker (30 s grace for the immediate attempt).
    */
-  async createOutbound(m: { channel: ChannelName; to: string; text: string; payload: OutboundPayload; status: 'queued' | 'skipped';
-    options?: ReplyOption[]; event?: string }): Promise<string> {
-    const args = [m.channel, m.to, m.text.slice(0, 4096), m.status, m.options?.length ? JSON.stringify(m.options) : null, JSON.stringify(m.payload), m.event ?? null];
-    const insert = `INSERT INTO channel_messages (channel, direction, external_user, text, status, options, payload, event, created_at)
-       VALUES ($1, 'out', $2, $3, $4, $5, $6, $7, clock_timestamp()) RETURNING id`;
+  async createOutbound(m: { channel: ChannelName; to: string; text: string; payload: OutboundPayload; status: 'queued' | 'skipped' | 'failed';
+    options?: ReplyOption[]; event?: string; error?: { code: string; message: string } }): Promise<string> {
+    const args = [m.channel, m.to, m.text.slice(0, 4096), m.status, m.options?.length ? JSON.stringify(m.options) : null, JSON.stringify(m.payload),
+      m.payload.notify?.event ?? m.event ?? null, m.error?.code ?? null, m.error?.message ?? null];
+    const insert = `INSERT INTO channel_messages (channel, direction, external_user, text, status, options, payload, event, error_code, error_message, created_at)
+       VALUES ($1, 'out', $2, $3, $4, $5, $6, $7, $8, $9, clock_timestamp()) RETURNING id`;
     const sql = m.status === 'queued'
       ? `WITH m AS (${insert}), j AS (INSERT INTO jobs (kind, payload, dedupe_key, run_at)
            SELECT 'message.send', jsonb_build_object('messageId', id), id::text, now() + interval '30 seconds' FROM m) SELECT id FROM m`
@@ -52,6 +57,19 @@ export class MessagesRepo {
     const { rows } = await this.db.query(
       `SELECT id, channel, external_user AS "to", text, status, payload FROM channel_messages WHERE id = $1 AND direction = 'out'`, [id]);
     return rows[0] ?? null;
+  }
+
+  /** True when this user wrote to us within the last 24 hours (WhatsApp's free-form messaging window). */
+  async withinReplyWindow(channel: ChannelName, user: string): Promise<boolean> {
+    const digits = user.replace(/[^0-9]/g, '');
+    const { rowCount } = await this.db.query(
+      "SELECT 1 FROM channel_messages WHERE channel = $1 AND direction = 'in' AND external_user = ANY($2) AND created_at > now() - interval '24 hours' LIMIT 1",
+      [channel, [user, digits]]);
+    return (rowCount ?? 0) > 0;
+  }
+
+  async setPayload(id: string, payload: OutboundPayload): Promise<void> {
+    await this.db.query('UPDATE channel_messages SET payload = $2 WHERE id = $1', [id, JSON.stringify(payload)]);
   }
 
   async markSent(id: string, providerId: string | undefined): Promise<void> {

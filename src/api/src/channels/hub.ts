@@ -1,16 +1,17 @@
-import type { ChannelName } from '../domain/types.js';
+import type { ChannelName, NotificationEvent, Settings, TemplateParam } from '../domain/types.js';
 import { ValidationError } from '../domain/errors.js';
 import type { MessagesRepo, OutboundPayload } from '../repositories/messages.js';
-import type { Messenger } from '../services/messenger.js';
-import { ChannelError, isRetryable, type ChannelAdapter } from './types.js';
+import type { Messenger, NotifyOpts } from '../services/messenger.js';
+import { ChannelError, isRetryable, type ChannelAdapter, type TemplateMessage } from './types.js';
 import { TelegramAdapter } from './telegram.js';
-import { normaliseReply, optionsOf, renderPlain, type BotReply } from './reply.js';
+import { normaliseReply, optionsOf, renderPlain, type BotReply, type ReplyOption } from './reply.js';
 import { PermanentJobError } from '../jobs/queue.js';
 
 export class ChannelHub implements Messenger {
   private readonly adapters: Map<ChannelName, ChannelAdapter>;
 
-  constructor(adapters: ChannelAdapter[], private readonly log: MessagesRepo) {
+  /** `getSettings` supplies the event → WhatsApp template mapping (Settings → WhatsApp templates). */
+  constructor(adapters: ChannelAdapter[], private readonly log: MessagesRepo, private readonly getSettings?: () => Promise<Settings>) {
     this.adapters = new Map(adapters.map((a) => [a.name, a]));
   }
 
@@ -26,22 +27,39 @@ export class ChannelHub implements Messenger {
   }
 
   /** Sends a rich reply rendered by the channel adapter (or numbered text), stored first so it can be retried. */
-  async reply(channel: ChannelName, to: string, input: BotReply): Promise<void> {
+  async reply(channel: ChannelName, to: string, input: BotReply, notify?: NotifyOpts): Promise<void> {
     const reply = normaliseReply(input);
-    await this.dispatch(channel, to, renderPlain(reply), { kind: 'reply', reply }, optionsOf(reply));
+    await this.dispatch(channel, to, renderPlain(reply), { kind: 'reply', reply }, optionsOf(reply), notify);
   }
 
-  async send(channel: ChannelName, to: string, text: string): Promise<void> {
-    await this.dispatch(channel, to, text, { kind: 'text', text });
+  async send(channel: ChannelName, to: string, text: string, notify?: NotifyOpts): Promise<void> {
+    await this.dispatch(channel, to, text, { kind: 'text', text }, [], notify);
+  }
+
+  /** Template for an event from Settings, with parameters filled in the mapped order ('-' when a value is missing). */
+  private async templateFor(event: NotificationEvent, params: Partial<Record<TemplateParam, string>>): Promise<TemplateMessage | null> {
+    const mapping = (await this.getSettings?.())?.whatsappTemplates[event];
+    return mapping ? { name: mapping.name, language: mapping.language, params: mapping.params.map((k) => params[k] || '-') } : null;
   }
 
   /**
    * Outbox: store → try now. A retryable failure leaves the message `queued` for the worker (no error to the caller,
    * nothing is lost); a permanent failure marks it `failed` and is rethrown.
    */
-  private async dispatch(channel: ChannelName, to: string, text: string, payload: OutboundPayload, options = optionsOf({ text })): Promise<void> {
+  private async dispatch(channel: ChannelName, to: string, text: string, base: OutboundPayload, options: ReplyOption[] = [], notify?: NotifyOpts): Promise<void> {
     const adapter = this.adapters.get(channel);
     if (!adapter) throw new ValidationError(`Unknown channel: ${channel}`);
+    let payload: OutboundPayload = notify?.event ? { ...base, notify: { event: notify.event, params: notify.params ?? {} } } : base;
+    // WhatsApp only allows free-form business messages within 24 h of the user's last message; otherwise a template is required.
+    if (adapter.isConfigured() && channel === 'whatsapp' && notify?.event && !(await this.log.withinReplyWindow(channel, to))) {
+      const tpl = await this.templateFor(notify.event, notify.params ?? {});
+      if (!tpl) {
+        await this.log.createOutbound({ channel, to, text, payload, options, status: 'failed',
+          error: { code: 'NO_TEMPLATE', message: 'outside 24h window — no template configured' } });
+        return;
+      }
+      payload = { kind: 'template', ...tpl, notify: payload.notify! };
+    }
     const id = await this.log.createOutbound({ channel, to, text, payload, options, status: adapter.isConfigured() ? 'queued' : 'skipped' });
     if (!adapter.isConfigured()) return;
     await this.deliver(id, { immediate: true });
@@ -55,10 +73,21 @@ export class ChannelHub implements Messenger {
     try {
       if (!adapter?.isConfigured()) throw new ChannelError(m.channel, 400, 'channel is not configured');
       const payload: OutboundPayload = m.payload ?? { kind: 'text', text: m.text };
-      const providerId = payload.kind === 'reply' && adapter.sendReply ? await adapter.sendReply(m.to, payload.reply) : await adapter.send(m.to, textOf(payload, m.text));
+      let providerId: string | void;
+      try {
+        providerId = await this.sendPayload(adapter, m.to, payload, m.text);
+      } catch (err) {
+        // 131047 = "re-engagement required": we thought we were inside the 24 h window but Meta disagrees → template, once.
+        if (!(err instanceof ChannelError && err.providerCode === 131047 && payload.notify && payload.kind !== 'template')) throw err;
+        const tpl = await this.templateFor(payload.notify.event, payload.notify.params);
+        if (!tpl) throw err;
+        const next: OutboundPayload = { kind: 'template', ...tpl, notify: payload.notify };
+        await this.log.setPayload(id, next);
+        providerId = await this.sendPayload(adapter, m.to, next, m.text);
+      }
       await this.log.markSent(id, providerId ?? undefined);
     } catch (err) {
-      const code = err instanceof ChannelError ? String(err.status) : 'NETWORK';
+      const code = err instanceof ChannelError ? String(err.providerCode ?? err.status) : 'NETWORK';
       const message = err instanceof Error ? err.message : String(err);
       if (isRetryable(err) && !o.finalAttempt) {
         await this.log.recordAttempt(id, code, message);
@@ -69,6 +98,15 @@ export class ChannelHub implements Messenger {
       if (o.immediate) throw err;
       throw new PermanentJobError(message);
     }
+  }
+
+  private async sendPayload(adapter: ChannelAdapter, to: string, payload: OutboundPayload, text: string): Promise<string | void> {
+    if (payload.kind === 'template') {
+      if (!adapter.sendTemplate) throw new ChannelError(adapter.name, 400, 'channel does not support templates');
+      return adapter.sendTemplate(to, { name: payload.name, language: payload.language, params: payload.params });
+    }
+    if (payload.kind === 'reply' && adapter.sendReply) return adapter.sendReply(to, payload.reply);
+    return adapter.send(to, textOf(payload, text));
   }
 }
 

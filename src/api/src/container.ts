@@ -67,7 +67,7 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
     new MetaPageAdapter('messenger', { token: env.MESSENGER_PAGE_TOKEN, graphVersion: env.META_GRAPH_VERSION, graphBase: env.META_GRAPH_BASE }, fetchFn),
     new MetaPageAdapter('instagram', { token: env.INSTAGRAM_PAGE_TOKEN, graphVersion: env.META_GRAPH_VERSION, graphBase: env.META_GRAPH_BASE }, fetchFn),
     new TelegramAdapter({ token: env.TELEGRAM_BOT_TOKEN }, fetchFn),
-  ], messages);
+  ], messages, () => settings.get());
   const jobs = new JobQueue(pool, { workerId: `api-${process.pid}-${randomUUID().slice(0, 8)}`, onError: (err, job) => logger.warn({ err: String(err), job: job?.kind, jobId: job?.id }, 'job failed') });
   registerMessageSend(jobs, hub);
   const messenger: Messenger = opts.messenger ?? hub;

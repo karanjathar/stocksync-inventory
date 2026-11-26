@@ -4,7 +4,7 @@ import type { Logger } from 'pino';
 import { withTx } from '../db/tx.js';
 import { AppError, ConflictError, NotConfiguredError, NotFoundError, ValidationError } from '../domain/errors.js';
 import { z } from 'zod';
-import type { Payment } from '../domain/types.js';
+import type { NotificationEvent, Payment } from '../domain/types.js';
 import type { EventBus } from '../realtime/bus.js';
 import type { Messenger } from './messenger.js';
 import { RazorpayError } from '../payments/razorpay.js';
@@ -168,7 +168,7 @@ export class PaymentService {
     if (!moved.rowCount) throw new ConflictError('Only orders awaiting a refund can be marked as refunded');
     this.events.publish({ type: 'payment.updated', orderId: order.id, number: order.number, paymentStatus: 'REFUNDED' });
     const money = formatMoney(order.totalCents, (await this.settings.get()).currency);
-    await this.sendToCustomer(order, { text: `💸 Your refund of ${money} for order #${order.number} has been issued. It can take a few days to show up in your account.` });
+    await this.sendToCustomer(order, { text: `💸 Your refund of ${money} for order #${order.number} has been issued. It can take a few days to show up in your account.` }, 'refunded');
     return order;
   }
 
@@ -214,20 +214,22 @@ export class PaymentService {
     let notified = false;
     if (notify) {
       const order = (await this.orders.get(orderId))!;
-      notified = await this.sendToCustomer(order, await this.linkReply(order, payment));
+      notified = await this.sendToCustomer(order, await this.linkReply(order, payment), 'payment_link');
     }
     return { url: payment.shortUrl, expiresAt: payment.expiresAt, notified };
   }
 
   /** Delivers a message on the customer's own chat channel. Returns false for web/manual customers. */
-  private async sendToCustomer(order: Order, reply: BotReply): Promise<boolean> {
+  private async sendToCustomer(order: Order, reply: BotReply, event?: NotificationEvent): Promise<boolean> {
     if (!['whatsapp', 'messenger', 'instagram', 'telegram'].includes(order.channel)) return false;
     const customer = await this.customers.get(order.customerId);
     if (!customer?.channelUserId) return false;
     const channel = order.channel as 'whatsapp' | 'messenger' | 'instagram' | 'telegram';
     try {
-      if (this.messenger.reply) await this.messenger.reply(channel, customer.channelUserId, reply);
-      else await this.messenger.send(channel, customer.channelUserId, renderPlain(reply));
+      const opts = event ? { event, params: { orderNumber: String(order.number), total: formatMoney(order.totalCents, (await this.settings.get()).currency),
+        customerName: customer.name, ...(reply.link ? { paymentLink: reply.link.url } : {}) } } : undefined;
+      if (this.messenger.reply) await this.messenger.reply(channel, customer.channelUserId, reply, opts);
+      else await this.messenger.send(channel, customer.channelUserId, renderPlain(reply), opts);
       return true;
     } catch (err) {
       this.logger.warn({ err: String(err), channel }, 'customer payment message failed');
@@ -294,18 +296,18 @@ export class PaymentService {
     if (settled.duplicate) {
       const money = formatMoney(paidCents, (await this.settings.get()).currency);
       await this.alertStaff(`⚠️ Duplicate payment for order #${order.number}: ${settled.duplicate} (${money}) was paid after the order was already paid. Refund the extra payment in Razorpay.`);
-      await this.sendToCustomer(order, { text: `We received a second payment for order #${order.number}. We'll refund the extra payment shortly.` });
+      await this.sendToCustomer(order, { text: `We received a second payment for order #${order.number}. We'll refund the extra payment shortly.` }, 'refund_due');
       return;
     }
     if (settled.fresh) this.events.publish({ type: 'payment.updated', orderId: order.id, number: order.number, paymentStatus: order.paymentStatus });
     if (!settled.good) {
       if (!settled.fresh) return; // staff were already alerted when it was first settled
       await this.alertStaff(`⚠️ Payment received for order #${order.number} but it needs attention (amount mismatch or order cancelled). Refund due in Razorpay.`);
-      await this.sendToCustomer(order, { text: REFUND_NOTICE(order.number) });
+      await this.sendToCustomer(order, { text: REFUND_NOTICE(order.number) }, 'refund_due');
       return;
     }
     if (order.status !== 'PENDING') { // staff already confirmed it manually: confirm the payment to the customer
-      if (settled.fresh) await this.sendToCustomer(order, { text: `✅ Payment received for order #${order.number}. Thank you!` });
+      if (settled.fresh) await this.sendToCustomer(order, { text: `✅ Payment received for order #${order.number}. Thank you!` }, 'payment_received');
       return;
     }
     try {
@@ -317,14 +319,14 @@ export class PaymentService {
         // so staff can confirm it by hand (choosing a warehouse) — and the customer is reassured, not told to expect a refund.
         const money = formatMoney(order.totalCents, (await this.settings.get()).currency);
         await this.alertStaff(`⚠️ Order #${order.number} is PAID (${money}) but could not be auto-confirmed: no default warehouse is set. Set one in Settings, then confirm the order manually.`);
-        await this.sendToCustomer(order, { text: `✅ Payment of ${money} received for order #${order.number}. We'll confirm it shortly.` });
+        await this.sendToCustomer(order, { text: `✅ Payment of ${money} received for order #${order.number}. We'll confirm it shortly.` }, 'payment_received');
         return;
       }
       await this.pool.query("UPDATE orders SET payment_status = 'REFUND_DUE', updated_at = now() WHERE id = $1", [order.id]);
       order = (await this.orders.get(order.id))!;
       this.events.publish({ type: 'payment.updated', orderId: order.id, number: order.number, paymentStatus: 'REFUND_DUE' });
       await this.alertStaff(`⚠️ Order #${order.number} was paid online but could not be confirmed (${err.message}). Please refund the customer in Razorpay.`);
-      await this.sendToCustomer(order, { text: REFUND_NOTICE(order.number) });
+      await this.sendToCustomer(order, { text: REFUND_NOTICE(order.number) }, 'refund_due');
     }
   }
 

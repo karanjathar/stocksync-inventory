@@ -30,7 +30,8 @@ export class AlertService {
       const text = `⚠️ ${businessName} low stock: ${p.name} (${p.sku}) is at ${p.totalQuantity} ${p.unit} (reorder level ${p.reorderLevel}).`;
       for (const r of alertRecipients) {
         try {
-          await this.messenger.send(r.channel, r.to, text);
+          await this.messenger.send(r.channel, r.to, text, { event: 'low_stock_alert',
+            params: { productName: p.name, quantity: String(p.totalQuantity), businessName } });
         } catch (err) {
           this.logger.warn({ err, channel: r.channel }, 'low-stock alert delivery failed');
         }

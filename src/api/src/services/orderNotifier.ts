@@ -1,4 +1,4 @@
-import type { ChannelName, Order, OrderStatus } from '../domain/types.js';
+import type { ChannelName, NotificationEvent, Order, OrderStatus } from '../domain/types.js';
 import type { CustomersRepo } from '../repositories/customers.js';
 import { formatMoney } from './money.js';
 import type { Messenger } from './messenger.js';
@@ -16,6 +16,12 @@ const TEMPLATES: Partial<Record<OrderStatus, (o: Order, total: string, shop: str
     : `❌ ${shop}: your order #${o.number} has been cancelled. Reply "help" if you have questions.`),
 };
 
+const EVENTS: Partial<Record<OrderStatus, (o: Order) => NotificationEvent>> = {
+  CONFIRMED: (o) => (o.paymentStatus === 'PAID' ? 'payment_received' : 'order_confirmed'),
+  FULFILLED: () => 'order_fulfilled',
+  CANCELLED: () => 'order_cancelled',
+};
+
 /** Order observer: tells chat customers when their order changes status. */
 export class OrderNotifier {
   constructor(
@@ -27,10 +33,13 @@ export class OrderNotifier {
   async onStatusChange(order: Order, previous: OrderStatus | null): Promise<void> {
     if (previous === null || !CHAT_CHANNELS.includes(order.channel)) return;
     const template = TEMPLATES[order.status];
-    if (!template) return;
+    const event = EVENTS[order.status]?.(order);
+    if (!template || !event) return;
     const customer = await this.customers.get(order.customerId);
     if (!customer?.channelUserId) return;
     const s = await this.settings.get();
-    await this.messenger.send(order.channel as ChannelName, customer.channelUserId, template(order, formatMoney(order.totalCents, s.currency), s.businessName));
+    const total = formatMoney(order.totalCents, s.currency);
+    await this.messenger.send(order.channel as ChannelName, customer.channelUserId, template(order, total, s.businessName), {
+      event, params: { orderNumber: String(order.number), total, businessName: s.businessName, customerName: customer.name } });
   }
 }

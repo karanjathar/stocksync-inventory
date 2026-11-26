@@ -1,5 +1,5 @@
 import { normaliseReply, type BotReply } from './reply.js';
-import { postJson, type ChannelAdapter } from './types.js';
+import { postJson, type ChannelAdapter, type TemplateMessage } from './types.js';
 
 export interface WhatsAppConfig { token?: string; phoneNumberId?: string; graphVersion: string; graphBase?: string }
 
@@ -29,6 +29,11 @@ export class WhatsAppAdapter implements ChannelAdapter {
     } else {
       return this.send(to, r.text);
     }
+  }
+
+  async sendTemplate(to: string, t: TemplateMessage): Promise<string | undefined> {
+    return this.post(to, { type: 'template', template: { name: t.name, language: { code: t.language },
+      ...(t.params.length ? { components: [{ type: 'body', parameters: t.params.map((text) => ({ type: 'text', text: text.slice(0, 1024) })) }] } : {}) } });
   }
 
   private async post(to: string, message: Record<string, unknown>): Promise<string | undefined> {
