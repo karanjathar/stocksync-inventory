@@ -31,6 +31,14 @@
 - **Replan 2026-11-26 (Release 3 = Tier 1 of the "top 1%" roadmap):** Added PRD 1.9, schemas 3.15–3.18, decisions D-010..D-012 and tasks T59–T68 (Phases 10–12: durable outbox + Postgres job queue, WhatsApp delivery receipts, 24h-window templates, maintenance/retention jobs, /readyz + ops status, real-service verification, security review). Awaiting human approval before building. T67 needs Razorpay test keys + a WhatsApp test number from the owner.
   *Local run recipe (cloud session):* `service postgresql start`; DBs `inventory` and `inventory_test` (user postgres/postgres); `TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/inventory_test node engine/engine.mjs gate`; `npm run build && npm start` with the dummy values from `.env.example` → http://localhost:8080 (admin@example.com / ChangeMe123!).
 
+- **HANDOFF 2026-11-26 (end of session 1):** Release 3 approved by the owner; T59 (migration 005 + settings) and T60 (job queue `src/api/src/jobs/queue.ts`) are DONE and pushed. **Next: T61 Outbox** (already started with `engine next`; re-run `node engine/engine.mjs next` after /clear). Design worked out for T61:
+  - `ChannelAdapter.send/sendReply` return `Promise<string | void>` = provider message id (WhatsApp `messages[0].id`, Telegram `result.message_id`, Meta page `message_id`); `postJson` returns the parsed JSON; `ChannelError` gains `status` and a `retryable` flag (network/timeout, 429, >=500 retryable; other 4xx permanent).
+  - `MessagesRepo.createOutbound()` inserts the `queued` row (payload, event, options) AND its `message.send` job (run_at = now + 30 s grace, dedupe key = message id) in ONE statement (CTE), so a crash between store and send still gets sent exactly once by the worker; then `markSent/markFailed`. Unconfigured channel → `skipped`, no job.
+  - `ChannelHub.reply/send`: store → attempt send now → success `sent`; permanent error → `failed` + rethrow (keeps the existing 502/`rejects.toThrow` tests); retryable error → stay `queued` (job retries with backoff) and do NOT throw. `hub.deliver(messageId)` is used by the job handler (no-op unless still `queued`; on the last attempt mark `failed`, throw PermanentJobError).
+  - Wire in `container.ts` (create `JobQueue` with workerId, register `message.send`) and `index.ts` (`start`, and `stop()` in shutdown). Tests: `tests/outbox.test.ts` (500,500,200 → sent after 2 retries; 400 → failed at once; simulated crash → sent exactly once).
+  - Existing tests that may need the new contract: `tests/channels.test.ts:79-80` (a 500 is now retryable → queued, not thrown; use a 400 for the rethrow case).
+  Then T62 (WhatsApp status webhooks), Phase 10 review → `approve phase "Phase 10: Durable messaging"` (human), then Phases 11–12. T67 needs Razorpay test keys + a WhatsApp test number from the owner.
+
 ## Approvals
 - plan — approved by Claude on 2026-11-06
 - phase Foundation — baseline (complete when the plan was approved)
