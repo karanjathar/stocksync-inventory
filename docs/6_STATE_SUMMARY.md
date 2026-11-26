@@ -91,3 +91,9 @@
 
 ## Blocked
 - **T67** (2026-11-26): Script scripts/verify/real-services.mjs and runbook (DEPLOYMENT_GUIDE §5.8) are written and syntax/guard-checked, but the real run needs Razorpay TEST keys, a webhook secret and a WhatsApp test number from the owner; nothing has been verified against the real services.
+
+## Handoff — Release 5 progress
+- Phase 19 (Tenancy foundation) DONE: T88–T95 (tenants + RLS, platform role, per-tenant jobs/shop/channel credentials, composite FKs, tenancy security review 7.R5a). Waiting for human approval of the phase.
+- Next: Phase 20 (T96 sign-up/email verification — must remove `TENANT_FALLBACK=default` first; T97–T101), Phase 21 (T102–T105), Phase 22 AI (T106–T110), Phase 23 (T111–T115).
+- Production: set `DATABASE_APP_URL` (restricted login role) — see 7.R5a. Deferred: T67 real Razorpay/WhatsApp run. Credentials needed later: Anthropic API key, platform Razorpay keys, email service, ENCRYPTION_KEY in Key Vault.
+- Gate env: `TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/inventory_test`.
