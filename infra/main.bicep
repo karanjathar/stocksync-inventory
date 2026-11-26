@@ -44,8 +44,24 @@ param adminPassword string
 param whatsappPhoneNumberId string = ''
 
 @secure()
-@description('Optional channel and payment secrets, keys are env var names: META_APP_SECRET, META_VERIFY_TOKEN, WHATSAPP_TOKEN, MESSENGER_PAGE_TOKEN, INSTAGRAM_PAGE_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET. All are stored in Key Vault.')
+@description('Optional channel and payment secrets, keys are env var names: META_APP_SECRET, META_VERIFY_TOKEN, WHATSAPP_TOKEN, MESSENGER_PAGE_TOKEN, INSTAGRAM_PAGE_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET, ENCRYPTION_KEY, ENCRYPTION_KEY_PREVIOUS, DATABASE_APP_URL, PLATFORM_ADMIN_PASSWORD, ANTHROPIC_API_KEY, RAZORPAY_PLATFORM_KEY_ID, RAZORPAY_PLATFORM_KEY_SECRET, RAZORPAY_PLATFORM_WEBHOOK_SECRET, EMAIL_CONNECTION_STRING. All are stored in Key Vault.')
 param channelSecrets object = {}
+
+@description('Open self-service sign-up (needs EMAIL_CONNECTION_STRING in channelSecrets). Keep false until the e-mail service, billing and plans are configured.')
+param signupEnabled bool = false
+
+@description('The original single-business fallback. "off" for any installation with several businesses (required when signupEnabled is true).')
+@allowed(['off', 'default'])
+param tenantFallback string = 'off'
+
+@description('Sender address of the Azure Communication Services Email domain that sends sign-up confirmations.')
+param emailFrom string = 'donotreply@stocksync.example'
+
+@description('Platform operator login (the console at /platform). The password goes in channelSecrets as PLATFORM_ADMIN_PASSWORD.')
+param platformAdminEmail string = ''
+
+@description('Claude model used for AI ordering and the staff assistant (AI is off until ANTHROPIC_API_KEY is provided in channelSecrets).')
+param aiModel string = 'claude-haiku-5-5'
 
 var suffix = uniqueString(resourceGroup().id, prefix)
 var appName = '${prefix}-app'
@@ -63,6 +79,16 @@ var allowedChannelKeys = [
   'RAZORPAY_KEY_ID'
   'RAZORPAY_KEY_SECRET'
   'RAZORPAY_WEBHOOK_SECRET'
+  // Release 5: multi-business operation (see docs/DEPLOYMENT_GUIDE.md "Multi-business operation")
+  'ENCRYPTION_KEY'                    // 32 random bytes, base64: encrypts each business's own channel credentials. Losing it loses them.
+  'ENCRYPTION_KEY_PREVIOUS'           // only during a key rotation
+  'DATABASE_APP_URL'                  // restricted LOGIN role (recommended): the app can never RESET ROLE to the table owner
+  'PLATFORM_ADMIN_PASSWORD'
+  'ANTHROPIC_API_KEY'
+  'RAZORPAY_PLATFORM_KEY_ID'          // the PLATFORM's Razorpay account, used to bill businesses for plans
+  'RAZORPAY_PLATFORM_KEY_SECRET'
+  'RAZORPAY_PLATFORM_WEBHOOK_SECRET'
+  'EMAIL_CONNECTION_STRING'           // Azure Communication Services Email: endpoint=https://…;accesskey=…
 ]
 var channelKeys = filter(objectKeys(channelSecrets), k => contains(allowedChannelKeys, k) && !empty(channelSecrets[k]))
 
@@ -270,7 +296,10 @@ var channelAppSecrets = [for key in channelKeys: {
   keyVaultUrl: 'https://${vault.name}${environment().suffixes.keyvaultDns}/secrets/${toLower(replace(key, '_', '-'))}'
   identity: identity.id
 }]
-var channelEnv = [for key in channelKeys: { name: key, secretRef: toLower(replace(key, '_', '-')) }]
+var channelEnv = concat(
+  [for key in channelKeys: { name: key, secretRef: toLower(replace(key, '_', '-')) }],
+  empty(platformAdminEmail) ? [] : [{ name: 'PLATFORM_ADMIN_EMAIL', value: platformAdminEmail }]   // an empty value would be refused by the app's configuration check
+)
 var coreEnv = [
   { name: 'NODE_ENV', value: 'production' }
   { name: 'PORT', value: '8080' }
@@ -284,6 +313,10 @@ var coreEnv = [
   { name: 'AZURE_STORAGE_CONTAINER', value: imageContainer }
   { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
   { name: 'WHATSAPP_PHONE_NUMBER_ID', value: whatsappPhoneNumberId }
+  { name: 'TENANT_FALLBACK', value: tenantFallback }
+  { name: 'SIGNUP_ENABLED', value: string(signupEnabled) }
+  { name: 'EMAIL_FROM', value: emailFrom }
+  { name: 'AI_MODEL', value: aiModel }
 ]
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = if (deployApp) {

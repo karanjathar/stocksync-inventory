@@ -40,8 +40,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
-    markSignedIn(false); setUser(null);
-    void api('/auth/logout', { method: 'POST' }).catch(() => undefined); // ends the session on the server and clears the cookies
+    // The screen only changes once the server has ended the session and cleared the cookies (or could not be reached), never before.
+    void api('/auth/logout', { method: 'POST' }).catch(() => undefined).finally(() => { markSignedIn(false); setUser(null); });
   }, []);
   const logoutEverywhere = useCallback(async () => { await api('/auth/logout-all', { method: 'POST' }); markSignedIn(false); setUser(null); }, []);
   const can = useCallback((role: Role) => (user ? RANK[user.role] >= RANK[role] : false), [user]);
