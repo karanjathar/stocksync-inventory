@@ -21,6 +21,7 @@ import { OrderNotifier } from './services/orderNotifier.js';
 import { MessagesRepo } from './repositories/messages.js';
 import { ChannelHub } from './channels/hub.js';
 import { JobQueue } from './jobs/queue.js';
+import { Maintenance } from './jobs/maintenance.js';
 import { registerMessageSend } from './jobs/messageSend.js';
 import { randomUUID } from 'node:crypto';
 import { WhatsAppAdapter } from './channels/whatsapp.js';
@@ -70,6 +71,8 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   ], messages, () => settings.get());
   const jobs = new JobQueue(pool, { workerId: `api-${process.pid}-${randomUUID().slice(0, 8)}`, onError: (err, job) => logger.warn({ err: String(err), job: job?.kind, jobId: job?.id }, 'job failed') });
   registerMessageSend(jobs, hub);
+  const maintenance = new Maintenance(pool, orders, settings, logger);
+  maintenance.register(jobs);
   const messenger: Messenger = opts.messenger ?? hub;
   const alerts = new AlertService(repos.products, settings, events, messenger, logger);
   stock.onChanged((changes) => alerts.onStockChanged(changes));
@@ -84,7 +87,7 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const images = new ImageStorage(env.AZURE_STORAGE_CONNECTION_STRING, env.AZURE_STORAGE_CONTAINER);
   chatFlow.setPaymentOptions(payments.chatOptions());
   orders.onStatusChange((order, previous) => payments.onOrderStatusChange(order, previous));
-  return { env, pool, logger, repos, auth, stock, customers, settings, events, orders, alerts, messages, hub, jobs, messenger, bot, inbox, images, carts, chatFlow, razorpay, payments };
+  return { env, pool, logger, repos, auth, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, messenger, bot, inbox, images, carts, chatFlow, razorpay, payments };
 }
 
 export type Container = ReturnType<typeof createContainer>;

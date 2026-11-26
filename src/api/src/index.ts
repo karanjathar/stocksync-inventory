@@ -6,6 +6,7 @@ import { createPool } from './db/pool.js';
 import { migrate } from './db/migrate.js';
 import { createContainer } from './container.js';
 import { createApp } from './http/app.js';
+import { startScheduler } from './jobs/scheduler.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -31,6 +32,7 @@ async function main(): Promise<void> {
   }
 
   c.jobs.start({ concurrency: 4, pollMs: 1000 });
+  const stopScheduler = startScheduler(pool, c.jobs, (err) => logger.warn({ err: String(err) }, 'maintenance scheduling failed'));
 
   const here = path.dirname(fileURLToPath(import.meta.url));
   const staticDir = path.resolve(here, '../../web/dist');
@@ -46,6 +48,7 @@ async function main(): Promise<void> {
     stopping = true;
     logger.info({ signal }, 'shutting down');
     server.close(() => {
+      stopScheduler();
       c.jobs.stop().finally(() => pool.end().finally(() => process.exit(0)));
     });
     server.closeIdleConnections();
