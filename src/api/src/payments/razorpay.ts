@@ -64,7 +64,7 @@ export class RazorpayClient {
    * The final outcome arrives by signed webhook (`refund.processed` / `refund.failed`); the status returned here is only the first answer.
    */
   async refundPayment(i: RefundInput): Promise<Refund> {
-    if (!/^pay_[A-Za-z0-9]+$/.test(i.paymentId)) throw new RazorpayError(400, 'not a Razorpay payment id');
+    if (!/^pay_[A-Za-z0-9_]+$/.test(i.paymentId)) throw new RazorpayError(400, 'not a Razorpay payment id');
     if (!Number.isInteger(i.amountCents) || i.amountCents <= 0) throw new RazorpayError(400, 'refund amount must be a positive whole number of paise');
     const json = await this.post(`/v1/payments/${i.paymentId}/refund`, { amount: i.amountCents, speed: 'normal', receipt: i.receipt.slice(0, 40), notes: i.notes ?? {} },
       { 'x-refund-idempotency': i.idempotencyKey });

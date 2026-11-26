@@ -35,6 +35,12 @@ export function Orders() {
     if (e.type === 'payment.updated' || e.type === 'order.created' || e.type === 'order.updated') reload();
   }), [reload]);
 
+  const refundNow = async (o: Order) => {
+    if (!window.confirm(`Refund the payment for order #${o.number} (${o.customerName}) through Razorpay?\n\nThe money goes back to the customer's original payment method. This cannot be undone.`)) return;
+    const ok = await action.run(() => api(`/orders/${o.id}/refund`, { body: {} }));
+    if (ok !== undefined) orders.reload();
+  };
+
   const markRefunded = async (o: Order) => {
     if (!window.confirm(`Have you already refunded ${money(o.totalCents, settings.currency)} to ${o.customerName} in the Razorpay dashboard?\n\nThis clears the refund flag and tells the customer the refund was issued.`)) return;
     const ok = await action.run(() => api(`/orders/${o.id}/refunded`, { body: {} }));
@@ -115,7 +121,12 @@ export function Orders() {
                         {o.status === 'CONFIRMED' && <button className="small primary" disabled={action.busy} onClick={() => void transition(o, 'fulfill')}>Fulfil</button>}
                         {(o.status === 'CONFIRMED' || o.status === 'FULFILLED') && <button className="small" disabled={action.busy} onClick={() => void action.run(() => openPdf(`/orders/${o.id}/invoice.pdf`))}>Invoice</button>}
                         {(o.status === 'PENDING' || o.status === 'CONFIRMED') && <button className="small danger" disabled={action.busy} onClick={() => void transition(o, 'cancel')}>Cancel</button>}
-                        {o.paymentStatus === 'REFUND_DUE' && <button className="small primary" disabled={action.busy} onClick={() => void markRefunded(o)}>Mark refunded</button>}
+                        {o.paymentStatus === 'REFUND_DUE' && o.refundStatus === 'PENDING' && <Badge tone="info">Refund in progress</Badge>}
+                        {o.paymentStatus === 'REFUND_DUE' && o.refundStatus === 'FAILED' && <Badge tone="bad">Refund failed</Badge>}
+                        {o.paymentStatus === 'REFUND_DUE' && payConfig.data?.razorpayConfigured && (
+                          <button className="small primary" disabled={action.busy} onClick={() => void refundNow(o)}>Refund via Razorpay</button>
+                        )}
+                        {o.paymentStatus === 'REFUND_DUE' && <button className="small" disabled={action.busy} onClick={() => void markRefunded(o)}>Mark refunded</button>}
                         {payConfig.data?.onlineAvailable && o.paymentStatus === 'UNPAID' && o.status !== 'CANCELLED' && (
                           <>
                             {CHAT_CHANNELS.includes(o.channel) && <button className="small" disabled={action.busy} onClick={() => void paymentLink(o, true)}>Send link</button>}

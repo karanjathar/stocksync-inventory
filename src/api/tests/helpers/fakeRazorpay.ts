@@ -9,6 +9,7 @@ export function fakeRazorpay() {
   let n = 0;
   let failing = false;
   let delayMs = 0;
+  let refundFailure: number | null = null;
   const refundsByKey = new Map<string, { id: string; payment_id: string; amount: number; status: string }>();
   const fn = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -20,6 +21,7 @@ export function fakeRazorpay() {
       return Response.json({ id: `plink_${n}`, short_url: `https://rzp.io/i/link${n}`, status: 'created' });
     }
     const refund = url.match(/\/v1\/payments\/([^/]+)\/refund$/);
+    if (refund && refundFailure) return Response.json({ error: { description: 'The refund amount is greater than the amount available for refund' } }, { status: refundFailure });
     if (refund) {
       const key = new Headers(init?.headers).get('x-refund-idempotency') ?? `auto-${calls.length}`;
       if (!refundsByKey.has(key)) refundsByKey.set(key, { id: `rfnd_${refundsByKey.size + 1}`, payment_id: refund[1]!, amount: (JSON.parse(String(init?.body)) as { amount: number }).amount, status: 'pending' });
@@ -29,6 +31,7 @@ export function fakeRazorpay() {
     return Response.json({ ok: true });
   }) as typeof fetch;
   return { fn, calls, links: () => calls.filter((c) => c.url.endsWith('/v1/payment_links')), setFailing: (v: boolean) => { failing = v; }, setDelay: (ms: number) => { delayMs = ms; },
+    setRefundFailure: (status: number | null) => { refundFailure = status; },
     refunds: () => calls.filter((c) => /\/v1\/payments\/[^/]+\/refund$/.test(c.url)), refundCount: () => refundsByKey.size };
 }
 

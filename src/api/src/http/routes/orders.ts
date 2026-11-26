@@ -44,6 +44,7 @@ export function orderRoutes(c: Container): Router {
     res.set({ 'content-type': 'application/pdf', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff',
       'content-disposition': `inline; filename="invoice-${invoice.number.replace(/[^A-Za-z0-9-]/g, '-')}.pdf"` }).send(pdf);
   });
+  r.post('/:id/refund', write, async (req, res) => { res.json(await c.payments.refund(idParam(req))); });
   r.post('/:id/refunded', write, async (req, res) => { res.json(await c.payments.markRefunded(idParam(req))); });
   r.post('/:id/fulfill', write, async (req, res) => { res.json(await c.orders.fulfill(idParam(req))); });
   r.post('/:id/cancel', write, async (req, res) => { res.json(await c.orders.cancel(idParam(req), currentUser(req).id)); });

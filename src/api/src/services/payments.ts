@@ -159,6 +159,50 @@ export class PaymentService {
     await this.alertStaff(`⚠️ Paid order #${order.number} (${money}) was cancelled — refund the customer in Razorpay.`);
   }
 
+  /**
+   * Refunds a REFUND_DUE order through Razorpay. The amount is what Razorpay captured, from our own records: nothing the client sends matters.
+   * The claim below is atomic, so double-clicks and concurrent staff cannot issue two refunds; the Razorpay call runs with no DB connection held.
+   * The order stays REFUND_DUE until the signed `refund.processed` webhook arrives (D-015).
+   * Outcome unknown (network, 5xx, 429): the payment stays PENDING and a retry after 60 s repeats the SAME idempotent request, so it cannot refund twice.
+   */
+  async refund(orderId: string): Promise<{ order: Order; refund: { id: string | null; status: 'PENDING' } }> {
+    if (!this.razorpay.isConfigured()) throw new NotConfiguredError('Razorpay refunds');
+    const order = await this.orders.get(orderId);
+    if (!order) throw new NotFoundError('Order');
+    if (order.paymentStatus !== 'REFUND_DUE') throw new ConflictError('Only orders awaiting a refund can be refunded');
+    const claim = await this.pool.query<{ id: string; providerPaymentId: string; attempt: number; amountCents: number }>(
+      `UPDATE payments SET refund_status = 'PENDING', refund_error = NULL, updated_at = now(),
+              refund_attempts = CASE WHEN refund_status = 'PENDING' THEN refund_attempts ELSE refund_attempts + 1 END
+       WHERE id = (SELECT id FROM payments WHERE order_id = $1 AND status = 'PAID' AND provider_payment_id IS NOT NULL ORDER BY updated_at DESC LIMIT 1)
+         AND (refund_status IS NULL OR refund_status = 'FAILED' OR (refund_status = 'PENDING' AND refund_id IS NULL AND updated_at < now() - interval '60 seconds'))
+       RETURNING id, provider_payment_id AS "providerPaymentId", refund_attempts AS attempt, COALESCE(paid_cents, amount_cents) AS "amountCents"`, [orderId]);
+    const payment = claim.rows[0];
+    if (!payment) {
+      const any = await this.pool.query("SELECT 1 FROM payments WHERE order_id = $1 AND status = 'PAID' AND provider_payment_id IS NOT NULL", [orderId]);
+      throw new ConflictError(any.rowCount
+        ? 'A refund for this order is already in progress. If it does not complete, try again in a minute.'
+        : 'There is no captured Razorpay payment on record for this order. Refund it by hand in the Razorpay dashboard, then press Mark refunded.');
+    }
+    try {
+      const refund = await this.razorpay.refundPayment({
+        paymentId: payment.providerPaymentId, amountCents: payment.amountCents, receipt: `order-${order.number}`,
+        idempotencyKey: `refund-${payment.id}-${payment.attempt}`, notes: { orderNumber: String(order.number) } });
+      await this.pool.query('UPDATE payments SET refund_id = $2, updated_at = now() WHERE id = $1', [payment.id, refund.id]);
+      this.events.publish({ type: 'payment.updated', orderId: order.id, number: order.number, paymentStatus: 'REFUND_DUE' });
+      return { order: (await this.orders.get(orderId))!, refund: { id: refund.id, status: 'PENDING' } };
+    } catch (err) {
+      const rejected = err instanceof RazorpayError && err.status >= 400 && err.status < 500 && err.status !== 408 && err.status !== 429;
+      const reason = err instanceof Error ? err.message : String(err);
+      if (rejected) {
+        await this.pool.query("UPDATE payments SET refund_status = 'FAILED', refund_error = $2, updated_at = now() WHERE id = $1", [payment.id, reason.slice(0, 300)]);
+        throw new AppError(502, 'REFUND_FAILED', `Razorpay refused the refund: ${reason}`);
+      }
+      await this.pool.query('UPDATE payments SET refund_error = $2 WHERE id = $1', [payment.id, reason.slice(0, 300)]); // stays PENDING: the outcome is unknown
+      this.logger.warn({ orderId, err: reason }, 'refund outcome unknown');
+      throw new AppError(502, 'REFUND_UNCERTAIN', 'Razorpay did not answer, so it is not known whether the refund went through. Wait a minute and press Refund again: the same request is repeated, never a second refund.');
+    }
+  }
+
   /** Staff finished the refund in Razorpay: clear the flag exactly once and tell the customer. */
   async markRefunded(orderId: string): Promise<Order> {
     // Atomic transition: concurrent clicks cannot both win, so the customer is told once.
@@ -283,8 +327,8 @@ export class PaymentService {
       // Did the customer already pay this order through another link? Then this is an EXTRA payment: record the money,
       // leave the order alone, and make sure a human refunds it.
       const other = await c.query("SELECT 1 FROM payments WHERE order_id = $1 AND status = 'PAID' AND id <> $2 LIMIT 1", [payment.order_id, payment.id]);
-      await c.query("UPDATE payments SET status = 'PAID', provider_payment_id = $2, updated_at = now() WHERE id = $1",
-        [payment.id, payload.payment?.entity.id ?? null]);
+      await c.query("UPDATE payments SET status = 'PAID', provider_payment_id = $2, paid_cents = $3, updated_at = now() WHERE id = $1",
+        [payment.id, payload.payment?.entity.id ?? null, paidCents]);
       if (other.rowCount) return { orderId: payment.order_id, good: true, fresh: true, duplicate: payload.payment?.entity.id ?? link.id };
       // Money arrived. It is only "good" if the amount matches and the order can still be fulfilled.
       const good = paidCents === payment.amount_cents && order.status !== 'CANCELLED';

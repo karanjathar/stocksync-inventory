@@ -24,7 +24,8 @@ const ORDER_SELECT = `
   SELECT o.id, o.number, o.customer_id AS "customerId", c.name AS "customerName", o.channel, o.status,
          o.warehouse_id AS "warehouseId", o.total_cents AS "totalCents", o.notes,
          o.created_at AS "createdAt", o.updated_at AS "updatedAt",
-         o.payment_method AS "paymentMethod", o.payment_status AS "paymentStatus", o.public_token AS "publicToken"
+         o.payment_method AS "paymentMethod", o.payment_status AS "paymentStatus", o.public_token AS "publicToken",
+         (SELECT p.refund_status FROM payments p WHERE p.order_id = o.id AND p.status = 'PAID' ORDER BY p.updated_at DESC LIMIT 1) AS "refundStatus"
   FROM orders o JOIN customers c ON c.id = o.customer_id`;
 
 type OrderRow = Omit<Order, 'items'>;

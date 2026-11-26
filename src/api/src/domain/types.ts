@@ -22,7 +22,9 @@ export interface Customer { id: string; name: string; phone: string | null; emai
 export interface OrderItem { productId: string; sku: string; name: string; quantity: number; unitPriceCents: number }
 export interface Order { id: string; number: number; customerId: string; customerName: string; channel: OrderChannel;
   status: OrderStatus; warehouseId: string | null; totalCents: number; notes: string; items: OrderItem[]; createdAt: string; updatedAt: string;
-  paymentMethod: PaymentMethod; paymentStatus: PaymentStatus; publicToken: string }
+  paymentMethod: PaymentMethod; paymentStatus: PaymentStatus; publicToken: string;
+  /** State of an automatic Razorpay refund (staff view only). */
+  refundStatus?: 'PENDING' | 'PROCESSED' | 'FAILED' | null }
 export interface AlertRecipient { channel: ChannelName; to: string }
 export interface CustomFieldDef { key: string; label: string; type: 'text' | 'number' | 'select'; options?: string[] }
 /** Outbound message lifecycle (inbound rows keep status 'ok'). */

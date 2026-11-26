@@ -236,3 +236,57 @@ describe('Orders: marking refunds as done (T58)', () => {
     expect(calls.some((c) => c.method === 'POST')).toBe(false);
   });
 });
+
+describe('Orders: automatic refunds (T84)', () => {
+  const routes = (orders: object[], cfg = config()) => ({ '/orders': orders, '/warehouses': [], '/customers': [], '/products': [], '/payments/config': cfg, '/settings': settings() });
+
+  it('offers Refund via Razorpay on refund-due orders when Razorpay is configured, and asks first', async () => {
+    const calls = mockApi({ ...routes([mk({ paymentStatus: 'REFUND_DUE', status: 'CANCELLED' })]), 'POST /orders/o1/refund': { order: mk({}), refund: { id: 'rfnd_1', status: 'PENDING' } } });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderOrders();
+    fireEvent.click(within(await rowOf(42)).getByRole('button', { name: 'Refund via Razorpay' }));
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST' && c.path === '/orders/o1/refund')).toBe(true));
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/#42.*Asha.*Razorpay/s));
+    expect(calls.find((c) => c.path === '/orders/o1/refund')!.body).toEqual({}); // the amount is never sent by the browser
+  });
+
+  it('does nothing when staff decline, and the manual button stays available', async () => {
+    const calls = mockApi({ ...routes([mk({ paymentStatus: 'REFUND_DUE', status: 'CANCELLED' })]), 'POST /orders/o1/refund': {} });
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderOrders();
+    const row = await rowOf(42);
+    fireEvent.click(within(row).getByRole('button', { name: 'Refund via Razorpay' }));
+    expect(calls.some((c) => c.path === '/orders/o1/refund')).toBe(false);
+    expect(within(row).getByRole('button', { name: 'Mark refunded' })).toBeInTheDocument();
+  });
+
+  it('shows progress and failure, and hides the button when Razorpay is not configured or nothing is due', async () => {
+    mockApi(routes([
+      mk({ id: 'a', number: 1, paymentStatus: 'REFUND_DUE', status: 'CANCELLED', refundStatus: 'PENDING' }),
+      mk({ id: 'b', number: 2, paymentStatus: 'REFUND_DUE', status: 'CANCELLED', refundStatus: 'FAILED' }),
+      mk({ id: 'c', number: 3, paymentStatus: 'PAID', status: 'CONFIRMED' }),
+    ]));
+    renderOrders();
+    expect(within(await rowOf(1)).getByText('Refund in progress')).toBeInTheDocument();
+    expect(within(await rowOf(2)).getByText('Refund failed')).toBeInTheDocument();
+    expect(within(await rowOf(3)).queryByRole('button', { name: 'Refund via Razorpay' })).not.toBeInTheDocument();
+  });
+
+  it('without Razorpay keys only the manual button is offered', async () => {
+    mockApi(routes([mk({ paymentStatus: 'REFUND_DUE', status: 'CANCELLED' })], config({ razorpayConfigured: false, onlineAvailable: false })));
+    renderOrders();
+    const row = await rowOf(42);
+    expect(within(row).queryByRole('button', { name: 'Refund via Razorpay' })).not.toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'Mark refunded' })).toBeInTheDocument();
+  });
+
+  it('shows the server\'s reason when a refund is refused', async () => {
+    mockApi({ ...routes([mk({ paymentStatus: 'REFUND_DUE', status: 'CANCELLED' })]),
+      'POST /orders/o1/refund': () => new Response(JSON.stringify({ error: { code: 'REFUND_FAILED', message: 'Razorpay refused the refund: amount too high' } }), { status: 502 }) });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderOrders();
+    fireEvent.click(within(await rowOf(42)).getByRole('button', { name: 'Refund via Razorpay' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/amount too high/);
+  });
+});
+
