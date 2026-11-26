@@ -30,6 +30,7 @@ export interface PublicOrderStatus {
   currency: string;
   items: { name: string; quantity: number }[];
   paymentUrl?: string;
+  invoiceAvailable?: boolean;
 }
 
 export interface PaymentsConfig { razorpayConfigured: boolean; onlineAvailable: boolean; codEnabled: boolean; reason?: string }

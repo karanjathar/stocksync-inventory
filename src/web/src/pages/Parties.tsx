@@ -48,12 +48,15 @@ export function Customers() {
         { key: 'name', label: 'Name', required: true },
         { key: 'phone', label: 'Phone', type: 'tel', nullable: true },
         { key: 'email', label: 'Email', type: 'email', nullable: true },
+        { key: 'gstin', label: 'GSTIN (business buyers)', nullable: true },
+        { key: 'stateCode', label: 'GST state code', nullable: true },
       ]}
       columns={[
         { label: 'Name', render: (c) => <strong>{c.name}</strong> },
         { label: 'Channel', render: (c) => <Badge tone={c.channel === 'manual' ? 'neutral' : 'info'}>{c.channel}</Badge> },
         { label: 'Phone', render: (c) => c.phone ?? '—' },
         { label: 'Email', render: (c) => c.email ?? '—' },
+        { label: 'GSTIN', render: (c) => c.gstin ?? '—' },
       ]}
     />
   );

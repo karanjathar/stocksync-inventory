@@ -129,6 +129,8 @@ describe('invoice download endpoints', () => {
     expect(ok.headers['cache-control']).toContain('no-store');
     expect(ok.headers['referrer-policy']).toBe('no-referrer');
     expect(binary(ok).toString('latin1')).not.toContain('Bob Private');
+    expect((await request(t.app).get(`/api/public/orders/${mine.publicToken}`)).body.invoiceAvailable).toBe(true);
+    expect((await request(t.app).get(`/api/public/orders/${unconfirmed.publicToken}`)).body.invoiceAvailable).toBe(false);
     expect((await get(unconfirmed.publicToken)).status).toBe(404);
     expect((await get('00000000-0000-4000-8000-000000000000')).status).toBe(404);
     expect((await get('not-a-token')).status).toBe(404);

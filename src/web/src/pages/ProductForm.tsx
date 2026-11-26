@@ -30,6 +30,8 @@ export function ProductForm({ product, categories, customFields, canUpload, onSa
   const [description, setDescription] = useState(product?.description ?? '');
   const [unit, setUnit] = useState(product?.unit ?? 'pcs');
   const [price, setPrice] = useState(product ? (product.priceCents / 100).toFixed(2) : '');
+  const [hsnCode, setHsnCode] = useState(product?.hsnCode ?? '');
+  const [gstRateBp, setGstRateBp] = useState(String(product?.gstRateBp ?? 0));
   const [reorderLevel, setReorderLevel] = useState(String(product?.reorderLevel ?? 0));
   const [categoryId, setCategoryId] = useState(product?.categoryId ?? '');
   const [imageUrl, setImageUrl] = useState<string | null>(product?.imageUrl ?? null);
@@ -49,6 +51,7 @@ export function ProductForm({ product, categories, customFields, canUpload, onSa
     const cleaned = Object.fromEntries(Object.entries(attributes).filter(([, v]) => v.trim() !== ''));
     const body = {
       sku: sku.trim().toUpperCase(), name: name.trim(), description, unit: unit.trim() || 'pcs', priceCents,
+      hsnCode: hsnCode.trim() || null, gstRateBp: Number(gstRateBp) || 0,
       reorderLevel: Number(reorderLevel) || 0, categoryId: categoryId || null, imageUrl, isActive, attributes: cleaned,
     };
     const saved = await run(() => product
@@ -72,6 +75,14 @@ export function ProductForm({ product, categories, customFields, canUpload, onSa
         <Field label="Name"><input required value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <Field label="Price"><input required inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="19.99" /></Field>
         <Field label="Unit"><input value={unit} onChange={(e) => setUnit(e.target.value)} /></Field>
+        <Field label="HSN/SAC code" hint="4–8 digits, printed on GST invoices">
+          <input inputMode="numeric" value={hsnCode} onChange={(e) => setHsnCode(e.target.value)} placeholder="610910" />
+        </Field>
+        <Field label="GST rate" hint="Included in the price above">
+          <select aria-label="GST rate" value={gstRateBp} onChange={(e) => setGstRateBp(e.target.value)}>
+            {[...new Set([0, 500, 1200, 1800, 2800, Number(gstRateBp)])].sort((a, b) => a - b).map((bp) => <option key={bp} value={bp}>{bp / 100}%</option>)}
+          </select>
+        </Field>
         <Field label="Reorder level" hint="Alert when total stock falls to this level (0 = off)">
           <input type="number" min={0} value={reorderLevel} onChange={(e) => setReorderLevel(e.target.value)} />
         </Field>

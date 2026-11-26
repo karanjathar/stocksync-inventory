@@ -25,8 +25,22 @@ describe('ProductForm', () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(calls[0]!.body).toEqual({
       sku: 'TEE-RED', name: 'Red Tee', description: '', unit: 'pcs', priceCents: 1999, reorderLevel: 4,
-      categoryId: 'c1', imageUrl: null, isActive: true, attributes: { color: 'red', weight: '180' },
+      categoryId: 'c1', imageUrl: null, isActive: true, attributes: { color: 'red', weight: '180' }, hsnCode: null, gstRateBp: 0,
     });
+  });
+
+  it('sends the HSN code and GST rate (in basis points) and keeps an unusual existing rate selectable', async () => {
+    const calls = mockApi({ 'POST /products': (b: unknown) => ({ id: 'new', ...(b as object) }) });
+    const onSaved = vi.fn();
+    render(<ProductForm categories={[]} customFields={[]} canUpload={false} onSaved={onSaved} onCancel={() => {}} />);
+    fireEvent.change(screen.getByLabelText('SKU'), { target: { value: 'A1' } });
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'A' } });
+    fireEvent.change(screen.getByLabelText('Price'), { target: { value: '118' } });
+    fireEvent.change(screen.getByLabelText('HSN/SAC code'), { target: { value: ' 610910 ' } });
+    fireEvent.change(screen.getByLabelText('GST rate'), { target: { value: '1800' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create product' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(calls[0]!.body).toMatchObject({ hsnCode: '610910', gstRateBp: 1800, priceCents: 11800 });
   });
 
   it('validates price before submitting', async () => {

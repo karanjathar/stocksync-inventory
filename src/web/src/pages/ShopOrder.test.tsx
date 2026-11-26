@@ -153,3 +153,19 @@ describe('resuming payment (T52)', () => {
     expect(screen.queryByRole('button', { name: /new payment link/i })).not.toBeInTheDocument();
   });
 });
+
+describe('invoice link (T78)', () => {
+  it('offers the tax invoice once the server says it is available, and not before', async () => {
+    mockApi({ '/public/orders/tok-1': { ...base, paymentMethod: 'COD', status: 'CONFIRMED', invoiceAvailable: true } });
+    const { unmount } = renderOrder();
+    const link = await screen.findByRole('link', { name: /download your tax invoice/i });
+    expect(link).toHaveAttribute('href', '/api/public/orders/tok-1/invoice.pdf');
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+    unmount();
+    mockApi({ '/public/orders/tok-1': { ...base, paymentMethod: 'COD', status: 'CONFIRMED', invoiceAvailable: false } });
+    renderOrder();
+    await screen.findByRole('heading', { name: 'Order #7' });
+    expect(screen.queryByRole('link', { name: /tax invoice/i })).not.toBeInTheDocument();
+  });
+});
+

@@ -14,6 +14,13 @@ const EVENTS: { key: string; label: string }[] = [
 ];
 const RELEASE3_DEFAULTS = { whatsappTemplates: {}, maintenance: { unpaidOrderTtlHours: 48, chatRetentionDays: 365 },
   gst: { legalName: '', gstin: '', address: '', stateCode: '', invoicePrefix: 'INV', pricesIncludeTax: true } };
+/** GST state codes (the first two digits of a GSTIN). */
+const GST_STATES: [string, string][] = [['01', 'Jammu & Kashmir'], ['02', 'Himachal Pradesh'], ['03', 'Punjab'], ['04', 'Chandigarh'], ['05', 'Uttarakhand'], ['06', 'Haryana'],
+  ['07', 'Delhi'], ['08', 'Rajasthan'], ['09', 'Uttar Pradesh'], ['10', 'Bihar'], ['11', 'Sikkim'], ['12', 'Arunachal Pradesh'], ['13', 'Nagaland'], ['14', 'Manipur'],
+  ['15', 'Mizoram'], ['16', 'Tripura'], ['17', 'Meghalaya'], ['18', 'Assam'], ['19', 'West Bengal'], ['20', 'Jharkhand'], ['21', 'Odisha'], ['22', 'Chhattisgarh'],
+  ['23', 'Madhya Pradesh'], ['24', 'Gujarat'], ['26', 'Dadra & Nagar Haveli and Daman & Diu'], ['27', 'Maharashtra'], ['29', 'Karnataka'], ['30', 'Goa'], ['31', 'Lakshadweep'],
+  ['32', 'Kerala'], ['33', 'Tamil Nadu'], ['34', 'Puducherry'], ['35', 'Andaman & Nicobar Islands'], ['36', 'Telangana'], ['37', 'Andhra Pradesh'], ['38', 'Ladakh'],
+  ['97', 'Other Territory'], ['99', 'Centre Jurisdiction']];
 interface FieldDraft { key: string; label: string; type: CustomFieldDef['type']; options: string }
 
 export function SettingsPage() {
@@ -120,6 +127,24 @@ export function SettingsPage() {
           <p className="small muted">In the Razorpay dashboard (Settings → Webhooks) add this URL and enable the events below, using the same secret as <code>RAZORPAY_WEBHOOK_SECRET</code>:</p>
           <code className="code-line">{`${window.location.origin}/webhooks/razorpay`}</code>
           <p className="small muted">Events: <code>payment_link.paid</code>, <code>payment_link.expired</code>, <code>payment_link.cancelled</code></p>
+        </Card>
+
+        <Card title="GST invoicing">
+          <p className="small muted">Fill this in to issue a GST tax invoice automatically when an order is confirmed. Shop prices are treated as <strong>tax-inclusive (MRP)</strong>; the GST rate is set per product.
+            Have your accountant check a sample invoice before you rely on it.</p>
+          <div className="form-grid">
+            <Field label="Legal name"><input aria-label="GST legal name" value={form.gst.legalName} onChange={(e) => set('gst', { ...form.gst, legalName: e.target.value })} /></Field>
+            <Field label="GSTIN" hint="15 characters, e.g. 27AAPFU0939F1ZV">
+              <input aria-label="GSTIN" value={form.gst.gstin} maxLength={15} onChange={(e) => set('gst', { ...form.gst, gstin: e.target.value.toUpperCase() })} />
+            </Field>
+            <Field label="State" hint="Must match the first two digits of the GSTIN">
+              <select aria-label="GST state" value={form.gst.stateCode} onChange={(e) => set('gst', { ...form.gst, stateCode: e.target.value })}>
+                <option value="">— choose —</option>{GST_STATES.map(([code, name]) => <option key={code} value={code}>{code} — {name}</option>)}
+              </select>
+            </Field>
+            <Field label="Invoice prefix" hint="Numbers look like INV/2026-27/000001"><input aria-label="Invoice prefix" value={form.gst.invoicePrefix} maxLength={8} onChange={(e) => set('gst', { ...form.gst, invoicePrefix: e.target.value.toUpperCase() })} /></Field>
+          </div>
+          <Field label="Registered address"><textarea aria-label="GST address" rows={2} value={form.gst.address} onChange={(e) => set('gst', { ...form.gst, address: e.target.value })} /></Field>
         </Card>
 
         <Card title="WhatsApp templates">

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { api } from '../api/client';
+import { api, openPdf } from '../api/client';
 import { useAuth } from '../auth';
 import { useAction, useApi } from '../hooks';
 import { useSettings } from '../settings';
@@ -113,6 +113,7 @@ export function Orders() {
                           </>
                         )}
                         {o.status === 'CONFIRMED' && <button className="small primary" disabled={action.busy} onClick={() => void transition(o, 'fulfill')}>Fulfil</button>}
+                        {(o.status === 'CONFIRMED' || o.status === 'FULFILLED') && <button className="small" disabled={action.busy} onClick={() => void action.run(() => openPdf(`/orders/${o.id}/invoice.pdf`))}>Invoice</button>}
                         {(o.status === 'PENDING' || o.status === 'CONFIRMED') && <button className="small danger" disabled={action.busy} onClick={() => void transition(o, 'cancel')}>Cancel</button>}
                         {o.paymentStatus === 'REFUND_DUE' && <button className="small primary" disabled={action.busy} onClick={() => void markRefunded(o)}>Mark refunded</button>}
                         {payConfig.data?.onlineAvailable && o.paymentStatus === 'UNPAID' && o.status !== 'CANCELLED' && (

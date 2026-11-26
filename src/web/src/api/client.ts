@@ -65,3 +65,16 @@ export function errorText(err: unknown): string {
   }
   return err instanceof Error ? err.message : 'Something went wrong';
 }
+
+/** Fetches a protected PDF with the login token and opens it in a new tab (a plain link cannot send the Authorization header). */
+export async function openPdf(path: string): Promise<void> {
+  const res = await fetch(`/api${path}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) {
+    const json = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(json.error?.message ?? `Could not open the document (${res.status})`);
+  }
+  const url = URL.createObjectURL(await res.blob());
+  window.open(url, '_blank', 'noopener');
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+

@@ -86,6 +86,9 @@ export function ShopOrder() {
         ) : (
           <p><button className="primary" disabled={renewing} onClick={() => void renew()}>{renewing ? 'Creating link…' : `💳 Get a new payment link (${total})`}</button></p>
         ))}
+        {order.invoiceAvailable && (
+          <p><a href={`/api/public/orders/${encodeURIComponent(token)}/invoice.pdf`} target="_blank" rel="noopener noreferrer">🧾 Download your tax invoice (PDF)</a></p>
+        )}
         <ul className="feed">
           {order.items.map((i) => <li key={i.name}>{i.quantity} × {i.name}</li>)}
         </ul>

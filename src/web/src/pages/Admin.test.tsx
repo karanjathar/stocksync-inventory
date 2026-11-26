@@ -135,3 +135,45 @@ describe('Settings: WhatsApp templates and maintenance (T65)', () => {
   });
 });
 
+
+describe('GST invoicing UI (T78)', () => {
+  it('saves the GST profile from Settings', async () => {
+    const calls = mockApi({
+      '/settings': { businessName: 'Shop', currency: 'INR', whatsappNumber: '', defaultWarehouseId: null, alertRecipients: [], customFields: [],
+        payments: { onlineEnabled: true, codEnabled: true, linkExpiryMinutes: 1440 }, whatsappTemplates: {}, maintenance: { unpaidOrderTtlHours: 48, chatRetentionDays: 365 },
+        gst: { legalName: '', gstin: '', address: '', stateCode: '', invoicePrefix: 'INV', pricesIncludeTax: true } },
+      '/payments/config': { razorpayConfigured: false, onlineAvailable: false, codEnabled: true }, '/warehouses': [], '/channels': [], 'PUT /settings': (b: unknown) => b,
+    });
+    render(<SettingsPage />);
+    fireEvent.change(await screen.findByLabelText('GST legal name'), { target: { value: 'Corner Shop Pvt Ltd' } });
+    fireEvent.change(screen.getByLabelText('GSTIN'), { target: { value: '27aapfu0939f1zv' } });
+    fireEvent.change(screen.getByLabelText('GST state'), { target: { value: '27' } });
+    fireEvent.change(screen.getByLabelText('Invoice prefix'), { target: { value: 'cs' } });
+    fireEvent.change(screen.getByLabelText('GST address'), { target: { value: '12 MG Road, Pune' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true));
+    expect((calls.find((c) => c.method === 'PUT')!.body as { gst: unknown }).gst).toEqual({
+      legalName: 'Corner Shop Pvt Ltd', gstin: '27AAPFU0939F1ZV', address: '12 MG Road, Pune', stateCode: '27', invoicePrefix: 'CS', pricesIncludeTax: true });
+  });
+
+  it('opens the invoice PDF for a confirmed order using the login token', async () => {
+    const open = vi.fn();
+    vi.stubGlobal('open', open);
+    URL.createObjectURL = vi.fn(() => 'blob:invoice');
+    URL.revokeObjectURL = vi.fn();
+    const confirmed = { ...order, status: 'CONFIRMED' };
+    const calls = mockApi({ '/orders': [confirmed], '/warehouses': [], '/customers': [], '/products': [], '/orders/o1/invoice.pdf': { ok: true } });
+    render(<MemoryRouter><Orders /></MemoryRouter>);
+    const row = (await screen.findByText('#42')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'Invoice' }));
+    await waitFor(() => expect(open).toHaveBeenCalledWith('blob:invoice', '_blank', 'noopener'));
+    expect(calls.some((c) => c.path === '/orders/o1/invoice.pdf')).toBe(true);
+  });
+
+  it('pending orders have no Invoice button', async () => {
+    mockApi({ '/orders': [order], '/warehouses': [], '/customers': [], '/products': [] });
+    render(<MemoryRouter><Orders /></MemoryRouter>);
+    const row = (await screen.findByText('#42')).closest('tr')!;
+    expect(within(row).queryByRole('button', { name: 'Invoice' })).not.toBeInTheDocument();
+  });
+});

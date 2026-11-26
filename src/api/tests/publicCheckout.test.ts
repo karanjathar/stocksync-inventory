@@ -99,7 +99,7 @@ describe('GET /api/public/orders/:token (T38)', () => {
     expect(res.status).toBe(200);
     expect(res.headers['cache-control']).toContain('no-store');
     expect(res.body).toEqual({
-      number: placed.body.number, status: 'PENDING', paymentMethod: 'ONLINE', paymentStatus: 'UNPAID',
+      invoiceAvailable: false, number: placed.body.number, status: 'PENDING', paymentMethod: 'ONLINE', paymentStatus: 'UNPAID',
       totalCents: 3000, currency: 'INR', items: [{ name: 'T-Shirt', quantity: 2 }], paymentUrl: placed.body.paymentUrl,
     });
     const text = JSON.stringify(res.body);

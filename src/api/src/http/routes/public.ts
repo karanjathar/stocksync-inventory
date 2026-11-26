@@ -98,8 +98,10 @@ export function publicRoutes(c: Container): Router {
     const s = await c.settings.get();
     const awaitingPayment = order.paymentMethod === 'ONLINE' && order.paymentStatus === 'UNPAID' && order.status !== 'CANCELLED';
     const link = awaitingPayment ? await c.payments.openLink(order.id) : undefined;
+    const invoice = order.status === 'CONFIRMED' || order.status === 'FULFILLED' ? await c.invoices.getByOrder(order.id) : undefined;
     res.set('Cache-Control', 'no-store');
     res.json({
+      invoiceAvailable: invoice?.status === 'ISSUED',
       number: order.number, status: order.status, paymentMethod: order.paymentMethod, paymentStatus: order.paymentStatus,
       totalCents: order.totalCents, currency: s.currency,
       items: order.items.map((i) => ({ name: i.name, quantity: i.quantity })),
