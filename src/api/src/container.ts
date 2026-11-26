@@ -51,6 +51,7 @@ import { createLogger } from './logger.js';
 import { AnthropicClient } from './ai/client.js';
 import { AiBudget } from './ai/budget.js';
 import { AiGateway } from './ai/gateway.js';
+import { OrderingAgent } from './ai/orderingAgent.js';
 import { LoginGuard } from './services/loginGuard.js';
 import { PlanRateLimits } from './http/middleware/rateLimit.js';
 import { SessionService } from './services/sessions.js';
@@ -160,6 +161,7 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const carts = new ChatCartsRepo(pool);
   const chatFlow = new ChatFlow(repos.products, repos.categories, customers, carts, settings, orders);
   const bot = new BotService(repos.products, orders, customers, settings, chatFlow);
+  bot.setAgent(new OrderingAgent(ai, repos.products, carts, customers, chatFlow, settings, pool, logger)); // answers only when AI is configured, on and within budget
   const inbox = new InboxService(messages, events, bot, messenger, logger);
   const razorpayCache = new Map<string, { sig: string; client: RazorpayClient }>();
   const razorpayProvider: RazorpayProvider = {

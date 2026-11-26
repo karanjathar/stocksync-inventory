@@ -21,6 +21,10 @@ export class BotService {
     private readonly flow?: ChatFlow,
   ) {}
 
+  private agent?: { handle(msg: InboundMessage): Promise<BotReply | undefined> };
+  /** The optional AI layer for free-text messages. It answers or declines (undefined); declining always falls back to the tap menu below. */
+  setAgent(agent: { handle(msg: InboundMessage): Promise<BotReply | undefined> } | undefined): void { this.agent = agent; }
+
   /** Maps tapped actions (docs/3_SCHEMAS.md §3.12) to the command they stand for. */
   private static readonly ACTION_COMMANDS: Record<string, string> = { catalog: 'catalog', menu: 'help', help: 'help' };
 
@@ -34,6 +38,10 @@ export class BotService {
     const first = command.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
     const known = ['stock', 'price', 'catalog', 'menu', 'order', 'status'];
     const isWelcome = !known.includes(first);
+    if (isWelcome && msg.action === undefined && this.agent && !command.includes('\n')) {
+      const aiReply = await this.agent.handle({ ...msg, text: command });
+      if (aiReply) return aiReply;
+    }
     const multiLineOrder = command.split('\n').filter((l) => l.trim()).length > 1 && /^order\s/im.test(command);
     if (!isWelcome || multiLineOrder) return { text };
     // FR-R2-7: the welcome carries the tap-to-order menu; text commands stay documented in the text.
