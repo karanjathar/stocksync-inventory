@@ -6,6 +6,12 @@ import { Badge, Card, ErrorBanner, Field, Page } from '../components/ui';
 import type { AlertRecipient, ChannelName, ChannelStatus, CustomFieldDef, PaymentsConfig, Settings, Warehouse } from '../api/types';
 
 const CHANNELS: ChannelName[] = ['whatsapp', 'messenger', 'instagram', 'telegram'];
+const EVENTS: { key: string; label: string }[] = [
+  { key: 'order_confirmed', label: 'Order confirmed' }, { key: 'order_cancelled', label: 'Order cancelled' }, { key: 'order_fulfilled', label: 'Order fulfilled' },
+  { key: 'payment_received', label: 'Payment received' }, { key: 'payment_link', label: 'Payment link' }, { key: 'refund_due', label: 'Refund on its way' },
+  { key: 'refunded', label: 'Refund issued' }, { key: 'low_stock_alert', label: 'Low-stock alert (staff)' },
+];
+const RELEASE3_DEFAULTS = { whatsappTemplates: {}, maintenance: { unpaidOrderTtlHours: 48, chatRetentionDays: 365 } };
 interface FieldDraft { key: string; label: string; type: CustomFieldDef['type']; options: string }
 
 export function SettingsPage() {
@@ -21,7 +27,7 @@ export function SettingsPage() {
 
   useEffect(() => {
     if (!loaded.data) return;
-    setForm(loaded.data);
+    setForm({ ...RELEASE3_DEFAULTS, ...loaded.data }); // older servers may not send the Release 3 settings
     setFields(loaded.data.customFields.map((f) => ({ ...f, options: (f.options ?? []).join(', ') })));
   }, [loaded.data]);
 
@@ -30,6 +36,15 @@ export function SettingsPage() {
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => setForm({ ...form, [k]: v });
   const setRecipient = (i: number, patch: Partial<AlertRecipient>) =>
     set('alertRecipients', form.alertRecipients.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const paramsText = (v: unknown): string => (Array.isArray(v) ? v.join(', ') : typeof v === 'string' ? v : '');
+  const setTemplate = (event: string, patch: Partial<{ name: string; language: string; params: string }>) => {
+    const cur = form.whatsappTemplates[event as keyof Settings['whatsappTemplates']];
+    const next = { name: cur?.name ?? '', language: cur?.language ?? 'en', params: paramsText(cur?.params), ...patch };
+    const templates = { ...form.whatsappTemplates } as Record<string, unknown>;
+    // Keep the text as typed while editing; it is parsed into the parameter list on save.
+    templates[event] = { name: next.name, language: next.language, params: next.params };
+    set('whatsappTemplates', templates as Settings['whatsappTemplates']);
+  };
   const setField = (i: number, patch: Partial<FieldDraft>) => setFields((fs) => fs.map((f, j) => (j === i ? { ...f, ...patch } : f)));
 
   // Would customers still be able to pay with what is currently in the form? (Online needs the server keys, the switch, and INR.)
@@ -47,7 +62,10 @@ export function SettingsPage() {
       key: f.key.trim(), label: f.label.trim() || f.key.trim(), type: f.type,
       ...(f.type === 'select' ? { options: f.options.split(',').map((o) => o.trim()).filter(Boolean) } : {}),
     }));
-    const body = { ...form, alertRecipients: form.alertRecipients.filter((r) => r.to.trim()), customFields };
+    const whatsappTemplates = Object.fromEntries(Object.entries(form.whatsappTemplates as Record<string, { name: string; language: string; params: unknown }>)
+      .filter(([, t]) => t.name.trim())
+      .map(([k, t]) => [k, { name: t.name.trim(), language: t.language.trim() || 'en', params: paramsText(t.params).split(',').map((p) => p.trim()).filter(Boolean) }]));
+    const body = { ...form, whatsappTemplates, alertRecipients: form.alertRecipients.filter((r) => r.to.trim()), customFields };
     const ok = await run(() => api<Settings>('/settings', { method: 'PUT', body }));
     if (ok) { setSaved(true); reloadGlobal(); }
   };
@@ -100,6 +118,34 @@ export function SettingsPage() {
           <p className="small muted">In the Razorpay dashboard (Settings → Webhooks) add this URL and enable the events below, using the same secret as <code>RAZORPAY_WEBHOOK_SECRET</code>:</p>
           <code className="code-line">{`${window.location.origin}/webhooks/razorpay`}</code>
           <p className="small muted">Events: <code>payment_link.paid</code>, <code>payment_link.expired</code>, <code>payment_link.cancelled</code></p>
+        </Card>
+
+        <Card title="WhatsApp templates">
+          <p className="small muted">WhatsApp only lets you message customers first within 24 hours of their last message. For anything later (order updates, payment links, alerts) Meta needs an approved <strong>template</strong>. Create it in WhatsApp Manager, then map it here.
+            Parameters are filled in order from: <code>orderNumber, total, businessName, customerName, productName, quantity, paymentLink</code>.</p>
+          {EVENTS.map((ev) => {
+            const t = form.whatsappTemplates[ev.key as keyof Settings['whatsappTemplates']];
+            return (
+              <div className="form-grid" key={ev.key} style={{ marginBottom: 8 }}>
+                <Field label={ev.label}><input aria-label={`Template ${ev.key} name`} value={t?.name ?? ''} placeholder="template_name" onChange={(e) => setTemplate(ev.key, { name: e.target.value })} /></Field>
+                <Field label="Language"><input aria-label={`Template ${ev.key} language`} value={t?.language ?? 'en'} onChange={(e) => setTemplate(ev.key, { language: e.target.value })} /></Field>
+                <Field label="Parameters"><input aria-label={`Template ${ev.key} parameters`} value={paramsText(t?.params)} placeholder="orderNumber, total" onChange={(e) => setTemplate(ev.key, { params: e.target.value })} /></Field>
+              </div>
+            );
+          })}
+        </Card>
+
+        <Card title="Maintenance">
+          <div className="form-grid">
+            <Field label="Cancel unpaid online orders after (hours)" hint="1–720. Frees the customer's open-order slots and cancels the pay link.">
+              <input type="number" inputMode="numeric" value={form.maintenance.unpaidOrderTtlHours}
+                onChange={(e) => set('maintenance', { ...form.maintenance, unpaidOrderTtlHours: Number(e.target.value) })} />
+            </Field>
+            <Field label="Keep chat history (days, 0 = forever)" hint="Older messages are deleted daily. 0–3650.">
+              <input type="number" inputMode="numeric" value={form.maintenance.chatRetentionDays}
+                onChange={(e) => set('maintenance', { ...form.maintenance, chatRetentionDays: Number(e.target.value) })} />
+            </Field>
+          </div>
         </Card>
 
         <Card title="Low-stock alert recipients">

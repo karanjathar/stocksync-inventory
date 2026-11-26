@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import type { Container } from '../../container.js';
 import { ChannelError } from '../../channels/types.js';
-import { AppError } from '../../domain/errors.js';
+import { AppError, ConflictError, NotFoundError } from '../../domain/errors.js';
+import { idParam } from '../params.js';
 import { requireRole } from '../middleware/auth.js';
 import { parse } from '../validate.js';
 
@@ -23,6 +24,12 @@ export function messageRoutes(c: Container): Router {
       throw err;
     }
     res.status(202).json({ status: 'accepted' });
+  });
+  r.post('/:id/retry', requireRole('staff'), async (req, res) => {
+    const outcome = await c.messages.requeueFailed(idParam(req));
+    if (outcome === 'missing') throw new NotFoundError('Message');
+    if (outcome === 'conflict') throw new ConflictError('Only failed outbound messages can be retried');
+    res.status(202).json({ status: 'queued' });
   });
   return r;
 }

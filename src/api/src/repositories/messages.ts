@@ -72,6 +72,18 @@ export class MessagesRepo {
     await this.db.query('UPDATE channel_messages SET payload = $2 WHERE id = $1', [id, JSON.stringify(payload)]);
   }
 
+  /** Failed → queued again, with its `message.send` job created in the same statement. 'missing' / 'conflict' when not retryable. */
+  async requeueFailed(id: string): Promise<'ok' | 'missing' | 'conflict'> {
+    const { rowCount } = await this.db.query(
+      `WITH u AS (UPDATE channel_messages SET status = 'queued', error_code = NULL, error_message = NULL, status_at = now()
+                  WHERE id = $1 AND direction = 'out' AND status = 'failed' RETURNING id)
+       INSERT INTO jobs (kind, payload, dedupe_key) SELECT 'message.send', jsonb_build_object('messageId', id), id::text FROM u
+       ON CONFLICT (kind, dedupe_key) WHERE dedupe_key IS NOT NULL AND status IN ('pending','running') DO NOTHING`, [id]);
+    if (rowCount) return 'ok';
+    const exists = await this.db.query('SELECT 1 FROM channel_messages WHERE id = $1', [id]);
+    return exists.rowCount ? 'conflict' : 'missing';
+  }
+
   async markSent(id: string, providerId: string | undefined): Promise<void> {
     await this.db.query(
       `UPDATE channel_messages SET status = 'sent', provider_message_id = $2, attempts = attempts + 1, error_code = NULL, error_message = NULL, status_at = now()

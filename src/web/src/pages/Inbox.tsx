@@ -6,6 +6,24 @@ import { dateTime } from '../format';
 import { Badge, Card, Empty, ErrorBanner, Page } from '../components/ui';
 import type { ChannelMessage, ChannelName } from '../api/types';
 
+/** Outbound delivery state: ⏳ sending · ✓ sent · ✓✓ delivered · ✓✓ read · failed (with reason and Retry). */
+function DeliveryStatus({ m, onRetry, busy }: { m: ChannelMessage; onRetry: (id: string) => void; busy: boolean }) {
+  const label = `Message ${m.text.slice(0, 40)} status`;
+  switch (m.status) {
+    case 'queued': return <span aria-label={label}>⏳ Sending…</span>;
+    case 'sent': case 'ok': return <span aria-label={label}>✓ Sent</span>;
+    case 'delivered': return <span aria-label={label}>✓✓ Delivered</span>;
+    case 'read': return <span aria-label={label}><Badge tone="info">✓✓ Read</Badge></span>;
+    case 'skipped': return <span aria-label={label}><Badge tone="warn">Not sent — channel not configured</Badge></span>;
+    default: return (
+      <span aria-label={label}>
+        <Badge tone="bad">Failed</Badge> {m.errorMessage ?? m.errorCode ?? 'unknown error'}{' '}
+        <button type="button" className="small" disabled={busy} onClick={() => onRetry(m.id)}>Retry</button>
+      </span>
+    );
+  }
+}
+
 interface Conversation { key: string; channel: ChannelName; user: string; messages: ChannelMessage[]; last: ChannelMessage }
 
 export function Inbox() {
@@ -15,7 +33,7 @@ export function Inbox() {
   const action = useAction();
   const { reload } = messages;
 
-  useEffect(() => subscribeEvents((e) => { if (e.type === 'message.received') reload(); }), [reload]);
+  useEffect(() => subscribeEvents((e) => { if (e.type === 'message.received' || e.type === 'message.status') reload(); }), [reload]);
 
   const conversations = useMemo(() => {
     const map = new Map<string, Conversation>();
@@ -30,6 +48,8 @@ export function Inbox() {
   }, [messages.data]);
 
   const active = conversations.find((c) => c.key === selected);
+
+  const retry = async (id: string) => { if (await action.run(() => api(`/messages/${id}/retry`, { method: 'POST' }))) reload(); };
 
   const send = async (e: FormEvent) => {
     e.preventDefault();
@@ -61,7 +81,7 @@ export function Inbox() {
                 {active.messages.map((m) => (
                   <div key={m.id} className={`bubble ${m.direction}`}>
                     {m.text}
-                    <small>{dateTime(m.createdAt)} {m.status !== 'ok' && <Badge tone="bad">{m.status}</Badge>}</small>
+                    <small>{dateTime(m.createdAt)} {m.direction === 'out' && <DeliveryStatus m={m} onRetry={retry} busy={action.busy} />}</small>
                   </div>
                 ))}
               </div>
