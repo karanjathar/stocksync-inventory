@@ -4,7 +4,7 @@ import { useAuth } from '../auth';
 import { useAction, useApi } from '../hooks';
 import { Card, Empty, ErrorBanner, Field, Page } from './ui';
 
-export interface CrudField<T> { key: keyof T & string; label: string; type?: 'text' | 'email' | 'tel'; required?: boolean; placeholder?: string; nullable?: boolean }
+export interface CrudField<T> { key: keyof T & string; label: string; type?: 'text' | 'email' | 'tel' | 'number'; required?: boolean; placeholder?: string; nullable?: boolean }
 export interface CrudColumn<T> { label: string; render: (row: T) => ReactNode }
 
 interface Props<T extends { id: string }> {
@@ -32,7 +32,11 @@ export function CrudPage<T extends { id: string }>({ title, path, fields, column
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const body = Object.fromEntries(fields.map((f) => [f.key, values[f.key]?.trim() ? values[f.key]!.trim() : f.nullable ? null : '']));
+    const body = Object.fromEntries(fields.flatMap((f): [string, unknown][] => {
+      const v = values[f.key]?.trim();
+      if (f.type === 'number') return v ? [[f.key, Number(v)]] : []; // numbers are sent as numbers, and left out when blank (the server keeps its default)
+      return [[f.key, v ? v : f.nullable ? null : '']];
+    }));
     const ok = await action.run(() => editing === 'new' || !editing
       ? api(path, { body })
       : api(`${path}/${editing.id}`, { method: 'PATCH', body }));

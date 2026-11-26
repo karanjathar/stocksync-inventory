@@ -81,7 +81,7 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
     users: new UsersRepo(pool),
     categories: new SimpleRepo<Category>(pool, 'categories', { name: 'name' }, 'name', ['name']),
     products: new ProductsRepo(pool),
-    suppliers: new SimpleRepo<Supplier>(pool, 'suppliers', { name: 'name', email: 'email', phone: 'phone', notes: 'notes' }, 'name', ['name', 'email', 'phone']),
+    suppliers: new SimpleRepo<Supplier>(pool, 'suppliers', { name: 'name', email: 'email', phone: 'phone', notes: 'notes', leadTimeDays: 'lead_time_days' }, 'name', ['name', 'email', 'phone']),
     warehouses: new SimpleRepo<Warehouse>(pool, 'warehouses', { code: 'code', name: 'name', address: 'address' }, 'code', ['code', 'name']),
   };
   const rounds = env.NODE_ENV === 'test' ? 4 : 12;

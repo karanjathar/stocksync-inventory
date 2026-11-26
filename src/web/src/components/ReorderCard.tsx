@@ -6,7 +6,7 @@ import type { PurchaseOrder } from '../api/types';
 import { Card, ErrorBanner } from './ui';
 import { useState } from 'react';
 
-interface Suggestion { productId: string; sku: string; name: string; unit: string; totalQuantity: number; reorderLevel: number; suggestedQuantity: number; supplierName: string | null }
+interface Suggestion { productId: string; sku: string; name: string; unit: string; totalQuantity: number; reorderLevel: number; suggestedQuantity: number; supplierName: string | null; basis?: 'forecast' | 'rules'; leadTimeDays?: number; forecastUnits?: number | null }
 
 /** Low-stock products with how much to order and from whom; staff turn them into draft purchase orders in one click. */
 export function ReorderCard() {
@@ -40,7 +40,7 @@ export function ReorderCard() {
               <tr key={s.productId}>
                 <td>{s.name} <span className="muted small">{s.sku}</span></td>
                 <td className="num">{s.totalQuantity} {s.unit}</td>
-                <td className="num">{s.suggestedQuantity}</td>
+                <td className="num">{s.suggestedQuantity}{s.basis === 'forecast' && <div className="muted small" title="Sized from your recent sales">forecast: {s.forecastUnits} sold in {(s.leadTimeDays ?? 7) + 7} days</div>}</td>
                 <td>{s.supplierName ?? <span className="muted">none yet</span>}</td>
               </tr>
             ))}

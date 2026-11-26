@@ -29,6 +29,7 @@ export function Suppliers() {
         { key: 'email', label: 'Email', type: 'email', nullable: true },
         { key: 'phone', label: 'Phone', type: 'tel', nullable: true },
         { key: 'notes', label: 'Notes' },
+        { key: 'leadTimeDays', label: 'Delivery time (days)', type: 'number', placeholder: '7' },
       ]}
       columns={[
         { label: 'Name', render: (s) => <strong>{s.name}</strong> },

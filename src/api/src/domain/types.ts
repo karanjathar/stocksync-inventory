@@ -16,7 +16,7 @@ export interface StockLevel { productId: string; sku: string; productName: strin
 export interface StockMovement { id: string; productId: string; sku: string; warehouseId: string; warehouseCode: string;
   type: MovementType; quantityDelta: number; balanceAfter: number; reason: string; reference: string | null;
   userId: string | null; createdAt: string }
-export interface Supplier { id: string; name: string; email: string | null; phone: string | null; notes: string }
+export interface Supplier { id: string; name: string; email: string | null; phone: string | null; notes: string; leadTimeDays: number }
 export interface Customer { id: string; name: string; phone: string | null; email: string | null; channel: OrderChannel | string; channelUserId: string | null;
   gstin: string | null; stateCode: string | null }
 export interface OrderItem { productId: string; sku: string; name: string; quantity: number; unitPriceCents: number }

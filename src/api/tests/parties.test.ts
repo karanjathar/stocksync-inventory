@@ -12,7 +12,7 @@ describe('suppliers', () => {
   it('CRUD + search', async () => {
     const s = await request(t.app).post('/api/suppliers').set(auth(staff)).send({ name: 'Acme Textiles', email: 'sales@acme.test', phone: '+15550001' });
     expect(s.status).toBe(201);
-    expect(s.body).toEqual({ id: expect.any(String), name: 'Acme Textiles', email: 'sales@acme.test', phone: '+15550001', notes: '' });
+    expect(s.body).toEqual({ id: expect.any(String), name: 'Acme Textiles', email: 'sales@acme.test', phone: '+15550001', notes: '', leadTimeDays: 7 });
     expect((await request(t.app).post('/api/suppliers').set(auth(staff)).send({ name: 'X', email: 'bad' })).status).toBe(400);
     const found = await request(t.app).get('/api/suppliers?search=acme').set(auth(staff));
     expect(found.body).toHaveLength(1);

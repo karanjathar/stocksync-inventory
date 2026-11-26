@@ -87,7 +87,7 @@ const optEmail = z.string().trim().email().max(320).nullable().optional();
 const optPhone = z.string().trim().regex(/^\+?[0-9 ()-]{5,20}$/, 'invalid phone').nullable().optional();
 
 export function supplierRoutes(c: Container): Router {
-  const s = z.object({ name, email: optEmail, phone: optPhone, notes: z.string().max(2000).optional() });
+  const s = z.object({ name, email: optEmail, phone: optPhone, notes: z.string().max(2000).optional(), leadTimeDays: z.number().int().min(0).max(365).optional() });
   return crudRoutes({ entity: 'Supplier', repo: c.repos.suppliers, create: s, patch: s.partial() });
 }
 
