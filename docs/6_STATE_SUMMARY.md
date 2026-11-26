@@ -38,6 +38,8 @@
 
 - **Replan 2026-11-26 (Release 4 = Tier 2, outline of Release 5 = Tier 3):** PRD 1.10/1.11, schemas 3.19–3.21, decisions D-013..D-016, tasks T69–T86 (Phases 13–17: purchase orders + reorder, GST invoicing, barcode + stock counts, automatic Razorpay refunds, hardening). T67 (real-service verification, blocked on owner credentials) moved to its own deferred Phase 18 so it no longer blocks Phase 12/13. Release 5 (multi-tenant, scale-out, AI, analytics) is an outline only and needs owner decisions (tenancy model, plans, languages) before `/engine-replan`.
 
+- **PROGRESS 2026-11-26 (Release 4):** Phases 13 (purchase orders) and 14 (GST invoicing) built and pushed: T69–T78 done; phases 12 and 13 approved by the owner, **Phase 14 awaits the owner's approval**. Next: Phase 15 (T79–T82 barcode + stock counts), 16 (T83–T84 Razorpay refunds), 17 (T85–T86 hardening + T87 Unicode font for invoice PDFs), then deferred Phase 18 (T67 real-service run, needs Razorpay/WhatsApp credentials). Known gaps: invoice PDFs print ₹ and Devanagari as '?' until T87; tax-exclusive pricing is computed but not issued (D-017); invoice format needs an accountant's review; nothing is verified against real Razorpay/Meta.
+
 ## Approvals
 - plan — approved by Claude on 2026-11-06
 - phase Foundation — baseline (complete when the plan was approved)
