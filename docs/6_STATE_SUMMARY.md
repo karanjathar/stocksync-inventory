@@ -28,6 +28,9 @@
 - **Prompt 5 (DevOps):** Added a multi-stage non-root Dockerfile, a docker-compose stack (app + PostgreSQL + Azurite, verified healthy with a real browser image upload), Bicep for the full Azure topology (compiles with zero lint warnings), a GitHub Actions CI/CD pipeline using OIDC, and DEPLOYMENT_GUIDE.md.
 
 
+- **Replan 2026-11-26 (Release 3 = Tier 1 of the "top 1%" roadmap):** Added PRD 1.9, schemas 3.15–3.18, decisions D-010..D-012 and tasks T59–T68 (Phases 10–12: durable outbox + Postgres job queue, WhatsApp delivery receipts, 24h-window templates, maintenance/retention jobs, /readyz + ops status, real-service verification, security review). Awaiting human approval before building. T67 needs Razorpay test keys + a WhatsApp test number from the owner.
+  *Local run recipe (cloud session):* `service postgresql start`; DBs `inventory` and `inventory_test` (user postgres/postgres); `TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/inventory_test node engine/engine.mjs gate`; `npm run build && npm start` with the dummy values from `.env.example` → http://localhost:8080 (admin@example.com / ChangeMe123!).
+
 ## Approvals
 - plan — approved by Claude on 2026-11-06
 - phase Foundation — baseline (complete when the plan was approved)

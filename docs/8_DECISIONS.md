@@ -32,3 +32,18 @@ _One entry per significant decision. Newest at the bottom._
 
 ## D-009 Persist the options shown with each outbound reply (2026-11-06)
 **Context:** Channels without rich UI show numbered options, and the user answers "2". Mapping that back needs the options last shown to that user, and must work across restarts and replicas. **Decision:** Migration `002_reply_options.sql` adds `channel_messages.options jsonb`. The hub stores the options it rendered, and the inbox resolves a bare number against the latest outbound message to that user. The payments/chat migration becomes `003_payments_chat.sql`. **Consequences:** No in-memory session state. The criterion moved from T27 to T28.
+
+## D-010 Postgres job queue and message outbox instead of a broker or pg-boss (2026-11-26)
+Context: messages are sent inline and lost on failure; we need retries, scheduled maintenance and multi-replica safety.
+Decision: a small in-repo queue on a `jobs` table using `FOR UPDATE SKIP LOCKED`, and `channel_messages` doubles as the outbox (store first, send immediately, retry in the background). No new dependency; the plain-SQL migration style is kept.
+Consequences: one infrastructure piece (Postgres) to operate; throughput is ample for SMB volume (hundreds of messages/min). Move to Azure Service Bus only if volume demands it.
+
+## D-011 Templates are mapped, not authored (2026-11-26)
+Context: WhatsApp only delivers business-initiated messages outside 24 h via Meta-approved templates.
+Decision: admins create templates in WhatsApp Manager and map each notification event to a template name, language and ordered parameters in Settings; the app picks free-form vs template by the 24 h window and falls back once on error 131047.
+Consequences: no template-approval workflow to build; a wrong mapping fails visibly with Meta's error code.
+
+## D-012 Release 3 = Tier 1 of the top-1% roadmap (2026-11-26)
+Context: the owner's goal is a world top-1% product; the audit's accepted risks (silent message loss, 24 h rule, unbounded tables, no readiness) block a confident launch.
+Decision: reliability and operations come before new features (GST invoicing, POs, barcode, multi-tenant follow in Tier 2/3).
+Consequences: Phases 10–12 below; the real-service run (T67) waits for human-provided test credentials.

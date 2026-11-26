@@ -119,3 +119,55 @@ WhatsApp Cloud API access as in v1. Until keys exist, everything is verified wit
 - **FR-R2-11 Refund handling.** `REFUND_DUE` (paid but unfulfillable, duplicate, or cancelled-after-paid) alerts staff and tells the customer; staff refund in Razorpay and press **Mark refunded** (`REFUNDED`).
 - **FR-R2-12 Abuse limits.** At most 15 open orders per customer (chat and web); public endpoints rate limited.
 - **FR-R2-13 Configuration safety.** Settings warns when no payment method would be usable; production refuses non-https provider URLs.
+
+---
+
+## 1.9 Release 3 — Reliable messaging & operations (Tier 1 of the "top 1%" roadmap)
+
+### Goal
+Every customer and staff message is delivered or visibly failed (never silently lost), WhatsApp messages outside the
+24-hour window still arrive via approved templates, the database cleans up after itself, and operators can tell at a
+glance whether the system is healthy. Then prove payments and WhatsApp against the real services with test keys.
+
+### Functional requirements
+- **FR-R3-1 Durable outbound messages (outbox).** Every outbound message is first stored in `channel_messages` with status
+  `queued`, then sent immediately. A send that fails with a retryable error (network, 429, 5xx) is retried by a background
+  worker with exponential backoff and jitter (max 6 attempts over ≈ 1 h); a permanent error (4xx) or exhausted retries ends
+  as `failed` with the provider error code. Nothing outbound is lost if the process restarts mid-send.
+- **FR-R3-2 Delivery receipts.** WhatsApp status webhooks (`sent`, `delivered`, `read`, `failed`) update the stored message,
+  idempotently and only forward (`sent → delivered → read`; `failed` is terminal). The Inbox shows ticks and a red
+  failed badge with the reason; staff can **Retry** a failed message.
+- **FR-R3-3 WhatsApp 24-hour window and templates.** The app knows each WhatsApp user's last inbound time. Proactive
+  messages (order confirmed/cancelled, payment received, refund, low-stock alert, payment link) to a user outside the
+  window are sent as the approved **template** mapped to that event in Settings. Error 131047 (re-engagement required)
+  on a free-form send falls back to the template once. Without a mapped template the message fails visibly with
+  "outside 24h window — no template configured".
+- **FR-R3-4 Background jobs.** A Postgres-backed job queue (`jobs` table, `FOR UPDATE SKIP LOCKED`) runs retries and
+  scheduled maintenance. It is safe with several replicas, survives restarts and drains on SIGTERM.
+- **FR-R3-5 Maintenance (configurable in Settings → Maintenance).** Hourly: cancel unpaid ONLINE orders older than
+  `unpaidOrderTtlHours` (default 48, also cancels their Razorpay link and tells chat customers). Daily: delete
+  `webhook_events` older than 30 days; delete chat messages older than `chatRetentionDays` (default 365, 0 = keep).
+- **FR-R3-6 Health & operations.** `/healthz` stays a cheap liveness probe; new `/readyz` checks the database,
+  migrations and the job worker heartbeat (503 when not ready). `GET /api/ops/status` (admin) shows queue depth, failed
+  messages (24 h), oldest pending job and last maintenance runs, also shown as a card on the dashboard.
+- **FR-R3-7 Real-service verification (needs human credentials).** A runbook and script that, with Razorpay **test**
+  keys and a WhatsApp test number, create a real payment link, receive the real signed webhook and send a real
+  interactive message and template. Results are recorded in `docs/7_SECURITY_AUDIT.md`, replacing "unverified".
+
+### Acceptance criteria
+- Kill the process between storing and sending a message → after restart it is sent exactly once (no duplicates while
+  a worker holds the lock; the provider message id is stored).
+- A provider returning 500 twice then 200 → message ends `sent` after two retries; returning 400 → `failed` immediately.
+- Forged or unsigned status webhooks → 401/403; replayed statuses → no regression of state.
+- Two workers never run the same job at once (concurrency test with two pollers).
+- Maintenance never touches PAID, CONFIRMED or COD orders; never deletes stock movements or orders.
+- All gates green; the existing 41 test files keep passing unchanged in behaviour.
+
+### Edge cases
+Template mapped but rejected by Meta (error code stored, failed visibly). Status webhook arriving before the send
+response stored the message id. Retry after the customer's channel was unconfigured. Clock skew in webhook timestamps.
+Telegram/Messenger have no 24h-template concept (Messenger's 24h rule: message tags are out of scope; failures shown).
+
+### Non-goals (Release 3)
+Template authoring/approval inside the app (templates are created in Meta WhatsApp Manager; we only map names),
+Messenger message tags, an external queue/broker (Service Bus, Redis), multi-replica SSE (Tier 3).

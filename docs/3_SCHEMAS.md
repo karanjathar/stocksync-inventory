@@ -298,3 +298,64 @@ export interface BotReply {
 
 Migrations: `002_reply_options.sql` (options shown with each reply), `003_payments_chat.sql` (payments, webhook events, chat carts, order payment columns), `004_refunded.sql` (REFUNDED status).
 Production configuration rule (T56): `RAZORPAY_API_BASE` and `META_GRAPH_BASE` must be `https` (loopback `http` allowed for local fakes).
+
+# Release 3 contracts (reliable messaging & operations)
+
+## 3.15 Release 3 Database — `src/api/migrations/005_outbox_jobs.sql`
+```sql
+ALTER TABLE channel_messages
+  ADD COLUMN IF NOT EXISTS payload jsonb,            -- rendered BotReply / template, needed to retry
+  ADD COLUMN IF NOT EXISTS provider_message_id text, -- wamid / telegram message_id
+  ADD COLUMN IF NOT EXISTS attempts int NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS error_code text, ADD COLUMN IF NOT EXISTS error_message text,
+  ADD COLUMN IF NOT EXISTS status_at timestamptz,
+  ADD COLUMN IF NOT EXISTS event text;               -- notification event (order_confirmed …) or NULL for bot replies
+-- status: in = 'ok'; out = queued | sent | delivered | read | failed | skipped   ('ok' kept as a legacy alias of sent)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_messages_provider_id ON channel_messages(channel, provider_message_id) WHERE provider_message_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_messages_out_status ON channel_messages(status) WHERE direction = 'out';
+
+CREATE TABLE IF NOT EXISTS jobs (id bigserial PRIMARY KEY, kind text NOT NULL, payload jsonb NOT NULL DEFAULT '{}',
+  dedupe_key text, run_at timestamptz NOT NULL DEFAULT now(), attempts int NOT NULL DEFAULT 0, max_attempts int NOT NULL DEFAULT 6,
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','done','dead')),
+  locked_until timestamptz, last_error text, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS uq_jobs_dedupe ON jobs(kind, dedupe_key) WHERE dedupe_key IS NOT NULL AND status IN ('pending','running');
+CREATE INDEX IF NOT EXISTS idx_jobs_due ON jobs(run_at) WHERE status = 'pending';
+CREATE TABLE IF NOT EXISTS worker_heartbeats (worker_id text PRIMARY KEY, seen_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS maintenance_runs (task text PRIMARY KEY, ran_at timestamptz NOT NULL, result jsonb NOT NULL);
+```
+Claiming: `UPDATE jobs SET status='running', attempts=attempts+1, locked_until=now()+interval '5 minutes' WHERE id IN
+(SELECT id FROM jobs WHERE status='pending' AND run_at<=now() ORDER BY run_at FOR UPDATE SKIP LOCKED LIMIT $1) RETURNING *`.
+A `running` job whose `locked_until` passed is reclaimed. Backoff: `min(2^attempts · 30 s, 30 min) ± 20 %` jitter.
+
+## 3.16 Job kinds — `src/api/src/jobs/`
+| kind | payload | handler |
+|---|---|---|
+| `message.send` | `{ messageId }` | send the stored message; classify the error as retryable/permanent |
+| `maintenance.expireUnpaid` | `{}` | hourly, dedupe key = hour |
+| `maintenance.prune` | `{}` | daily: webhook_events > 30 d, chat > `chatRetentionDays` |
+
+`JobQueue`: `enqueue(kind, payload, { runAt?, dedupeKey?, maxAttempts? })`, `start({ concurrency, pollMs })`, `stop()` (drain).
+Handlers throw `PermanentJobError` to stop retrying.
+
+## 3.17 Release 3 Settings & Types
+```ts
+type OutboundStatus = 'queued' | 'sent' | 'delivered' | 'read' | 'failed' | 'skipped';
+type NotificationEvent = 'order_confirmed' | 'order_cancelled' | 'order_fulfilled' | 'payment_received'
+  | 'payment_link' | 'refund_due' | 'refunded' | 'low_stock_alert';
+interface Settings { /* … */
+  whatsappTemplates: Partial<Record<NotificationEvent, { name: string; language: string; params: string[] }>>; // params: ordered placeholders e.g. ["orderNumber","total"]
+  maintenance: { unpaidOrderTtlHours: number /* 1–720, default 48 */; chatRetentionDays: number /* 0–3650, default 365 */ };
+}
+```
+WhatsApp template send (Cloud API): `{ messaging_product:"whatsapp", to, type:"template", template:{ name, language:{ code },
+components:[{ type:"body", parameters:[{ type:"text", text }] }] } }`.
+WhatsApp status webhook: `entry[].changes[].value.statuses[] = { id, status, timestamp, recipient_id, errors?: [{ code, title }] }`.
+24-hour window: last inbound `channel_messages.created_at` for (`whatsapp`, user) within 24 h.
+
+## 3.18 Release 3 REST API
+| Method & path | Role | Notes |
+|---|---|---|
+| `GET /readyz` | public | 200 `{db:true, migrations:true, worker:true}` or 503 with the failing checks |
+| `GET /api/ops/status` | admin | `{ queue:{pending, running, dead, oldestPendingSec}, messages:{failed24h, queued}, maintenance:[{task, ranAt, result}] }` |
+| `POST /api/messages/:id/retry` | staff | only `failed` outbound messages → `queued` + job; 409 otherwise |
+| `PATCH /api/settings` | admin | accepts `whatsappTemplates`, `maintenance` |
