@@ -8,6 +8,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Products } from './pages/Products';
 import { Inventory } from './pages/Inventory';
 import { Movements } from './pages/Movements';
+import { StockCounts } from './pages/StockCounts';
 import { Customers, Suppliers, Warehouses } from './pages/Parties';
 import { Orders } from './pages/Orders';
 import { PurchaseOrders } from './pages/PurchaseOrders';
@@ -39,6 +40,7 @@ export function App() {
         <Route path="products" element={<Products />} />
         <Route path="inventory" element={<Inventory />} />
         <Route path="movements" element={<Movements />} />
+        <Route path="stock-counts" element={<StockCounts />} />
         <Route path="warehouses" element={<Warehouses />} />
         <Route path="suppliers" element={<Suppliers />} />
         <Route path="customers" element={<Customers />} />

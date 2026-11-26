@@ -8,6 +8,7 @@ const NAV: { to: string; label: string; icon: string; role: Role }[] = [
   { to: '/', label: 'Dashboard', icon: '📊', role: 'viewer' },
   { to: '/products', label: 'Products', icon: '🏷️', role: 'viewer' },
   { to: '/inventory', label: 'Inventory', icon: '📦', role: 'viewer' },
+  { to: '/stock-counts', label: 'Stock counts', icon: '📋', role: 'viewer' },
   { to: '/movements', label: 'Movements', icon: '🔁', role: 'viewer' },
   { to: '/orders', label: 'Orders', icon: '🧾', role: 'viewer' },
   { to: '/purchase-orders', label: 'Purchasing', icon: '🛒', role: 'viewer' },

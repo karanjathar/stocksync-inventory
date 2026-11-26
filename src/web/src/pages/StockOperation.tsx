@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
+import { Scanner } from '../components/Scanner';
 import { useAction } from '../hooks';
 import { ErrorBanner, Field } from '../components/ui';
 import type { Product, Warehouse } from '../api/types';
@@ -28,6 +29,7 @@ export function StockOperation({ products, warehouses, initialProductId = '', on
   const [reason, setReason] = useState('');
   const [done, setDone] = useState<string | null>(null);
   const { busy, error, run } = useAction();
+  const [scanError, setScanError] = useState<string | null>(null);
   const current = OPS.find((o) => o.op === op)!;
 
   const submit = async (e: FormEvent) => {
@@ -43,6 +45,17 @@ export function StockOperation({ products, warehouses, initialProductId = '', on
       setDone(`${current.label} recorded.`);
       setQuantity('');
       onDone();
+    }
+  };
+
+  const onScan = async (raw: string) => {
+    const code = raw.trim().toUpperCase();
+    setScanError(null);
+    try {
+      const p = await api<{ id: string }>(`/products/by-barcode/${encodeURIComponent(code)}`);
+      if (products.some((x) => x.id === p.id)) setProductId(p.id); else setScanError(`Product with barcode ${code} is not in this list.`);
+    } catch (e) {
+      setScanError(e instanceof ApiError && e.status === 404 ? `No product has barcode ${code}.` : 'Could not look up that barcode.');
     }
   };
 
@@ -62,7 +75,8 @@ export function StockOperation({ products, warehouses, initialProductId = '', on
           <button key={o.op} type="button" role="tab" aria-selected={op === o.op} className={op === o.op ? 'primary small' : 'small'} onClick={() => setOp(o.op)}>{o.label}</button>
         ))}
       </div>
-      <ErrorBanner error={error} />
+      <ErrorBanner error={error ?? scanError} />
+      <Scanner onScan={(code) => void onScan(code)} label="Scan product barcode" />
       {done && <div className="banner ok">{done}</div>}
       <div className="form-grid">
         <Field label="Product">
