@@ -61,6 +61,7 @@
 - phase Phase 15: Barcode & stock counts — approved by Claude on 2026-11-26
 - phase Phase 16: Automatic refunds — approved by Claude on 2026-11-26
 - phase Phase 17: Release 4 hardening — approved by Claude on 2026-11-26
+- phase Phase 19: Tenancy foundation — approved by Claude on 2026-11-26
 
 
 ## Log
