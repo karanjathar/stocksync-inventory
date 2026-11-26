@@ -39,7 +39,7 @@ export class ChannelHub implements Messenger {
   /** Template for an event from Settings, with parameters filled in the mapped order ('-' when a value is missing). */
   private async templateFor(event: NotificationEvent, params: Partial<Record<TemplateParam, string>>): Promise<TemplateMessage | null> {
     const mapping = (await this.getSettings?.())?.whatsappTemplates[event];
-    return mapping ? { name: mapping.name, language: mapping.language, params: mapping.params.map((k) => params[k] || '-') } : null;
+    return mapping ? { name: mapping.name, language: mapping.language, params: mapping.params.map((k) => templateText(params[k])) } : null;
   }
 
   /**
@@ -112,4 +112,13 @@ export class ChannelHub implements Messenger {
 
 function textOf(payload: OutboundPayload, fallback: string): string {
   return payload.kind === 'text' ? payload.text : fallback;
+}
+
+/**
+ * WhatsApp template parameters may not contain newlines, tabs or 4+ consecutive spaces (error 132018) and are at most 1024
+ * characters. Values such as a customer's profile name or a product name are user-controlled, so they are normalised here.
+ */
+export function templateText(value: string | undefined): string {
+  const clean = (value ?? '').replace(/[\r\n\t]+/g, ' ').replace(/ {2,}/g, ' ').trim().slice(0, 1024).trim();
+  return clean || '-';
 }

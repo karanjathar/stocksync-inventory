@@ -213,6 +213,20 @@ Customers say "hi" and tap **Browse / My cart / My orders**, choose a category a
 
 Refunds are **not** issued automatically: you do them in Razorpay and then record them in StockSync.
 
+### 5.7b WhatsApp templates and delivery receipts (Release 3)
+
+WhatsApp only allows free-form messages to a customer within **24 hours** of their last message. Order updates, payment links, refund notices and staff alerts often come later, so they need a **template** that Meta has approved.
+
+1. In **WhatsApp Manager → Message templates**, create one template per event you care about (category *Utility*). Write the body with numbered placeholders, e.g. `Hi {{1}}, your order #{{2}} is confirmed. Total {{3}}.` and submit it for approval.
+2. In StockSync open **Settings → WhatsApp templates**. For each event enter the template **name** and **language** exactly as approved, and the **parameters in placeholder order**, using any of: `orderNumber, total, businessName, customerName, productName, quantity, paymentLink`. Example: `customerName, orderNumber, total`.
+3. Save. From then on the app sends free-form text inside the 24-hour window and the template outside it. If an event has no template, the message shows **Failed — outside 24h window — no template configured** in the Inbox, and staff can fix the mapping and press **Retry**.
+
+**Delivery ticks.** The existing Meta webhook already carries delivery receipts: in the Meta dashboard keep the WhatsApp **messages** field subscribed (it delivers both inbound messages and `statuses`). No new URL or secret is needed. The Inbox then shows ⏳ sending, ✓ sent, ✓✓ delivered and read, or **Failed** with Meta's reason and a **Retry** button.
+
+**Cleanup (Settings → Maintenance).** Unpaid online orders are cancelled after the chosen number of hours (default 48), webhook records older than 30 days are deleted daily, and chat history older than the retention days (default 365; 0 keeps everything) is deleted daily.
+
+**Health.** `/healthz` is a cheap liveness check. `/readyz` also checks migrations and the background worker and returns 503 naming the failing check; the Container App readiness and startup probes use it. Admins see queue depth, failed messages and the last cleanup runs on the Dashboard under **System health**.
+
 ### 5.8 Verify against the real services (test keys, ~15 minutes)
 
 The automated tests use fakes that follow the providers' documentation. This run checks that reality matches. It needs **test** credentials only and costs nothing (the Razorpay link is ₹1 and is cancelled; WhatsApp test-number messages are free).

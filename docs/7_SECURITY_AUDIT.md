@@ -123,3 +123,58 @@ All reproduced before fixing; every fix has a regression test.
 7. **Chat content retention** is unlimited. Define a retention period before processing real customer data.
 8. **Real-service verification pending.** Contract tests and the fakes pin the documented payloads, but only a run with real Razorpay test keys and a WhatsApp number proves them.
 9. `verifyCallbackSignature` is implemented and unit-tested but deliberately unused: redirect parameters never change state (D-003).
+
+---
+
+# 7.R3 Release 3 Audit — Reliable Messaging & Operations
+
+**Date:** 2026-11-26 · **Scope:** `src/api` outbox, job queue, delivery receipts, WhatsApp templates, maintenance jobs, `/readyz`, `/api/ops/status`, shutdown; `src/web` Inbox, Settings, Dashboard · **Result:** ✅ PASSED — 1 finding fixed, 1 new dependency advisory accepted, none open at high or critical.
+**Method:** abuse-case review of each new input and background path, reproduced defect fixed test-first (the regression test failed before the fix), permanent suite `tests/securityRelease3.test.ts`.
+**Not verified:** behaviour against the *real* Razorpay and Meta services, and the Bicep probe change (no `az` CLI in the build environment). The runbook for the real run is `docs/DEPLOYMENT_GUIDE.md` §5.8 and T67 is **blocked** until the owner supplies test credentials. The WhatsApp template-parameter rules below come from Meta's documentation and are not yet confirmed against the live API.
+
+## 7.R3.1 Automated checks
+| Check | Result |
+|---|---|
+| `npm audit --omit=dev --audit-level=high` (the gate) | ✅ no high or critical |
+| `npm audit` (all) | ⚠️ 3 moderate, all one chain: `@opentelemetry/instrumentation-http` via `applicationinsights` (see R3-04) |
+| Secret scan of tracked files (live/test key and token patterns) | ✅ none |
+| typecheck, lint, tests, build | ✅ green (see `6_STATE_SUMMARY.md` for the latest counts) |
+
+## 7.R3.2 Attack classes tested (`tests/securityRelease3.test.ts`, `deliveryStatus.test.ts`, `messageRetry.test.ts`, `ops.test.ts`)
+| Class | Result |
+|---|---|
+| Forged / unsigned delivery-receipt webhook | ✅ 401, no state change |
+| Replayed or out-of-order receipts | ✅ state only moves forward; `failed` is terminal |
+| Receipt for another channel's message with the same provider id | ✅ ignored (update is scoped to channel `whatsapp`) |
+| Retry amplification (provider always failing) | ✅ at most 7 sends per message (1 immediate + 6 queued), then `failed` and no pending job |
+| Retry endpoint hammered (15 parallel calls) | ✅ exactly one 202, the rest 409; one job, one send |
+| Retrying a message that is not failed, inbound, unknown or malformed id | ✅ 409 / 404; viewers 403, anonymous 401 |
+| `/api/ops/status` by staff, viewer, anonymous | ✅ 403 / 403 / 401 (admin only) |
+| `/readyz` information leak when the database is down | ✅ booleans only, no error text |
+| User-controlled text in template parameters | ✅ fixed, see R3-01 |
+
+## 7.R3.3 Controls verified
+| Area | Control | Evidence |
+|---|---|---|
+| Durability | A message and its send job are created in one SQL statement, so a crash between storing and sending still sends exactly once | `outbox.test.ts` |
+| Concurrency | Jobs are claimed with `FOR UPDATE SKIP LOCKED`; two workers never run one job twice; a worker that died is reclaimed, and a job that keeps killing workers ends `dead` | `jobs.test.ts` |
+| Retention | Prune never deletes orders, stock movements or queued messages; retention 0 keeps everything | `maintenance.test.ts` |
+| Order expiry | Cancels only unpaid ONLINE PENDING orders past the TTL through the normal cancel path (link cancelled, customer told) | `maintenance.test.ts` |
+| Templates | Free-form inside 24 h, template outside it, visible `NO_TEMPLATE` failure when unmapped, one fallback on Meta error 131047, bot replies never use templates | `templates.test.ts` |
+| Shutdown | HTTP stops, scheduler stops, jobs drain, pool closes, forced exit after 25 s | `shutdown.test.ts` |
+
+## 7.R3.4 Findings and fixes
+| ID | Severity | Finding | Fix |
+|---|---|---|---|
+| R3-01 | Medium | Customer-controlled text (WhatsApp profile name, product name) went into template parameters unchanged. Meta rejects newlines, tabs and 4+ consecutive spaces (error 132018), so one customer could make their own order notifications fail permanently, and a long value was not capped | `templateText()` in `channels/hub.ts` collapses whitespace, caps at 1024 characters and substitutes `-` for empty values |
+| R3-04 | Low (moderate advisory) | `npm audit` reports 3 moderate advisories in `@opentelemetry/instrumentation-http`, pulled in by `applicationinsights` (new since Release 2). Not reachable at the high level the gate enforces | Accepted. Upgrade `applicationinsights` when a non-breaking fix exists; do not run `npm audit fix --force` (it proposes a breaking change) |
+
+## 7.R3.5 Accepted risks and recommendations
+1. **Real-service verification pending (T67 blocked).** Contract tests and fakes cover the documented formats only. Run `docs/DEPLOYMENT_GUIDE.md` §5.8 with test keys before go-live.
+2. **A receipt that arrives before the send response is stored is ignored.** The message is already `sent`; only a `delivered` or `read` tick can be missed in that race.
+3. **Error text from providers is stored** (`error_message`, 500 characters) and shown to staff in the Inbox. Provider messages do not contain our credentials, and adapters never include tokens in their own errors, but treat that column as internal.
+4. **The job worker runs inside the API process.** A heavy burst of retries shares CPU with requests. Split into a separate Container App revision if volume grows.
+5. **`/readyz` checks this replica's own heartbeat.** With one replica (current design) a dead worker takes the app out of rotation, which is intended; revisit when scaling out with Web PubSub.
+6. **Single-replica realtime** and **JWT in `localStorage`** are unchanged from earlier releases (7.4).
+7. **Bicep probe and termination-grace changes are uncompiled** in this environment. Run `az bicep build --file infra/main.bicep` before deploying.
+8. **Template approval is outside the app.** A rejected or paused template shows up as a failed message with Meta's error code.

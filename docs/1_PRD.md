@@ -171,3 +171,7 @@ Telegram/Messenger have no 24h-template concept (Messenger's 24h rule: message t
 ### Non-goals (Release 3)
 Template authoring/approval inside the app (templates are created in Meta WhatsApp Manager; we only map names),
 Messenger message tags, an external queue/broker (Service Bus, Redis), multi-replica SSE (Tier 3).
+
+### 1.9.1 Status (2026-11-26)
+FR-R3-1 to FR-R3-6 are built and tested (T59–T66, T68). **FR-R3-7 (real-service verification) is NOT done:** the script and runbook exist (`scripts/verify/real-services.mjs`, DEPLOYMENT_GUIDE §5.8) but T67 is blocked until the owner provides Razorpay test keys and a WhatsApp test number. Additional finding fixed while building: template parameters built from customer-controlled text are normalised (R3-01).
+
