@@ -2,7 +2,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Container } from '../../container.js';
-import { parseMetaWebhook, parseTelegramUpdate, telegramCallbackId } from '../../channels/parse.js';
+import { parseMetaWebhook, parseWhatsAppStatuses, parseTelegramUpdate, telegramCallbackId } from '../../channels/parse.js';
 import { verifyWebhookSignature } from '../../payments/razorpay.js';
 
 export function safeEqual(a: string, b: string): boolean {
@@ -42,6 +42,10 @@ export function webhookRoutes(c: Container): Router {
     const secret = c.env.META_APP_SECRET;
     if (!secret) { res.status(503).json(notConfigured); return; }
     if (!verifyMetaSignature(req.rawBody, req.header('x-hub-signature-256'), secret)) { res.status(401).json(badSignature); return; }
+    for (const s of parseWhatsAppStatuses(req.body)) {
+      const updated = await c.messages.applyDeliveryStatus('whatsapp', s.id, s.status, { ...(s.errorCode ? { code: s.errorCode } : {}), ...(s.errorTitle ? { title: s.errorTitle } : {}) });
+      if (updated) c.events.publish({ type: 'message.status', messageId: updated.id, channel: 'whatsapp', to: updated.to, status: s.status, ...(s.errorCode ? { errorCode: s.errorCode } : {}) });
+    }
     for (const msg of parseMetaWebhook(req.body)) await c.inbox.receive(msg);
     res.status(200).send('EVENT_RECEIVED');
   });

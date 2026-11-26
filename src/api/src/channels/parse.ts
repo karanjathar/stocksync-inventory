@@ -54,6 +54,36 @@ function waContent(m: WaMessage): { text: string; action?: string } | undefined 
   return undefined;
 }
 
+export interface DeliveryStatus { id: string; status: 'sent' | 'delivered' | 'read' | 'failed'; errorCode?: string; errorTitle?: string }
+
+const waStatusValue = z.object({
+  statuses: z.array(z.object({
+    id: z.string(),
+    status: z.string(),
+    errors: z.array(z.object({ code: z.union([z.number(), z.string()]).optional(), title: z.string().optional() })).optional(),
+  })).optional(),
+});
+
+/** WhatsApp delivery receipts (`statuses[]`) from a Meta webhook; unknown status values are skipped. */
+export function parseWhatsAppStatuses(body: unknown): DeliveryStatus[] {
+  const parsed = metaBody.safeParse(body);
+  if (!parsed.success || parsed.data.object !== 'whatsapp_business_account') return [];
+  const out: DeliveryStatus[] = [];
+  for (const e of parsed.data.entry) {
+    for (const change of e.changes ?? []) {
+      const v = waStatusValue.safeParse(change.value);
+      if (!v.success) continue;
+      for (const s of v.data.statuses ?? []) {
+        if (s.status !== 'sent' && s.status !== 'delivered' && s.status !== 'read' && s.status !== 'failed') continue;
+        const err = s.errors?.[0];
+        out.push({ id: s.id, status: s.status,
+          ...(err?.code !== undefined ? { errorCode: String(err.code) } : {}), ...(err?.title ? { errorTitle: err.title.slice(0, 300) } : {}) });
+      }
+    }
+  }
+  return out;
+}
+
 /** Extracts text messages and taps from a Meta webhook (WhatsApp Business, Messenger page, Instagram). */
 export function parseMetaWebhook(body: unknown): InboundMessage[] {
   const parsed = metaBody.safeParse(body);

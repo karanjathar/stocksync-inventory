@@ -9,7 +9,8 @@ import type { DashboardStats, Order, Product, RealtimeEvent } from '../api/types
 
 interface FeedItem { at: string; text: string; tone: 'neutral' | 'good' | 'warn' | 'info' }
 
-function describe(e: RealtimeEvent): FeedItem {
+/** Feed line for an event, or null for events that are not worth a line (delivery ticks). */
+function describe(e: RealtimeEvent): FeedItem | null {
   const at = new Date().toISOString();
   switch (e.type) {
     case 'stock.changed': return { at, tone: 'neutral', text: `${e.sku}: ${e.quantity} in warehouse · ${e.totalQuantity} total` };
@@ -17,6 +18,7 @@ function describe(e: RealtimeEvent): FeedItem {
     case 'order.created': return { at, tone: 'info', text: `New order #${e.number}` };
     case 'order.updated': return { at, tone: 'good', text: `Order #${e.number} → ${e.status}` };
     case 'message.received': return { at, tone: 'info', text: `${e.channel} message from ${e.from}: “${e.text.slice(0, 80)}”` };
+    case 'message.status': return e.status === 'failed' ? { at, tone: 'warn', text: `${e.channel} message to ${e.to} failed to deliver${e.errorCode ? ` (code ${e.errorCode})` : ''}` } : null;
     case 'payment.updated': return { at, tone: e.paymentStatus === 'REFUND_DUE' ? 'warn' : 'good', text: `Order #${e.number} payment → ${e.paymentStatus}` };
   }
 }
@@ -33,7 +35,8 @@ export function Dashboard() {
   const { reload: reloadPending } = pending;
 
   useEffect(() => subscribeEvents((e) => {
-    setFeed((f) => [describe(e), ...f].slice(0, 50));
+    const item = describe(e);
+    if (item) setFeed((f) => [item, ...f].slice(0, 50));
     // Live refresh of the numbers this event affects.
     reloadStats();
     if (e.type.startsWith('stock')) reloadLow();

@@ -46,6 +46,7 @@ export type RealtimeEvent =
   | { type: 'stock.low'; productId: string; sku: string; name: string; totalQuantity: number; reorderLevel: number }
   | { type: 'order.created' | 'order.updated'; orderId: string; number: number; status: OrderStatus }
   | { type: 'message.received'; channel: ChannelName; from: string; text: string }
+  | { type: 'message.status'; messageId: string; channel: ChannelName; to: string; status: OutboundStatus; errorCode?: string }
   | { type: 'payment.updated'; orderId: string; number: number; paymentStatus: PaymentStatus };
 export interface DashboardStats { productCount: number; totalUnits: number; stockValueCents: number;
   lowStockCount: number; pendingOrders: number; ordersToday: number }

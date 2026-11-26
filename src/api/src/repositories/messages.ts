@@ -72,6 +72,22 @@ export class MessagesRepo {
        WHERE id = $1 AND status = 'queued'`, [id, code, message.slice(0, 500)]);
   }
 
+  /**
+   * Applies a provider delivery receipt. Only moves forward (queued → sent → delivered → read); `failed` is terminal
+   * and never overrides a failure. Returns the updated message, or null when unknown / not an advance (replay, late receipt).
+   */
+  async applyDeliveryStatus(channel: ChannelName, providerId: string, status: 'sent' | 'delivered' | 'read' | 'failed',
+    err: { code?: string; title?: string } = {}): Promise<{ id: string; to: string } | null> {
+    const { rows } = await this.db.query<{ id: string; to: string }>(
+      `UPDATE channel_messages SET status = $3, status_at = now(),
+         error_code = CASE WHEN $3 = 'failed' THEN COALESCE($4, error_code) ELSE error_code END,
+         error_message = CASE WHEN $3 = 'failed' THEN COALESCE($5, error_message) ELSE error_message END
+       WHERE channel = $1 AND provider_message_id = $2 AND direction = 'out' AND status <> 'failed'
+         AND ($3 = 'failed' OR COALESCE(array_position(ARRAY['queued','sent','delivered','read'], status), 0) < array_position(ARRAY['queued','sent','delivered','read'], $3))
+       RETURNING id, external_user AS "to"`, [channel, providerId, status, err.code ?? null, err.title ?? null]);
+    return rows[0] ?? null;
+  }
+
   /** Options of the latest message sent to this user ([] if that message had none). */
   async lastOptions(channel: ChannelName, user: string): Promise<ReplyOption[]> {
     const { rows } = await this.db.query<{ options: ReplyOption[] | null }>(
