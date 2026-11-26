@@ -34,7 +34,7 @@ describe('migrations 003–004 on an existing Release 1 database (T29, T58)', ()
     // Release 1/2 rows: outbound messages were logged as 'ok' (T59 normalises them to 'sent').
     await pool.query("INSERT INTO channel_messages (channel, direction, external_user, text, status) VALUES ('whatsapp','out','91999','legacy','ok'), ('whatsapp','in','91999','hello','ok')");
 
-    expect(await migrate(pool)).toEqual(['003_payments_chat.sql', '004_refunded.sql', '005_outbox_jobs.sql', '006_purchase_orders.sql', '007_gst_invoices.sql']);
+    expect(await migrate(pool)).toEqual(['003_payments_chat.sql', '004_refunded.sql', '005_outbox_jobs.sql', '006_purchase_orders.sql', '007_gst_invoices.sql', '008_barcodes_counts.sql']);
     expect(await migrate(pool)).toEqual([]);
 
     const { rows } = await pool.query<{ payment_method: string; payment_status: string; public_token: string }>('SELECT payment_method, payment_status, public_token FROM orders ORDER BY number');
@@ -131,6 +131,24 @@ describe('migration 007 GST invoices (T73)', () => {
     await expect(inv(3, 'INV/2026-27/000003', order2, '2026-27', 'LOST')).rejects.toMatchObject({ code: '23514' });
     await q("INSERT INTO invoice_counters (fy, last_number) VALUES ('2026-27', 1)");
     await expect(q("INSERT INTO invoice_counters (fy, last_number) VALUES ('2026-27', 2)")).rejects.toMatchObject({ code: '23505' });
+  });
+});
+
+describe('migration 008 barcodes and counts (T79)', () => {
+  it('enforces unique barcodes (many NULLs allowed) and valid count sessions', async () => {
+    const q = (sql: string, args: unknown[] = []) => pool.query(sql, args);
+    await q("INSERT INTO products (sku, name, price_cents, barcode) VALUES ('B1', 'B1', 1, 'CODE-0001'), ('B2', 'B2', 1, NULL), ('B3', 'B3', 1, NULL)");
+    await expect(q("INSERT INTO products (sku, name, price_cents, barcode) VALUES ('B4', 'B4', 1, 'CODE-0001')")).rejects.toMatchObject({ code: '23505' });
+    const wh = (await q("INSERT INTO warehouses (code, name) VALUES ('CNT', 'Counts') RETURNING id")).rows[0].id as string;
+    const prod = (await q("SELECT id FROM products WHERE sku = 'B1'")).rows[0].id as string;
+    const count = (await q('INSERT INTO stock_counts (warehouse_id) VALUES ($1) RETURNING id, number, status', [wh])).rows[0];
+    expect(count.status).toBe('OPEN');
+    await expect(q("UPDATE stock_counts SET status = 'DONE' WHERE id = $1", [count.id])).rejects.toMatchObject({ code: '23514' });
+    await q('INSERT INTO stock_count_lines (count_id, product_id, counted_quantity) VALUES ($1, $2, 5)', [count.id, prod]);
+    await expect(q('INSERT INTO stock_count_lines (count_id, product_id, counted_quantity) VALUES ($1, $2, 6)', [count.id, prod])).rejects.toMatchObject({ code: '23505' });
+    await expect(q('UPDATE stock_count_lines SET counted_quantity = -1 WHERE count_id = $1', [count.id])).rejects.toMatchObject({ code: '23514' });
+    await q('DELETE FROM stock_counts WHERE id = $1', [count.id]);
+    expect((await q('SELECT 1 FROM stock_count_lines WHERE count_id = $1', [count.id])).rowCount).toBe(0);
   });
 });
 

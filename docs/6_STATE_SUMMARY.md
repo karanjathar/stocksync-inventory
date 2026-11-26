@@ -55,6 +55,7 @@
 - phase Phase 11: WhatsApp templates & maintenance — approved by Claude on 2026-11-26
 - phase Phase 12: Operations & release — approved by Claude on 2026-11-26
 - phase Phase 13: Purchase orders — approved by Claude on 2026-11-26
+- phase Phase 14: GST invoicing — approved by Claude on 2026-11-26
 
 
 ## Log
@@ -80,6 +81,7 @@
 - **T76** Invoice PDF and download endpoints (2026-11-26): Added invoice PDFs (pdfkit 0.20.2 pinned: legal details, per-line HSN/taxable/rate/tax, CGST+SGST or IGST, totals, amount in Indian-numbering words, VOID watermark, pagination) and download endpoints: staff GET /api/orders/:id/invoice(.pdf) and the shopper's token route /api/public/orders/:token/invoice.pdf, which 404s unless that order is confirmed or fulfilled. Known limitation recorded as task T87: the standard PDF font cannot draw the rupee sign or Devanagari, so such text prints as '?' (hostile text is sanitised and never interpreted as PDF syntax).
 - **T77** WhatsApp invoice delivery (2026-11-26): Confirmed orders now send the shopper their GST invoice on their own chat channel: WhatsApp gets a document message from a signed download link (HMAC bound to one invoice, 2-hour expiry, constant-time check, any failure is the same 404), other chat channels get the link as text, and outside the 24h window the mapped invoice_ready template carries the link. Delivery goes through the outbox (a provider outage leaves it queued for retry) and never blocks the order; web and manual customers and shops without a GST profile get nothing.
 - **T78** GST UI (2026-11-26): GST is now usable from the UI: a Settings GST card (legal name, GSTIN, state picker, prefix, address; no tax-exclusive switch per D-017), HSN/SAC code and GST rate on the product form, GSTIN and state on customers, an Invoice button on confirmed/fulfilled orders that opens the PDF with the login token, and a tax-invoice link on the shopper's order page once the server reports invoiceAvailable (the public status shape guard now allows that one boolean).
+- **T79** Migration 008 and barcode lookup (2026-11-26): Added migration 008 (unique optional product barcode via partial index, plus the stock count tables used next) and barcode support: codes are trimmed and upper-cased, 8-48 safe characters, 13-digit codes need a valid EAN-13 check digit, duplicates give 409, and GET /api/products/by-barcode/:code resolves a scan (malformed or unknown codes are a plain 404 that never reaches the database). The product form has a Barcode field.
 
 
 ## Blocked

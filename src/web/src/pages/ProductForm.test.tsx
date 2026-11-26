@@ -25,8 +25,20 @@ describe('ProductForm', () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(calls[0]!.body).toEqual({
       sku: 'TEE-RED', name: 'Red Tee', description: '', unit: 'pcs', priceCents: 1999, reorderLevel: 4,
-      categoryId: 'c1', imageUrl: null, isActive: true, attributes: { color: 'red', weight: '180' }, hsnCode: null, gstRateBp: 0,
+      categoryId: 'c1', imageUrl: null, isActive: true, attributes: { color: 'red', weight: '180' }, barcode: null, hsnCode: null, gstRateBp: 0,
     });
+  });
+
+  it('sends a typed barcode and shows the server\'s duplicate error', async () => {
+    const calls = mockApi({ 'POST /products': () => new Response(JSON.stringify({ error: { code: 'CONFLICT', message: 'A record with these unique values already exists' } }), { status: 409 }) });
+    render(<ProductForm categories={[]} customFields={[]} canUpload={false} onSaved={() => {}} onCancel={() => {}} />);
+    fireEvent.change(screen.getByLabelText('SKU'), { target: { value: 'A1' } });
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'A' } });
+    fireEvent.change(screen.getByLabelText('Price'), { target: { value: '5' } });
+    fireEvent.change(screen.getByLabelText('Barcode'), { target: { value: ' 4006381333931 ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create product' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/already exists/i);
+    expect(calls[0]!.body).toMatchObject({ barcode: '4006381333931' });
   });
 
   it('sends the HSN code and GST rate (in basis points) and keeps an unusual existing rate selectable', async () => {

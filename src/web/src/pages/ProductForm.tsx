@@ -30,6 +30,7 @@ export function ProductForm({ product, categories, customFields, canUpload, onSa
   const [description, setDescription] = useState(product?.description ?? '');
   const [unit, setUnit] = useState(product?.unit ?? 'pcs');
   const [price, setPrice] = useState(product ? (product.priceCents / 100).toFixed(2) : '');
+  const [barcode, setBarcode] = useState(product?.barcode ?? '');
   const [hsnCode, setHsnCode] = useState(product?.hsnCode ?? '');
   const [gstRateBp, setGstRateBp] = useState(String(product?.gstRateBp ?? 0));
   const [reorderLevel, setReorderLevel] = useState(String(product?.reorderLevel ?? 0));
@@ -51,7 +52,7 @@ export function ProductForm({ product, categories, customFields, canUpload, onSa
     const cleaned = Object.fromEntries(Object.entries(attributes).filter(([, v]) => v.trim() !== ''));
     const body = {
       sku: sku.trim().toUpperCase(), name: name.trim(), description, unit: unit.trim() || 'pcs', priceCents,
-      hsnCode: hsnCode.trim() || null, gstRateBp: Number(gstRateBp) || 0,
+      barcode: barcode.trim() || null, hsnCode: hsnCode.trim() || null, gstRateBp: Number(gstRateBp) || 0,
       reorderLevel: Number(reorderLevel) || 0, categoryId: categoryId || null, imageUrl, isActive, attributes: cleaned,
     };
     const saved = await run(() => product
@@ -75,6 +76,9 @@ export function ProductForm({ product, categories, customFields, canUpload, onSa
         <Field label="Name"><input required value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <Field label="Price"><input required inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="19.99" /></Field>
         <Field label="Unit"><input value={unit} onChange={(e) => setUnit(e.target.value)} /></Field>
+        <Field label="Barcode" hint="Scan it here, or type it. Letters and digits, 8–48 characters; 13 digits must be a valid EAN-13">
+          <input aria-label="Barcode" value={barcode} onChange={(e) => setBarcode(e.target.value)} autoComplete="off" placeholder="4006381333931" />
+        </Field>
         <Field label="HSN/SAC code" hint="4–8 digits, printed on GST invoices">
           <input inputMode="numeric" value={hsnCode} onChange={(e) => setHsnCode(e.target.value)} placeholder="610910" />
         </Field>

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import type { Container } from '../../container.js';
 import { NotFoundError } from '../../domain/errors.js';
+import { normaliseBarcode, validBarcode } from '../../domain/barcode.js';
 import { crudRoutes } from '../crud.js';
 import { GSTIN_RE, STATE_CODE_RE } from '../../services/settings.js';
 import { requireRole } from '../middleware/auth.js';
@@ -24,6 +25,7 @@ const productBase = z.object({
   priceCents: z.number().int().min(0).max(1_000_000_000),
   reorderLevel: z.number().int().min(0).max(1_000_000).optional(),
   imageUrl: z.string().url().max(2000).refine((u) => /^(https:\/\/|http:\/\/(localhost|127\.0\.0\.1)[:/])/.test(u), 'must be an https URL').nullable().optional(),
+  barcode: z.string().transform(normaliseBarcode).refine(validBarcode, 'barcode must be 8–48 letters, digits or - . _ / (13 digits need a valid EAN-13 check digit)').nullable().optional(),
   hsnCode: z.string().regex(/^[0-9]{4,8}$/, 'HSN/SAC code: 4 to 8 digits').nullable().optional(),
   gstRateBp: z.number().int().min(0).max(2800).optional(),
   attributes: z.record(z.string().trim().min(1).max(64), z.string().max(500))
@@ -42,6 +44,13 @@ export function productRoutes(c: Container): Router {
   const write = requireRole('staff');
   r.get('/', async (req, res) => {
     res.json(await c.repos.products.list(parse(listQuery, req.query)));
+  });
+  // Registered before '/:id'. Malformed codes are a plain 404 and never reach the database.
+  r.get('/by-barcode/:code', async (req, res) => {
+    const code = normaliseBarcode(String(req.params.code ?? ''));
+    const p = validBarcode(code) ? await c.repos.products.getByBarcode(code) : undefined;
+    if (!p) throw new NotFoundError('Product');
+    res.json(p);
   });
   r.get('/:id', async (req, res) => {
     const p = await c.repos.products.get(idParam(req));
