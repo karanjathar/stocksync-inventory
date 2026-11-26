@@ -4,13 +4,8 @@ import { buildTestApp, type TestApp } from './helpers/app.js';
 import { seedCatalog } from './helpers/fixtures.js';
 import { amountInWords } from '../src/services/amountInWords.js';
 import { renderInvoicePdf, pdfSafe } from '../src/services/invoicePdf.js';
+import { pdfText } from './helpers/pdfText.js';
 import type { Invoice } from '../src/services/invoices.js';
-
-/** Text of an uncompressed pdfkit document: its strings are hex inside TJ arrays. */
-function pdfText(buf: Buffer): string {
-  return [...buf.toString('latin1').matchAll(/\[((?:<[0-9a-f]*>[\s\d.-]*)+)\] TJ/g)]
-    .map((m) => [...m[1]!.matchAll(/<([0-9a-f]*)>/g)].map((h) => Buffer.from(h[1]!, 'hex').toString('latin1')).join('')).join('\n');
-}
 
 describe('amountInWords (Indian numbering)', () => {
   it.each([
@@ -50,8 +45,28 @@ describe('renderInvoicePdf', () => {
     expect(buf.subarray(0, 5).toString()).toBe('%PDF-');
     const text = pdfText(buf);
     for (const expected of ['TAX INVOICE', 'INV/2026-27/000042', 'Corner Shop Pvt Ltd', '27AAPFU0939F1ZV', '12 MG Road, Pune', 'Asha Traders', '29AAPFU0939F1ZV', '610910', 'CGST', 'SGST',
-      'Rs. 200.00', 'Rs. 224.00', 'Rs. 400.00', 'Rs. 24.00', 'Rs. 448.00', 'Four Hundred Forty Eight Rupees Only', '26-11-2026', 'Order #17']) expect(text, expected).toContain(expected);
+      '₹200.00', '₹224.00', '₹400.00', '₹24.00', '₹448.00', 'Four Hundred Forty Eight Rupees Only', '26-11-2026', 'Order #17']) expect(text, expected).toContain(expected);
     expect(text).not.toContain('IGST');
+  });
+
+  it('prints the rupee sign and Hindi names with an embedded font instead of question marks', async () => {
+    const buf = await renderInvoicePdf(snapshot({ buyer: { name: 'कमला पटेल Traders' }, seller: { legalName: 'दुकान Pvt Ltd', address: 'पुणे' } }), { compress: false });
+    const text = pdfText(buf);
+    for (const expected of ['कमला पटेल Traders', 'दुकान Pvt Ltd', 'पुणे', '₹448.00']) expect(text, expected).toContain(expected);
+    expect(text).not.toContain('?');
+    const raw = buf.toString('latin1');
+    expect(raw).toMatch(/NotoSans-Regular/);
+    expect(raw).toMatch(/NotoSansDevanagari-Regular/);
+  });
+
+  it('keeps the file small by embedding only the glyphs it uses', async () => {
+    expect((await renderInvoicePdf(snapshot({ buyer: { name: 'रवि' } }))).length).toBeLessThan(60_000);
+  });
+
+  it('still replaces characters neither font has (emoji, other scripts) with a question mark', async () => {
+    const text = pdfText(await renderInvoicePdf(snapshot({ buyer: { name: 'Ann 😀 தமிழ்' } }), { compress: false }));
+    expect(text).toContain('Ann ? ');
+    expect(text).not.toContain('😀');
   });
 
   it('shows IGST for an inter-state sale', async () => {

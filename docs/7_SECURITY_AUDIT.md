@@ -191,7 +191,7 @@ All reproduced before fixing; every fix has a regression test.
 | Check | Result |
 |---|---|
 | `npm audit --omit=dev --audit-level=high` (the gate) | ✅ no high or critical (the 3 moderate `applicationinsights` advisories from R3-04 remain) |
-| New dependencies | `pdfkit 0.20.2` (MIT, pinned; 0.21.0 was six days old so not used), `fake-indexeddb 6.2.8` (dev only, test fakes) |
+| New dependencies | `pdfkit 0.20.2` (MIT, pinned; 0.21.0 was six days old so not used), `@fontsource/noto-sans` and `@fontsource/noto-sans-devanagari` 5.3.0 (SIL OFL 1.1, pinned), `fake-indexeddb 6.2.8` (dev only, test fakes) |
 | Secret scan of tracked source | ✅ none |
 
 ## 7.R4.2 Attack classes tested
@@ -216,7 +216,7 @@ All reproduced before fixing; every fix has a regression test.
 ## 7.R4.4 Accepted risks and recommendations
 1. **Signed invoice links are bearer capabilities for 2 hours.** Anyone holding the link (it travels in a chat message) can download that one invoice, which contains the buyer's name and, for business buyers, GSTIN. They are bound to a single invoice, expire, are checked in constant time, and a voided invoice downloads marked VOID. Shorten `INVOICE_LINK_TTL_MS` if that is too long.
 2. **`GET /api/orders/:id/invoice(.pdf)` issues the invoice on first call** (a GET with a side effect). Safe here because it is idempotent, staff-only and authenticated by a bearer header, not a cookie, so cross-site request forgery does not apply. If cookie sessions are adopted (Release 5), change it to POST.
-3. **Invoice PDFs cannot draw ₹ or Devanagari** and print `?` instead (standard PDF font). Task T87 bundles a Unicode font.
+3. **Invoice PDFs cover Latin and Devanagari only** (Noto Sans and Noto Sans Devanagari, OFL, embedded and subset; T87). Other scripts and emoji print as `?`. If the font packages are missing the renderer falls back to Helvetica and `Rs.`. Hostile text is still sanitised and drawn as glyphs, never as PDF syntax.
 4. **Tax-exclusive pricing is computed but never issued** (D-017), so an invoice can never disagree with the amount charged.
 5. **The invoice format is unreviewed by an accountant.** Review a sample before relying on it; e-invoicing (IRN/QR) is out of scope.
 6. **Refund idempotency relies on Razorpay honouring `X-Refund-Idempotency`.** Our own claim (one PENDING refund per payment, a 60-second guard after an unknown outcome, one stable key per attempt) means a duplicate refund needs both a Razorpay-side miss and a deliberate staff retry; the first live run (T67) should confirm the header's behaviour.
