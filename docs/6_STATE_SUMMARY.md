@@ -63,6 +63,7 @@
 - phase Phase 17: Release 4 hardening — approved by Claude on 2026-11-26
 - phase Phase 19: Tenancy foundation — approved by Claude on 2026-11-26
 - phase Phase 20: Onboarding & billing — approved by Claude on 2026-11-26
+- phase Phase 21: Scale-out & sessions — approved by Claude on 2026-11-26
 
 
 ## Log
