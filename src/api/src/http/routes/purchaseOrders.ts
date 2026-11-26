@@ -38,3 +38,14 @@ export function purchaseOrderRoutes(c: Container): Router {
   });
   return r;
 }
+
+export function reorderRoutes(c: Container): Router {
+  const r = Router();
+  r.get('/', async (_req, res) => { res.json({ suggestions: await c.reorder.suggestions() }); });
+  r.post('/create-pos', requireRole('staff'), async (req, res) => {
+    const { productIds } = parse(z.object({ productIds: z.array(z.string().uuid()).min(1).max(500).optional() }), req.body ?? {});
+    res.status(201).json(await c.reorder.createPurchaseOrders(productIds, currentUser(req).id));
+  });
+  return r;
+}
+

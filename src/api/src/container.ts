@@ -23,6 +23,7 @@ import { ChannelHub } from './channels/hub.js';
 import { JobQueue } from './jobs/queue.js';
 import { Maintenance } from './jobs/maintenance.js';
 import { PurchaseOrdersService } from './services/purchaseOrders.js';
+import { ReorderService } from './services/reorder.js';
 import { registerMessageSend } from './jobs/messageSend.js';
 import { randomUUID } from 'node:crypto';
 import { WhatsAppAdapter } from './channels/whatsapp.js';
@@ -63,6 +64,7 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const settings = new SettingsService(pool);
   const orders = new OrdersService(pool, stock, settings, events, (err) => logger.error({ err }, 'order observer failed'));
   const purchaseOrders = new PurchaseOrdersService(pool, stock);
+  const reorder = new ReorderService(pool, purchaseOrders, settings);
   const messages = new MessagesRepo(pool);
   const fetchFn = opts.fetch ?? fetch;
   const hub = new ChannelHub([
@@ -89,7 +91,7 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const images = new ImageStorage(env.AZURE_STORAGE_CONNECTION_STRING, env.AZURE_STORAGE_CONTAINER);
   chatFlow.setPaymentOptions(payments.chatOptions());
   orders.onStatusChange((order, previous) => payments.onOrderStatusChange(order, previous));
-  return { env, pool, logger, repos, auth, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, messenger, bot, inbox, images, carts, chatFlow, razorpay, payments };
+  return { env, pool, logger, repos, auth, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, messenger, bot, inbox, images, carts, chatFlow, razorpay, payments };
 }
 
 export type Container = ReturnType<typeof createContainer>;
