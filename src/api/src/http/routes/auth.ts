@@ -29,7 +29,16 @@ export function authRoutes(c: Container): Router {
 
   r.post('/login', loginLimiter, async (req, res) => {
     const { email, password } = parse(loginSchema, req.body);
-    const { token, user, tenantId } = await c.auth.login(email, password);
+    await c.loginGuard.check(email, req.ip); // before the password is looked at: a correct password does not get through while locked
+    let signedIn: Awaited<ReturnType<typeof c.auth.login>>;
+    try {
+      signedIn = await c.auth.login(email, password);
+    } catch (err) {
+      if (err instanceof UnauthorizedError) await c.loginGuard.failure(email, req.ip);
+      throw err;
+    }
+    await c.loginGuard.success(email);
+    const { token, user, tenantId } = signedIn;
     await startBrowserSession(res, user, tenantId);
     res.set('Cache-Control', 'no-store').json({ token, user }); // `token` is for API clients that prefer a bearer header; the web app ignores it and relies on the cookies
   });

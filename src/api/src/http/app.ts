@@ -16,6 +16,7 @@ import { billingRoutes } from './routes/billing.js';
 import { auditRoutes } from './routes/audit.js';
 import { dataRightsRoutes } from './routes/dataRights.js';
 import { auditTrail } from './middleware/audit.js';
+import { tenantRateLimit } from './middleware/rateLimit.js';
 import { userRoutes } from './routes/users.js';
 import { stockRoutes } from './routes/stock.js';
 import { settingsRoutes } from './routes/settings.js';
@@ -100,7 +101,7 @@ export function createApp(c: Container, opts: AppOptions = {}): Express {
   api.use('/platform', platformRoutes(c));
 
   // Each group below requires a valid token.
-  const secure = [requireAuth(c.auth, c.sessions), auditTrail(c)];
+  const secure = [requireAuth(c.auth, c.sessions), tenantRateLimit(c), auditTrail(c)];
   api.use('/users', secure, userRoutes(c));
   api.use('/categories', secure, categoryRoutes(c));
   api.use('/products', secure, productRoutes(c));

@@ -19,6 +19,8 @@ export const notFoundHandler: RequestHandler = (_req, res) => {
 export function errorHandler(logger?: Logger): ErrorRequestHandler {
   return (err: unknown, _req, res, _next) => {
     if (err instanceof AppError) {
+      const wait = (err.details as { retryAfterSec?: unknown } | undefined)?.retryAfterSec;
+      if (err.status === 429 && typeof wait === 'number') res.set('Retry-After', String(wait));
       res.status(err.status).json({ error: { code: err.code, message: err.message, details: err.details } });
       return;
     }

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import pino from 'pino';
+import { createLogger, tenantTelemetry } from './logger.js';
 import { loadEnv } from './config/env.js';
 import { assertAppRoleIsRestricted, createPool } from './db/pool.js';
 import { migrate } from './db/migrate.js';
@@ -13,12 +13,13 @@ import { createWorkerApp } from './http/workerApp.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
-  const logger = pino({ level: env.NODE_ENV === 'production' ? 'info' : 'debug' });
+  const logger = createLogger(env.NODE_ENV === 'production' ? 'info' : 'debug');
 
   if (env.APPLICATIONINSIGHTS_CONNECTION_STRING) {
     // Azure Monitor / Application Insights: requests, dependencies (pg, http) and exceptions.
     const appInsights = await import('applicationinsights');
     appInsights.default.setup(env.APPLICATIONINSIGHTS_CONNECTION_STRING).setSendLiveMetrics(true).start();
+    appInsights.default.defaultClient.addTelemetryProcessor(tenantTelemetry);
     logger.info('Application Insights enabled');
   }
 
@@ -55,6 +56,12 @@ async function main(): Promise<void> {
     billingTimer?.unref();
     const eraseTimer = c.tenantEraser ? setInterval(() => { void c.tenantEraser!.runDue().catch((err: unknown) => logger.warn({ err: String(err) }, 'business erasure run failed')); }, 30 * 60_000) : undefined;
     eraseTimer?.unref();
+    // One line a minute with the queue's health: the log alert rules in infra/main.bicep watch it (oldest waiting job, dead jobs).
+    const healthTimer = c.platform ? setInterval(() => {
+      void c.platform!.queueOverview().then((q) => logger.info({ queuePending: q.queue.pending, queueDead: q.queue.dead, queueOldestPendingSec: q.queue.oldestPendingSec }, 'queue health'))
+        .catch((err: unknown) => logger.warn({ err: String(err) }, 'queue health check failed'));
+    }, 60_000) : undefined;
+    healthTimer?.unref();
   }
 
   // Several API replicas: events published on one reach the dashboards connected to the others (Postgres LISTEN/NOTIFY).

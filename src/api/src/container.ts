@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import pino, { type Logger } from 'pino';
+import { type Logger } from 'pino';
 import type { Env } from './config/env.js';
 import { UsersRepo } from './repositories/users.js';
 import { SimpleRepo } from './repositories/simple.js';
@@ -47,6 +47,9 @@ import { OnboardingService } from './services/demoData.js';
 import { PlanAdmin, PlansService } from './services/plans.js';
 import { BillingService, BillingWebhooks } from './services/billing.js';
 import { AuditService } from './services/audit.js';
+import { createLogger } from './logger.js';
+import { LoginGuard } from './services/loginGuard.js';
+import { PlanRateLimits } from './http/middleware/rateLimit.js';
 import { SessionService } from './services/sessions.js';
 import { DataRights, TenantEraser } from './services/tenantDeletion.js';
 import { RazorpaySubscriptions } from './payments/razorpaySubscriptions.js';
@@ -58,13 +61,15 @@ export interface ContainerOverrides {
   fetch?: typeof fetch;
   /** Replaces the channel hub for outbound messages (tests). */
   messenger?: Messenger;
+  /** How long a business's plan rate limit is cached (tests set 0). */
+  rateLimitCacheMs?: number;
   /** Replaces the email service (tests). */
   emailSender?: EmailSender;
 }
 
 export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOverrides) {
   const { env, pool } = opts;
-  const logger = opts.logger ?? pino({ level: env.NODE_ENV === 'test' ? 'silent' : 'info' });
+  const logger = opts.logger ?? createLogger(env.NODE_ENV === 'test' ? 'silent' : 'info');
   const repos = {
     users: new UsersRepo(pool),
     categories: new SimpleRepo<Category>(pool, 'categories', { name: 'name' }, 'name', ['name']),
@@ -96,6 +101,8 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const reorder = new ReorderService(pool, purchaseOrders, settings);
   const stockCounts = new StockCountsService(pool, stock);
   const audit = new AuditService(pool);
+  const loginGuard = new LoginGuard(pool);
+  const rateLimits = new PlanRateLimits(async () => (await pool.query<{ n: number }>('SELECT p.requests_per_minute AS n FROM plans p JOIN tenants t ON t.plan = p.code WHERE t.id = current_tenant()')).rows[0]?.n ?? 120, opts.rateLimitCacheMs ?? 30_000);
   const sessions = new SessionService(pool, env.JWT_SECRET, runWithTenant);
   const dataRights = new DataRights(pool);
   const plans = new PlansService(pool);
@@ -166,7 +173,7 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const tenantEraser = opts.platformPool ? new TenantEraser(opts.platformPool, logger, async (tenantId) => { await images.deleteTenantImages(tenantId); }) : undefined;
   chatFlow.setPaymentOptions(payments.chatOptions());
   orders.onStatusChange((order, previous) => payments.onOrderStatusChange(order, previous));
-  return { env, pool, logger, repos, auth, platform, signup, onboarding, plans, planAdmin, audit, sessions, dataRights, tenantEraser, billing, billingWebhooks, subscriptions, emailSender, tenants, tenantDirectory, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpayProvider, channelCredentials, payments };
+  return { env, pool, logger, repos, auth, platform, signup, onboarding, plans, planAdmin, audit, sessions, loginGuard, rateLimits, dataRights, tenantEraser, billing, billingWebhooks, subscriptions, emailSender, tenants, tenantDirectory, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpayProvider, channelCredentials, payments };
 }
 
 export type Container = ReturnType<typeof createContainer>;

@@ -375,6 +375,90 @@ resource worker 'Microsoft.App/containerApps@2024-03-01' = if (deployApp) {
   }
 }
 
+// ---- Alerts (T105). Uncompiled until `az bicep build` is available: validate before the first deploy. ----------------------------------------------
+@description('Where alert notifications go (an e-mail address); leave empty to create the rules without a notification target.')
+param alertEmail string = ''
+
+resource alertGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if (!empty(alertEmail)) {
+  name: '${prefix}-alerts'
+  location: 'global'
+  properties: {
+    groupShortName: 'stocksync'
+    enabled: true
+    emailReceivers: [{ name: 'operator', emailAddress: alertEmail, useCommonAlertSchema: true }]
+  }
+}
+
+var alertActions = !empty(alertEmail) ? { actionGroups: [alertGroup.id] } : {}
+
+// More than 5 failed (5xx) requests in 5 minutes, from the requests Application Insights records.
+resource alert5xx 'Microsoft.Insights/metricAlerts@2018-03-01' = {
+  name: '${prefix}-5xx'
+  location: 'global'
+  properties: {
+    description: 'The API is answering with server errors.'
+    severity: 1
+    enabled: true
+    scopes: [appInsights.id]
+    evaluationFrequency: 'PT1M'
+    windowSize: 'PT5M'
+    criteria: {
+      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
+      allOf: [{ name: 'failed', metricNamespace: 'microsoft.insights/components', metricName: 'requests/failed', operator: 'GreaterThan', threshold: 5, timeAggregation: 'Count', criterionType: 'StaticThresholdCriterion' }]
+    }
+    actions: !empty(alertEmail) ? [{ actionGroupId: alertGroup.id }] : []
+  }
+}
+
+// The worker writes a 'queue health' line every minute; an oldest waiting job older than 5 minutes means jobs are not being processed.
+resource alertQueueAge 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = {
+  name: '${prefix}-queue-age'
+  location: location
+  properties: {
+    displayName: 'Background jobs are waiting too long'
+    severity: 2
+    enabled: true
+    scopes: [logs.id]
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT10M'
+    criteria: {
+      allOf: [{
+        query: 'ContainerAppConsoleLogs_CL | where Log_s has \'"msg":"queue health"\' | extend age = toint(extract(\'"queueOldestPendingSec":([0-9]+)\', 1, Log_s)) | where age > 300'
+        timeAggregation: 'Count'
+        operator: 'GreaterThan'
+        threshold: 0
+        failingPeriods: { numberOfEvaluationPeriods: 1, minFailingPeriodsToAlert: 1 }
+      }]
+    }
+    actions: alertActions
+  }
+}
+
+// A wave of refused webhooks (a wrong or leaked secret, or someone probing the public webhook URLs): more than 20 in 15 minutes.
+resource alertWebhooks 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = {
+  name: '${prefix}-webhooks'
+  location: location
+  properties: {
+    displayName: 'Webhooks are being rejected'
+    severity: 2
+    enabled: true
+    scopes: [logs.id]
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT15M'
+    criteria: {
+      allOf: [{
+        query: 'ContainerAppConsoleLogs_CL | where Log_s has \'"msg":"webhook rejected"\''
+        timeAggregation: 'Count'
+        operator: 'GreaterThan'
+        threshold: 20
+        failingPeriods: { numberOfEvaluationPeriods: 1, minFailingPeriodsToAlert: 1 }
+      }]
+    }
+    actions: alertActions
+  }
+}
+
+
 output appUrl string = publicUrl
 output containerAppName string = appName
 output workerAppName string = '${appName}-worker'

@@ -10,7 +10,7 @@ export function requestLog(logger: Logger): RequestHandler {
       if (path === '/healthz') return;
       const ms = Math.round(Number(process.hrtime.bigint() - start) / 1e5) / 10;
       const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
-      logger[level]({ method: req.method, path, status: res.statusCode, ms, user: req.user?.id }, 'request');
+      logger[level]({ method: req.method, path, status: res.statusCode, ms, user: req.user?.id, tenantId: req.user?.tenantId }, 'request');
     });
     next();
   };

@@ -1,4 +1,4 @@
-import { Router, type RequestHandler } from 'express';
+import { Router, type RequestHandler, type Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Container } from '../../container.js';
@@ -30,6 +30,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * business can never be accepted for another. The original URLs without an id serve the default business (single-business installs).
  */
 export function webhookRoutes(c: Container): Router {
+  // A refused webhook is logged (kind of webhook only: never the body or signature) so an alert can notice a wave of them (a leaked URL, a wrong secret).
+  const reject = (req: { path: string }, res: Response): void => {
+    c.logger.warn({ webhook: req.path.split('/')[1] ?? 'unknown', reason: 'bad_signature' }, 'webhook rejected');
+    res.status(401).json(badSignature);
+  };
   const r = Router();
   r.use(rateLimit({ windowMs: 60_000, limit: c.env.NODE_ENV === 'test' ? 10_000 : 1200, standardHeaders: true, legacyHeaders: false }));
 
@@ -58,7 +63,7 @@ export function webhookRoutes(c: Container): Router {
   r.post(['/meta', '/meta/:tenantId'], tenantScope, async (req, res) => {
     const secret = (await c.channelCredentials.get('meta'))?.appSecret;
     if (!secret) { res.status(503).json(notConfigured); return; }
-    if (!verifyMetaSignature(req.rawBody, req.header('x-hub-signature-256'), secret)) { res.status(401).json(badSignature); return; }
+    if (!verifyMetaSignature(req.rawBody, req.header('x-hub-signature-256'), secret)) { reject(req, res); return; }
     for (const s of parseWhatsAppStatuses(req.body)) {
       const updated = await c.messages.applyDeliveryStatus('whatsapp', s.id, s.status, { ...(s.errorCode ? { code: s.errorCode } : {}), ...(s.errorTitle ? { title: s.errorTitle } : {}) });
       if (updated) c.events.publish({ type: 'message.status', messageId: updated.id, channel: 'whatsapp', to: updated.to, status: s.status, ...(s.errorCode ? { errorCode: s.errorCode } : {}) });
@@ -71,7 +76,7 @@ export function webhookRoutes(c: Container): Router {
     const secret = (await c.channelCredentials.get('telegram'))?.webhookSecret;
     if (!secret) { res.status(503).json(notConfigured); return; }
     const given = req.header('x-telegram-bot-api-secret-token') ?? '';
-    if (!safeEqual(given, secret)) { res.status(401).json(badSignature); return; }
+    if (!safeEqual(given, secret)) { reject(req, res); return; }
     const tapId = telegramCallbackId(req.body);
     if (tapId) await c.hub.acknowledgeTap('telegram', tapId).catch((err: unknown) => c.logger.warn({ err: String(err) }, 'answerCallbackQuery failed'));
     const msg = parseTelegramUpdate(req.body);
@@ -83,7 +88,7 @@ export function webhookRoutes(c: Container): Router {
   r.post(['/razorpay', '/razorpay/:tenantId'], tenantScope, async (req, res) => {
     const secret = (await c.razorpayProvider.client()).webhookSecret;
     if (!secret) { res.status(503).json(notConfigured); return; }
-    if (!verifyWebhookSignature(req.rawBody, req.header('x-razorpay-signature'), secret)) { res.status(401).json(badSignature); return; }
+    if (!verifyWebhookSignature(req.rawBody, req.header('x-razorpay-signature'), secret)) { reject(req, res); return; }
     await c.payments.handleWebhook(req.header('x-razorpay-event-id'), req.rawBody, req.body);
     res.status(200).json({ ok: true });
   });
@@ -92,7 +97,7 @@ export function webhookRoutes(c: Container): Router {
   r.post('/razorpay-billing', async (req, res) => {
     const secret = c.subscriptions.webhookSecret;
     if (!secret || !c.billingWebhooks) { res.status(503).json(notConfigured); return; }
-    if (!verifyWebhookSignature(req.rawBody, req.header('x-razorpay-signature'), secret)) { res.status(401).json(badSignature); return; }
+    if (!verifyWebhookSignature(req.rawBody, req.header('x-razorpay-signature'), secret)) { reject(req, res); return; }
     const ev = parseSubscriptionEvent(req.body);
     if (ev) await c.billingWebhooks.handle(req.header('x-razorpay-event-id'), req.rawBody, ev); // other event types (payments, refunds of the platform account) are acknowledged and ignored
     res.status(200).json({ ok: true });
