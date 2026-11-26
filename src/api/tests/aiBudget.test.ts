@@ -133,7 +133,8 @@ describe('budget and kill switches', () => {
   it('concurrent calls cannot overshoot the allowance', async () => {
     await owner.query("DELETE FROM ai_usage WHERE tenant_id = $1", [B]);
     await setUnits('PRO', 2000);
-    hits.length = 0; script = () => ok('pong', { input_tokens: 10, output_tokens: 1 });
+    hits.length = 0;
+    script = async () => { await new Promise((r) => setTimeout(r, 200)); return ok('pong', { input_tokens: 10, output_tokens: 1 }); }; // slow enough that all 12 reservations overlap (a fast call would settle and free its reservation first)
     const results = await Promise.allSettled(Array.from({ length: 12 }, () => ping(B)));
     const ran = results.filter((r) => r.status === 'fulfilled').length;
     expect(ran).toBe(hits.length);
