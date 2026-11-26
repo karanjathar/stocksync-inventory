@@ -298,3 +298,6 @@ Security posture and accepted risks: see `docs/7_SECURITY_AUDIT.md`.
 - In production over https, the server refuses to start with the default admin password (`ChangeMe123!`) or one shorter than 12 characters. Set a unique `ADMIN_PASSWORD` secret.
 - `.github/workflows/security.yml` runs CodeQL and `npm audit` on every PR and weekly.
 - The rate limiter and live-event bus are in-process: keep **one replica** until they are moved to Redis or the database.
+
+## Process roles (T103)
+The same image runs in three modes selected by `PROCESS_ROLE`: `all` (default: HTTP and background work in one process, for local use and a single replica), `api` (HTTP only; its `/readyz` is ready when the database answers, migrations are applied and **some** worker's heartbeat is under 60 s old) and `worker` (jobs, scheduler, maintenance; serves only `/healthz` and `/readyz` for its probes). `infra/main.bicep` deploys two Container Apps: `<app>` with `PROCESS_ROLE=api` (1–5 replicas, HTTP scale rule) and `<app>-worker` (1–3 replicas, CPU rule, no ingress). Realtime events cross replicas through Postgres LISTEN/NOTIFY, and the worker publishes through the same channel. The Bicep change is uncompiled here (no `az` in the build environment): run `az bicep build` before the first deploy.

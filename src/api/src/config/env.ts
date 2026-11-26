@@ -13,6 +13,8 @@ const bool = z
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(8080),
+  /** api: serves HTTP only. worker: runs jobs, scheduler and maintenance with just a health endpoint. all: both in one process (default; local and single-replica use). */
+  PROCESS_ROLE: z.enum(['api', 'worker', 'all']).default('all'),
   CORS_ORIGINS: z
     .string()
     .optional()

@@ -96,3 +96,6 @@ Consequences: a payload signed for one business can never be accepted for anothe
 ## D-024 Server environment keys belong to the default business only (2026-11-26)
 Decision: `WHATSAPP_*`, `META_*`, `TELEGRAM_*`, `RAZORPAY_*` keep working for the original default business; any other business that has not saved its own credentials is simply "not configured". Consequence: no business can ever send or take payments through the operator's accounts by accident. Saved credentials are validated strictly; environment values keep their old independent semantics.
 
+
+## D-025 — Separate API and worker processes (T103)
+Context: API replicas could not scale out while jobs, scheduler and maintenance lived in every process, and readiness required the local job loop. Decision: `PROCESS_ROLE=api|worker|all` on one image. The API's readiness requires any fresh worker heartbeat; a worker serves only health probes and checks its own heartbeat. Events published by workers reach dashboards through PgBus (D-022). Consequences: two Container Apps and a second deploy step; if every worker is down the API reports unavailable (traffic stops) rather than silently accepting work that never runs. Migrations remain idempotent and advisory-locked, so any role may run them.

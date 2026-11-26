@@ -315,7 +315,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = if (deployApp) {
           name: 'stocksync'
           image: '${acr.properties.loginServer}/${imageTag}'
           resources: { cpu: json('0.5'), memory: '1Gi' }
-          env: concat(coreEnv, channelEnv)
+          env: concat(coreEnv, channelEnv, [{ name: 'PROCESS_ROLE', value: 'api' }])
           probes: [
             { type: 'Startup', httpGet: { path: '/readyz', port: 8080 }, periodSeconds: 5, failureThreshold: 24 }
             { type: 'Liveness', httpGet: { path: '/healthz', port: 8080 }, periodSeconds: 30, failureThreshold: 3 }
@@ -323,14 +323,61 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = if (deployApp) {
           ]
         }
       ]
-      // Single replica: the realtime (SSE) event bus is in-process. Add Azure Web PubSub before scaling out.
-      scale: { minReplicas: 1, maxReplicas: 1 }
+      // Several replicas are fine: realtime events cross replicas over Postgres LISTEN/NOTIFY (T102) and background work lives in the worker app below.
+      scale: {
+        minReplicas: 1
+        maxReplicas: 5
+        rules: [{ name: 'http', http: { metadata: { concurrentRequests: '60' } } }]
+      }
+    }
+  }
+}
+
+resource worker 'Microsoft.App/containerApps@2024-03-01' = if (deployApp) {
+  name: '${appName}-worker'
+  location: location
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: { '${identity.id}': {} }
+  }
+  dependsOn: [acrPull, kvSecretsUser, secretChannels]
+  properties: {
+    managedEnvironmentId: env.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      registries: [{ server: acr.properties.loginServer, identity: identity.id }]
+      secrets: concat(coreSecrets, channelAppSecrets)
+    }
+    template: {
+      // SIGTERM → the app stops taking requests and drains background jobs (25 s budget) before this deadline.
+      terminationGracePeriodSeconds: 30
+      containers: [
+        {
+          name: 'stocksync-worker'
+          image: '${acr.properties.loginServer}/${imageTag}'
+          resources: { cpu: json('0.5'), memory: '1Gi' }
+          env: concat(coreEnv, channelEnv, [{ name: 'PROCESS_ROLE', value: 'worker' }])
+          probes: [
+            { type: 'Startup', httpGet: { path: '/readyz', port: 8080 }, periodSeconds: 5, failureThreshold: 24 }
+            { type: 'Liveness', httpGet: { path: '/healthz', port: 8080 }, periodSeconds: 30, failureThreshold: 3 }
+            { type: 'Readiness', httpGet: { path: '/readyz', port: 8080 }, periodSeconds: 10, failureThreshold: 3 }
+          ]
+        }
+      ]
+      // At least one worker must always run (the api's readiness needs a fresh worker heartbeat). Jobs are claimed with SKIP LOCKED and the scheduler dedupes,
+      // so extra workers are safe; they are added when the CPU is busy. The worker serves only /healthz and /readyz, for its probes.
+      scale: {
+        minReplicas: 1
+        maxReplicas: 3
+        rules: [{ name: 'cpu', custom: { type: 'cpu', metadata: { type: 'Utilization', value: '70' } } }]
+      }
     }
   }
 }
 
 output appUrl string = publicUrl
 output containerAppName string = appName
+output workerAppName string = '${appName}-worker'
 output acrName string = acr.name
 output acrLoginServer string = acr.properties.loginServer
 output keyVaultName string = vault.name

@@ -9,6 +9,7 @@ import { createApp } from './http/app.js';
 import { startScheduler } from './jobs/scheduler.js';
 import { createShutdown } from './shutdown.js';
 import { PgBus } from './realtime/pgBus.js';
+import { createWorkerApp } from './http/workerApp.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -33,21 +34,28 @@ async function main(): Promise<void> {
 
   const c = createContainer({ env, pool, platformPool, logger });
   if (await c.platform?.bootstrapAdmin(env.PLATFORM_ADMIN_EMAIL, env.PLATFORM_ADMIN_PASSWORD)) logger.warn({ email: env.PLATFORM_ADMIN_EMAIL }, 'platform operator created: change this password after first login');
-  const admin = await c.auth.bootstrapAdmin(env.ADMIN_EMAIL, env.ADMIN_PASSWORD);
+  const serveApi = env.PROCESS_ROLE !== 'worker';  // api or all
+  const runWork = env.PROCESS_ROLE !== 'api';      // worker or all
+  logger.info({ role: env.PROCESS_ROLE }, 'process role');
+  const admin = serveApi ? await c.auth.bootstrapAdmin(env.ADMIN_EMAIL, env.ADMIN_PASSWORD) : undefined;
   if (admin) logger.warn({ email: admin.email }, 'bootstrap admin created: change this password after first login');
   if (c.images.isConfigured()) {
     // Best effort and non-blocking: storage being slow/unreachable must never delay startup or health probes.
     void c.images.ensureContainer().catch((err: unknown) => logger.warn({ err: String(err) }, 'could not ensure blob container'));
   }
 
-  c.jobs.start({ concurrency: 4, pollMs: 1000 });
-  const stopScheduler = startScheduler(pool, c.jobs, (err) => logger.warn({ err: String(err) }, 'maintenance scheduling failed'), 60_000, c.platform ? () => c.platform!.activeTenantIds() : undefined);
+  // Background work belongs to the worker process (or to the single process in 'all' mode).
+  let stopScheduler = (): void => undefined;
+  if (runWork) {
+    c.jobs.start({ concurrency: 4, pollMs: 1000 });
+    stopScheduler = startScheduler(pool, c.jobs, (err) => logger.warn({ err: String(err) }, 'maintenance scheduling failed'), 60_000, c.platform ? () => c.platform!.activeTenantIds() : undefined);
 
-  // Businesses whose payment stayed unpaid past the grace period go back to Free.
-  const billingTimer = c.billingWebhooks ? setInterval(() => { void c.billingWebhooks!.expireGrace().catch((err: unknown) => logger.warn({ err: String(err) }, 'grace expiry failed')); }, 10 * 60_000) : undefined;
-  billingTimer?.unref();
-  const eraseTimer = c.tenantEraser ? setInterval(() => { void c.tenantEraser!.runDue().catch((err: unknown) => logger.warn({ err: String(err) }, 'business erasure run failed')); }, 30 * 60_000) : undefined;
-  eraseTimer?.unref();
+    // Businesses whose payment stayed unpaid past the grace period go back to Free.
+    const billingTimer = c.billingWebhooks ? setInterval(() => { void c.billingWebhooks!.expireGrace().catch((err: unknown) => logger.warn({ err: String(err) }, 'grace expiry failed')); }, 10 * 60_000) : undefined;
+    billingTimer?.unref();
+    const eraseTimer = c.tenantEraser ? setInterval(() => { void c.tenantEraser!.runDue().catch((err: unknown) => logger.warn({ err: String(err) }, 'business erasure run failed')); }, 30 * 60_000) : undefined;
+    eraseTimer?.unref();
+  }
 
   // Several API replicas: events published on one reach the dashboards connected to the others (Postgres LISTEN/NOTIFY).
   const realtime = new PgBus({ connectionString: env.DATABASE_APP_URL ?? env.DATABASE_URL, ssl: env.DATABASE_SSL, pool, logger }, c.events);
@@ -55,9 +63,9 @@ async function main(): Promise<void> {
 
   const here = path.dirname(fileURLToPath(import.meta.url));
   const staticDir = path.resolve(here, '../../web/dist');
-  const app = createApp(c, { staticDir });
+  const app = serveApi ? createApp(c, { staticDir }) : createWorkerApp(c); // a worker answers health probes only
   const server = app.listen(env.PORT, () => {
-    logger.info({ port: env.PORT }, 'StockSync API listening');
+    logger.info({ port: env.PORT, role: env.PROCESS_ROLE }, 'StockSync listening');
   });
   server.keepAliveTimeout = 65_000; // longer than the Azure load balancer idle timeout
 

@@ -84,7 +84,8 @@ export function createApp(c: Container, opts: AppOptions = {}): Express {
       await pool.query('SELECT 1');
       checks.db = true;
       checks.migrations = (await pendingMigrations(pool)).length === 0;
-      const hb = await pool.query("SELECT 1 FROM worker_heartbeats WHERE worker_id = $1 AND seen_at > now() - interval '60 seconds'", [c.jobs.workerId]);
+      // Any worker will do: with separate api and worker processes the heartbeat comes from another container.
+      const hb = await pool.query("SELECT 1 FROM worker_heartbeats WHERE seen_at > now() - interval '60 seconds' LIMIT 1");
       checks.worker = (hb.rowCount ?? 0) > 0;
     } catch { /* a failed check stays false */ }
     const ready = checks.db && checks.migrations && checks.worker;
