@@ -24,3 +24,15 @@ export const UNTRUSTED_INPUT_RULES = [
 
 /** A harmless prompt used by the health check and tests of the plumbing. */
 export const PING_PROMPT = definePrompt('ping', 1, `${UNTRUSTED_INPUT_RULES}\nAnswer with one short word.`);
+
+/**
+ * Defence in depth against a prompt-extraction attack that worked: true when `reply` repeats a long stretch of the prompt word for word.
+ * The caller then drops the reply (and shows the menu or an error) instead of sending the rules to a stranger.
+ */
+export function leaksPrompt(reply: string, prompt: Prompt): boolean {
+  const norm = (t: string) => t.toLowerCase().replace(/\s+/g, ' ').trim();
+  const out = norm(reply); const rules = norm(prompt.text);
+  const WINDOW = 48;
+  for (let i = 0; i + WINDOW <= rules.length; i += 12) if (out.includes(rules.slice(i, i + WINDOW))) return true;
+  return false;
+}

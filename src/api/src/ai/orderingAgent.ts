@@ -13,7 +13,7 @@ import { formatMoney } from '../services/money.js';
 import type { SettingsService } from '../services/settings.js';
 import type { AiGateway } from './gateway.js';
 import type { AiBlock, AiMessage, AiTool } from './client.js';
-import { definePrompt, UNTRUSTED_INPUT_RULES } from './prompts.js';
+import { definePrompt, leaksPrompt, UNTRUSTED_INPUT_RULES } from './prompts.js';
 
 /** Version 1 of the ordering prompt. A change is a new version; the customer's words are never part of it. */
 export const ORDER_AGENT_PROMPT = definePrompt('order-agent', 1, `You help customers of an online shop order from its chat. The customer may write English, Hindi (Devanagari) or Hinglish (Hindi in Latin letters); always answer in the customer's own language and style, in one or two short sentences.
@@ -74,7 +74,7 @@ export class OrderingAgent {
 
       for (let step = 0; step < MAX_STEPS; step++) {
         const res = await this.gateway.run({ prompt: ORDER_AGENT_PROMPT, messages, tools: TOOLS, maxTokens: 400 });
-        if (!res.toolUses.length) return this.finish(res.text, customer.id);
+        if (!res.toolUses.length) return leaksPrompt(res.text, ORDER_AGENT_PROMPT) ? undefined : this.finish(res.text, customer.id);
         messages.push({ role: 'assistant', content: res.content as AiBlock[] });
         const results: AiBlock[] = [];
         let end: BotReply | undefined;

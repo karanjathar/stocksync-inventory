@@ -7,7 +7,7 @@ import type { SettingsService } from '../services/settings.js';
 import { formatMoney } from '../services/money.js';
 import type { AiGateway } from './gateway.js';
 import type { AiBlock, AiMessage, AiTool } from './client.js';
-import { definePrompt, UNTRUSTED_INPUT_RULES } from './prompts.js';
+import { definePrompt, leaksPrompt, UNTRUSTED_INPUT_RULES } from './prompts.js';
 
 export const ASSISTANT_PROMPT = definePrompt('inventory-assistant', 1, `You are the inventory assistant inside a shop-management app. You answer questions from the shop's own staff about their stock, sales, reorders and orders. Answer in the language the user writes in (English, Hindi or Hinglish), briefly.
 
@@ -64,7 +64,7 @@ export class InventoryAssistant {
     const figures: Figure[] = [];
     for (let step = 0; step < MAX_STEPS; step++) {
       const res = await this.gateway.run({ prompt: ASSISTANT_PROMPT, messages, tools: TOOLS, maxTokens: 600 });
-      if (!res.toolUses.length) return { answer: res.text.trim() || 'I could not work that out. Please try asking another way.', figures };
+      if (!res.toolUses.length) return { answer: res.text.trim() && !leaksPrompt(res.text, ASSISTANT_PROMPT) ? res.text.trim() : 'I could not work that out. Please try asking another way.', figures };
       messages.push({ role: 'assistant', content: res.content as AiBlock[] });
       const results: AiBlock[] = [];
       for (const use of res.toolUses) {
