@@ -213,6 +213,30 @@ Customers say "hi" and tap **Browse / My cart / My orders**, choose a category a
 
 Refunds are **not** issued automatically: you do them in Razorpay and then record them in StockSync.
 
+### 5.8 Verify against the real services (test keys, ~15 minutes)
+
+The automated tests use fakes that follow the providers' documentation. This run checks that reality matches. It needs **test** credentials only and costs nothing (the Razorpay link is ₹1 and is cancelled; WhatsApp test-number messages are free).
+
+```bash
+export RAZORPAY_KEY_ID=rzp_test_...   RAZORPAY_KEY_SECRET=...        # Razorpay → Test Mode → API Keys
+node scripts/verify/real-services.mjs razorpay
+```
+It refuses to run with a non-`rzp_test_` key. Expect 4 PASS lines. Open the printed link and pay with the test UPI id `success@razorpay`.
+
+```bash
+export RAZORPAY_WEBHOOK_SECRET=...                                    # the secret you set on the test webhook
+node scripts/verify/real-services.mjs razorpay-webhook 8787           # then expose :8787 with a tunnel (cloudflared / ngrok)
+```
+Set the test webhook URL to the tunnel, pay a link, and confirm `real webhook signature valid (payment_link.paid)` appears. If it prints FAIL or different payload keys, **stop and tell the engineer**: the app's parser needs a fix (file it with `engine add-task`).
+
+```bash
+export WHATSAPP_TOKEN=...  WHATSAPP_PHONE_NUMBER_ID=...  VERIFY_WHATSAPP_TO=91XXXXXXXXXX
+node scripts/verify/real-services.mjs whatsapp
+```
+First send any message to the test number from `VERIFY_WHATSAPP_TO` (this opens the 24-hour window). Expect 4 PASS lines (buttons, list, pay button, template). On the phone, tap a button and check the Inbox shows the tap, and that the message ticks go sent → delivered → read.
+
+Paste the PASS/FAIL output into `docs/7_SECURITY_AUDIT.md` under "Real-service verification". Until that is done, payments and WhatsApp are verified **only against fakes**.
+
 ## 6. Local development
 ```bash
 cp .env.example .env               # fill in values; .env is git-ignored
