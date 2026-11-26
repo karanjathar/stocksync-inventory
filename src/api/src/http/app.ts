@@ -20,6 +20,7 @@ import { channelRoutes, messageRoutes } from './routes/messages.js';
 import { publicRoutes, uploadRoutes } from './routes/public.js';
 import { paymentRoutes } from './routes/payments.js';
 import { opsRoutes } from './routes/ops.js';
+import { purchaseOrderRoutes } from './routes/purchaseOrders.js';
 import { pendingMigrations } from '../db/migrate.js';
 import { categoryRoutes, customerRoutes, productRoutes, supplierRoutes, warehouseRoutes } from './routes/catalog.js';
 
@@ -102,6 +103,7 @@ export function createApp(c: Container, opts: AppOptions = {}): Express {
   api.use('/uploads', secure, uploadRoutes(c));
   api.use('/payments', secure, paymentRoutes(c));
   api.use('/ops', secure, opsRoutes(c));
+  api.use('/purchase-orders', secure, purchaseOrderRoutes(c));
   api.get('/dashboard', secure, async (_req, res) => { res.json(await dashboardStats(pool)); });
 
   app.use('/api', api);
