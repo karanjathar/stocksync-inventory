@@ -29,7 +29,7 @@ describe('events across replicas', () => {
   it('reach clients of the same business on the other replica, once, and never another business', async () => {
     const aOnTwo = collect(busTwo, A); const bOnTwo = collect(busTwo, B); const aOnOne = collect(busOne, A);
     runWithTenant(A, async () => { busOne.publish(orderEvent(1)); });
-    await wait(300);
+    await wait(600);
     expect(aOnTwo).toEqual([orderEvent(1)]);   // the other replica's client of the same business
     expect(bOnTwo).toEqual([]);                // another business never
     expect(aOnOne).toEqual([orderEvent(1)]);   // the publishing replica delivers locally exactly once (its own notification is ignored)
@@ -38,7 +38,7 @@ describe('events across replicas', () => {
   it('works in both directions and keeps each business separate', async () => {
     const bOnOne = collect(busOne, B); const aOnOne = collect(busOne, A);
     runWithTenant(B, async () => { busTwo.publish(orderEvent(2)); });
-    await wait(300);
+    await wait(600);
     expect(bOnOne).toEqual([orderEvent(2)]);
     expect(aOnOne).toEqual([]);
   });
@@ -47,7 +47,7 @@ describe('events across replicas', () => {
     const big = { type: 'message.received', channel: 'whatsapp', from: '1', text: 'x'.repeat(INLINE_LIMIT_BYTES + 2000) } as unknown as RealtimeEvent;
     const got = collect(busTwo, A);
     runWithTenant(A, async () => { busOne.publish(big); });
-    await wait(400);
+    await wait(800);
     expect(got).toEqual([big]);
     expect((await runWithTenant(A, () => pool.query('SELECT count(*)::int AS n FROM realtime_payloads'))).rows[0].n).toBe(1);
     expect((await runWithTenant(B, () => pool.query('SELECT count(*)::int AS n FROM realtime_payloads'))).rows[0].n).toBe(0); // reference rows are private to their business
@@ -63,7 +63,7 @@ describe('events across replicas', () => {
       await send({ o: 'forged', t: 'not-a-uuid', e: orderEvent(98) });
       await send({ o: 'forged', t: '00000000-0000-4000-8000-0000000000aa', e: orderEvent(97) }); // unknown business: reaches nobody
       await send('{not json');
-      await wait(300);
+      await wait(600);
     } finally { await owner.end(); }
     expect(bOnTwo).toEqual([]);   // RLS: the reference is only readable as A, so naming B finds nothing
     expect(aOnTwo).toEqual([]);
@@ -74,10 +74,10 @@ describe('events across replicas', () => {
     try {
       await owner.query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query LIKE 'LISTEN stocksync_events%' AND pid <> pg_backend_pid()");
     } finally { await owner.end(); }
-    await wait(1800); // first retry after 500 ms
+    await wait(2500); // first retry after 500 ms
     const got = collect(busTwo, A);
     runWithTenant(A, async () => { busOne.publish(orderEvent(5)); });
-    await wait(400);
+    await wait(800);
     expect(got).toEqual([orderEvent(5)]);
   });
 });

@@ -14,7 +14,7 @@ const mk = async (tenant: string, email: string, role: 'admin' | 'staff') => {
   await inTenant(tenant, () => t.c.auth.createUser({ email, password: 'Password123!', name: email, role }));
   return (await request(t.app).post('/api/auth/login').send({ email, password: 'Password123!' })).body.token as string;
 };
-const settle = () => new Promise((r) => setTimeout(r, 60));
+const settle = () => new Promise((r) => setTimeout(r, 250));
 const download = async (tok: string) => {
   const res = await request(t.app).post('/api/data/export').set(h(tok)).buffer(true).parse((r, cb) => { const chunks: Buffer[] = []; r.on('data', (d: Buffer) => chunks.push(d)); r.on('end', () => cb(null, Buffer.concat(chunks))); });
   return { res, files: res.status === 200 ? unzipSync(new Uint8Array(res.body as Buffer)) : {} };

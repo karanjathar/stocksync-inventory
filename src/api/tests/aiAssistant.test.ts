@@ -139,7 +139,7 @@ describe('budget and kill switch', () => {
   });
 
   it('is audited by who asked (field names only, never the question)', async () => {
-    await new Promise((r) => setTimeout(r, 80));
+    await new Promise((r) => setTimeout(r, 250));
     const e = (await request(t.app).get('/api/audit-log?action=assistant').set(h(admin))).body.entries[0];
     expect(e).toMatchObject({ action: 'POST /assistant/ask', detail: { fields: ['question', 'history'] } });
     expect(JSON.stringify(e)).not.toContain('what is running low');

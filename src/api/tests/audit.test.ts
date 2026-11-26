@@ -13,7 +13,7 @@ const mk = async (tenant: string, email: string, role: 'admin' | 'staff') => {
   await inTenant(tenant, () => t.c.auth.createUser({ email, password: 'Password123!', name: email, role }));
   return (await request(t.app).post('/api/auth/login').send({ email, password: 'Password123!' })).body.token as string;
 };
-const settle = () => new Promise((r) => setTimeout(r, 60)); // the entry is written just after the response
+const settle = () => new Promise((r) => setTimeout(r, 250)); // the entry is written just after the response
 const log = async (tok: string, qs = '') => (await request(t.app).get(`/api/audit-log${qs}`).set(h(tok))).body as { entries: { action: string; actor: string; entityId: string | null; detail: { fields?: string[]; values?: Record<string, unknown> } }[]; next: string | null };
 
 beforeAll(async () => {

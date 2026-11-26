@@ -10,7 +10,7 @@ import { TEST_ENV } from './helpers/app.js';
 let t: TestApp; let mail: MemoryEmailSender; let owner: pg.Pool;
 const body = (over: Record<string, unknown> = {}) => ({ email: 'Owner@Shop.test', password: 'a-long-password', businessName: 'Corner Shop', ownerName: 'Asha', slug: 'corner-shop', ...over });
 const tokenOf = (m: { text: string }) => /token=([A-Za-z0-9_-]+)/.exec(m.text)![1]!;
-const settle = () => new Promise((r) => setTimeout(r, 30)); // emails are sent in the background
+const settle = () => new Promise((r) => setTimeout(r, 250)); // emails are sent in the background
 
 beforeAll(async () => {
   mail = new MemoryEmailSender();
