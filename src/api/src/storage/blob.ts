@@ -28,11 +28,12 @@ export class ImageStorage {
     await this.container?.createIfNotExists({ access: 'blob' });
   }
 
-  async createUploadSas(contentType: string): Promise<{ uploadUrl: string; blobUrl: string }> {
+  /** Blobs are named `<businessId>/<year>/<random>.<ext>`: unguessable, and one prefix per business for export and deletion. */
+  async createUploadSas(contentType: string, tenantId: string): Promise<{ uploadUrl: string; blobUrl: string }> {
     if (!this.container) throw new NotConfiguredError('Azure Blob Storage');
     const ext = EXT[contentType];
     if (!ext) throw new NotConfiguredError(`Uploads of ${contentType}`);
-    const blob = this.container.getBlockBlobClient(`${new Date().getUTCFullYear()}/${randomUUID()}.${ext}`);
+    const blob = this.container.getBlockBlobClient(`${tenantId}/${new Date().getUTCFullYear()}/${randomUUID()}.${ext}`);
     const uploadUrl = await blob.generateSasUrl({
       permissions: BlobSASPermissions.parse('cw'),
       startsOn: new Date(Date.now() - 60_000), // tolerate small clock skew

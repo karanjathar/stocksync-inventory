@@ -5,7 +5,7 @@ import type { Container } from '../../container.js';
 import { ConflictError, InsufficientStockError, NotFoundError } from '../../domain/errors.js';
 import type { PaymentMethod } from '../../domain/types.js';
 import { ALLOWED_IMAGE_TYPES } from '../../storage/blob.js';
-import { requireRole } from '../middleware/auth.js';
+import { currentUser, requireRole } from '../middleware/auth.js';
 import { parse } from '../validate.js';
 import { runWithTenant } from '../../db/tenant.js';
 import { renderInvoicePdf } from '../../services/invoicePdf.js';
@@ -175,7 +175,7 @@ export function uploadRoutes(c: Container): Router {
   r.get('/status', (_req, res) => { res.json({ configured: c.images.isConfigured() }); });
   r.post('/image-sas', requireRole('staff'), async (req, res) => {
     const { contentType } = parse(sasSchema, req.body);
-    res.json(await c.images.createUploadSas(contentType));
+    res.json(await c.images.createUploadSas(contentType, currentUser(req).tenantId));
   });
   return r;
 }

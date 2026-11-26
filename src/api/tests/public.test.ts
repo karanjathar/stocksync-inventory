@@ -35,7 +35,7 @@ describe('image upload SAS', () => {
   it('issues a short-lived write-only SAS for images', async () => {
     const res = await request(t.app).post('/api/uploads/image-sas').set(auth(staff)).send({ filename: 'red tee.PNG', contentType: 'image/png' });
     expect(res.status).toBe(200);
-    expect(res.body.blobUrl).toMatch(/^http:\/\/127\.0\.0\.1:10000\/devstoreaccount1\/product-images\/\d{4}\/[0-9a-f-]{36}\.png$/);
+    expect(res.body.blobUrl).toMatch(/^http:\/\/127\.0\.0\.1:10000\/devstoreaccount1\/product-images\/[0-9a-f-]{36}\/\d{4}\/[0-9a-f-]{36}\.png$/); // <business id>/<year>/<random>
     const sas = new URL(res.body.uploadUrl).searchParams;
     expect(sas.get('sp')).toBe('cw');
     expect(sas.get('sig')).toBeTruthy();
@@ -48,7 +48,7 @@ describe('image upload SAS', () => {
     expect((await request(t.app).post('/api/uploads/image-sas').set(auth(await t.token('viewer'))).send({ filename: 'x.png', contentType: 'image/png' })).status).toBe(403);
     const unconfigured = new ImageStorage(undefined, 'product-images');
     expect(unconfigured.isConfigured()).toBe(false);
-    await expect(unconfigured.createUploadSas('image/png')).rejects.toMatchObject({ status: 501, code: 'NOT_CONFIGURED' });
+    await expect(unconfigured.createUploadSas('image/png', 'tenant-1')).rejects.toMatchObject({ status: 501, code: 'NOT_CONFIGURED' });
   });
 });
 

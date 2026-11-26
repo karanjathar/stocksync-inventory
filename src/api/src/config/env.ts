@@ -23,6 +23,8 @@ const schema = z.object({
     .refine((v) => /^postgres(ql)?:\/\//.test(v), 'must be a postgres:// connection string'),
   DATABASE_SSL: bool,
   /** Restricted role the app serves requests as, so row-level security applies (D-018). The connecting user must be allowed to SET ROLE to it. */
+  /** Stronger setup: connect AS the restricted login role (no SET ROLE, so injected SQL cannot RESET ROLE back to the owner). Migrations still use DATABASE_URL. */
+  DATABASE_APP_URL: z.string().url().optional(),
   DB_APP_ROLE: z.string().regex(/^[a-z_][a-z0-9_]{0,62}$/).default('stocksync_app'),
   /** `default`: requests, jobs and webhooks without a tenant context run as the default tenant (single-business mode, until T94/T95). `off`: strict. */
   /** Restricted role for the platform console (manages businesses, reads no business data). */

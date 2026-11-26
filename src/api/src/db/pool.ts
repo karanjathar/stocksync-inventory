@@ -15,6 +15,11 @@ export interface PoolOptions {
    * request on it (docs/3_SCHEMAS.md 3.22). Without it the pool is the unrestricted owner pool: migrations and platform code only.
    */
   appRole?: string;
+  /**
+   * Bind the tenant of the current request on every checkout WITHOUT switching roles: for a pool whose connection is already the restricted login role
+   * (DATABASE_APP_URL). This is the stronger setup: with SET ROLE, injected SQL could `RESET ROLE` back to the owner; a login role has nowhere to go back to.
+   */
+  scoped?: boolean;
   /** Tenant used when no tenant context is active. Temporary single-tenant compatibility (tests, jobs and webhooks until they resolve their own tenant). */
   fallbackTenantId?: string;
 }
@@ -23,26 +28,34 @@ export type Queryable = Pick<pg.Pool, 'query'>;
 
 const quoteIdent = (name: string) => `"${name.replace(/"/g, '""')}"`;
 
-export function createPool({ connectionString, ssl, max = 10, appRole, fallbackTenantId }: PoolOptions): pg.Pool {
+export function createPool({ connectionString, ssl, max = 10, appRole, scoped, fallbackTenantId }: PoolOptions): pg.Pool {
   const pool = new pg.Pool({
     connectionString,
     max,
     // Azure Database for PostgreSQL requires TLS; certificates are validated.
     ssl: ssl ? { rejectUnauthorized: true } : undefined,
   });
-  if (!appRole) return pool;
+  if (!appRole && !scoped) return pool;
 
-  // Per physical connection: which role it was switched to and which tenant it is currently bound to.
-  const roleReady = new WeakSet<pg.PoolClient>();
+  // Per physical connection: which tenant it is currently bound to.
   const boundTo = new WeakMap<pg.PoolClient, string>();
   const rawConnect = pool.connect.bind(pool) as () => Promise<pg.PoolClient>;
 
-  /** Switches the connection to the restricted role (once) and to the tenant of the current context. Fails closed: any error discards the connection. */
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  /**
+   * Binds the connection to the restricted role AND the tenant of the current context on EVERY checkout, in one round trip. Re-asserting the role
+   * each time means injected SQL that ran RESET ROLE can only affect the checkout it ran in. Fails closed: any error discards the connection.
+   */
   const bind = async (client: pg.PoolClient): Promise<void> => {
     try {
-      if (!roleReady.has(client)) { await client.query(`SET ROLE ${quoteIdent(appRole)}`); roleReady.add(client); }
       const want = currentTenantId() ?? fallbackTenantId ?? '';
-      if (boundTo.get(client) !== want) { await client.query("SELECT set_config('app.tenant_id', $1, false)", [want]); boundTo.set(client, want); }
+      if (want !== '' && !UUID_RE.test(want)) throw new Error('invalid tenant id');
+      if (appRole) {
+        await client.query(`SET ROLE ${quoteIdent(appRole)}; SELECT set_config('app.tenant_id', '${want}', false)`); // want is a validated uuid or ''
+      } else if (boundTo.get(client) !== want) {
+        await client.query("SELECT set_config('app.tenant_id', $1, false)", [want]);
+        boundTo.set(client, want);
+      }
     } catch (err) {
       client.release(err instanceof Error ? err : new Error(String(err))); // a connection in an unknown state is destroyed, never reused
       throw err;

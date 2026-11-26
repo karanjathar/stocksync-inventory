@@ -223,3 +223,25 @@ All reproduced before fixing; every fix has a regression test.
 7. **A refund whose webhook never arrives** leaves the order REFUND_DUE with a PENDING refund; staff can use Mark refunded after checking the Razorpay dashboard.
 8. **The offline queue lives in the browser's IndexedDB** and is readable by anyone using that device profile; it holds only product ids and quantities, no personal data.
 9. **Barcode lookups are authenticated but not separately rate-limited**; they sit under the general API limiter.
+
+## 7.R5a Tenancy security review (T95)
+
+Scope: isolation between businesses on the shared database. Suite: `src/api/tests/securityTenancy.test.ts` (15 tests), run on every gate.
+
+| # | Area | Result |
+|---|---|---|
+| 1 | IDOR matrix: every parameterised route (30 entries) called by business B with business A's ids | All 404 (refund 501 / invoice 409 only where a precondition fails before any lookup, identical for every id); A's data byte-identical afterwards |
+| 2 | Route-table guard: any new parameterised route fails the suite until it is in the matrix or a reviewed exemption | In place; also guards new top-level API mounts |
+| 3 | Foreign ids in request bodies (category, customer, product, warehouse, supplier, count, default warehouse) | All refused 400/404/409; raw SQL refused by composite foreign keys (migration 017) |
+| 4 | SQL injection payloads in search/filter parameters | No 5xx, no widening of results (parameterised queries throughout) |
+| 5 | Database role escape: DDL, COPY PROGRAM, DISABLE RLS, platform tables, role creation | All denied for the app role |
+| 6 | Forged tokens: wrong tenant for a user, wrong secret, expired, `alg:none`, platform type | All 401 |
+| 7 | Webhook spoofing: the operator's own Meta secret against another business's URL | Refused; the default business is unaffected |
+| 8 | Slug enumeration: suspended vs unknown shop | Byte-identical responses |
+
+Findings
+- **R5-01 (medium, fixed): `SET ROLE` was applied once per physical connection.** Injected SQL that ran `RESET ROLE` left that pooled connection as the owner (RLS bypass) for later requests. The pool now re-asserts the role and tenant on every checkout in one round trip, so the effect lasts one checkout at most. Regression test included.
+- **R5-02 (info, documented): `SET ROLE` mode can never be fully safe against injection**, because the session user is the owner. Production should set `DATABASE_APP_URL` (restricted login role); the suite shows `RESET ROLE` and `SET ROLE postgres` do nothing there.
+- **R5-03 (info):** a primary-key collision on `stock_levels (product_id, warehouse_id)` can only be provoked by raw SQL that already knows another business's ids; not reachable via the API.
+
+Accepted / open: `TENANT_FALLBACK=default` must be removed before sign-up opens (T96). Ciphertext swap between businesses and platform-console isolation are covered in `tenantChannels.test.ts` and `tenantAuth.test.ts`.

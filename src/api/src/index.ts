@@ -26,7 +26,7 @@ async function main(): Promise<void> {
   if (applied.length) logger.info({ applied }, 'database migrations applied');
   const defaultTenant = (await ownerPool.query<{ id: string }>("SELECT id FROM tenants WHERE slug = 'default'")).rows[0]?.id;
   await ownerPool.end();
-  const pool = createPool({ connectionString: env.DATABASE_URL, ssl: env.DATABASE_SSL, appRole: env.DB_APP_ROLE, ...(env.TENANT_FALLBACK === 'default' && defaultTenant ? { fallbackTenantId: defaultTenant } : {}) });
+  const pool = createPool({ connectionString: env.DATABASE_APP_URL ?? env.DATABASE_URL, ssl: env.DATABASE_SSL, ...(env.DATABASE_APP_URL ? { scoped: true } : { appRole: env.DB_APP_ROLE }), ...(env.TENANT_FALLBACK === 'default' && defaultTenant ? { fallbackTenantId: defaultTenant } : {}) });
   await assertAppRoleIsRestricted(pool);
   const platformPool = createPool({ connectionString: env.DATABASE_URL, ssl: env.DATABASE_SSL, max: 3, appRole: env.DB_PLATFORM_ROLE });
 
