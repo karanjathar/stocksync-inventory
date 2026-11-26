@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth';
 import { useAction, useApi } from '../hooks';
 import { dateTime } from '../format';
 import { Badge, Card, Empty, ErrorBanner, Field, Page } from '../components/ui';
 import { Scanner } from '../components/Scanner';
+import { offlineQueue } from '../offlineQueue';
 import type { Product, StockCount, Warehouse } from '../api/types';
 
 type Summary = Omit<StockCount, 'lines'>;
@@ -27,6 +28,30 @@ export function StockCounts() {
   const [attachTo, setAttachTo] = useState('');
   const [note, setNote] = useState<string | null>(null);
   const action = useAction();
+  const countsRef = useRef<Summary[]>([]);
+  countsRef.current = counts.data ?? [];
+  const [waiting, setWaiting] = useState(0);
+  const [syncNote, setSyncNote] = useState<string | null>(null);
+
+  const refreshWaiting = () => { offlineQueue.size().then(setWaiting).catch(() => setWaiting(0)); };
+  const sync = async () => {
+    if (navigator.onLine === false) return;
+    const res = await offlineQueue.flush(async (item) => { await api(`/stock-counts/${item.countId}/lines`, { method: 'PUT', body: { lines: item.lines } }); });
+    refreshWaiting();
+    if (res.conflicts.length) {
+      const numbers = new Map(countsRef.current.map((c) => [c.id, c.number]));
+      setSyncNote(res.conflicts.map((c) => `Count #${numbers.get(c.countId) ?? '?'} could not be synced: ${c.message}`).join(' · '));
+    }
+    if (res.sent.length) { counts.reload(); setSyncNote((n) => n ?? 'Offline counts synced.'); setActive((a) => { if (a && res.sent.includes(a.id)) void openCount(a.id); return a; }); }
+  };
+  // Flush on load and whenever the connection returns.
+  useEffect(() => {
+    refreshWaiting();
+    void sync();
+    const onOnline = () => { void sync(); };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, []);
 
   const show = (c: StockCount) => { setActive(c); setLines(toLines(c)); setDirty(false); };
   useEffect(() => { setUnknown(null); setNote(null); }, [active?.id]);
@@ -47,6 +72,9 @@ export function StockCounts() {
   const onScan = async (raw: string) => {
     const code = raw.trim().toUpperCase();
     setUnknown(null);
+    const local = products.data?.find((p) => p.barcode?.toUpperCase() === code); // instant, and works without a connection
+    if (local) { addProduct(local); return; }
+    if (navigator.onLine === false) { setUnknown(code); return; }
     try {
       addProduct(await api<Product>(`/products/by-barcode/${encodeURIComponent(code)}`));
     } catch (e) {
@@ -64,13 +92,36 @@ export function StockCounts() {
   const save = async (): Promise<StockCount | undefined> => {
     if (!active) return undefined;
     if (!lines.length) return active;
-    const c = await action.run(() => api<StockCount>(`/stock-counts/${active.id}/lines`, { method: 'PUT', body: { lines: lines.map((l) => ({ productId: l.productId, countedQuantity: l.counted })) } }));
+    const body = lines.map((l) => ({ productId: l.productId, countedQuantity: l.counted }));
+    const keepOnDevice = async (): Promise<undefined> => {
+      await offlineQueue.add(active.id, body);
+      setDirty(false); refreshWaiting();
+      setNote('No connection: your counts are saved on this device and will sync automatically.');
+      return undefined;
+    };
+    if (navigator.onLine === false) return keepOnDevice();
+    // A failed request (not an error answer from the server) means the connection is gone: keep the counts on the device instead.
+    const c = await action.run(async () => {
+      try {
+        return await api<StockCount>(`/stock-counts/${active.id}/lines`, { method: 'PUT', body: { lines: body } });
+      } catch (e) {
+        if (e instanceof TypeError) { await keepOnDevice(); return undefined; }
+        throw e;
+      }
+    });
     if (c) { show(c); setNote('Counts saved.'); }
     return c;
   };
 
   const submit = async () => {
     if (!active) return;
+    if (navigator.onLine === false) {
+      if (dirty) await save(); // keep the latest numbers on the device
+      action.setError('You are offline. Your counts are saved on this device; submit once you are back online.');
+      return;
+    }
+    await sync(); // anything captured offline must reach the server before the count is submitted
+    if ((await offlineQueue.size()) > 0) { action.setError('Some counts are still waiting to sync. Try again in a moment.'); return; }
     const saved = dirty ? await save() : active;
     if (!saved) return;
     const changed = saved.lines.filter((l) => l.variance !== 0).length;
@@ -89,6 +140,12 @@ export function StockCounts() {
   return (
     <Page title="Stock counts" actions={active && <button onClick={() => setActive(null)}>← All counts</button>}>
       <ErrorBanner error={action.error ?? counts.error} />
+      {waiting > 0 && (
+        <div className="banner" role="status">
+          {waiting} count{waiting === 1 ? '' : 's'} waiting to sync <button className="small" onClick={() => void sync()}>Sync now</button>
+        </div>
+      )}
+      {syncNote && <div className="banner">{syncNote}</div>}
       {note && <div className="banner ok" role="status">{note}</div>}
       {!active && (
         <>

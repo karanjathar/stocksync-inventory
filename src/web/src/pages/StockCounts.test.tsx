@@ -5,12 +5,13 @@ import { Scanner } from '../components/Scanner';
 import { StockCounts } from './StockCounts';
 import { StockOperation } from './StockOperation';
 import { mockApi } from '../test/setup';
+import { offlineQueue } from '../offlineQueue';
 
 const auth = vi.hoisted(() => ({ role: 'staff' as 'staff' | 'viewer' }));
 vi.mock('../auth', () => ({ useAuth: () => ({ can: (r: string) => r === 'viewer' || auth.role === 'staff', user: { id: 'u', role: auth.role } }) }));
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-afterEach(() => { vi.unstubAllGlobals(); Reflect.deleteProperty(window, 'BarcodeDetector'); });
+afterEach(async () => { vi.unstubAllGlobals(); Reflect.deleteProperty(window, 'BarcodeDetector'); await offlineQueue.flush(async () => {}); });
 
 describe('Scanner', () => {
   it('submits a typed or keyboard-wedge scan on Enter, trims it, and clears the box', () => {
@@ -76,7 +77,8 @@ describe('Stock counts page', () => {
     auth.role = 'staff';
     const calls = mockApi({ ...base(), 'POST /stock-counts': count() });
     renderPage();
-    fireEvent.change(await screen.findByLabelText('Warehouse'), { target: { value: 'w1' } });
+    await screen.findByRole('option', { name: /MAIN/ }); // the list loads after the dropdown appears
+    fireEvent.change(screen.getByLabelText('Warehouse'), { target: { value: 'w1' } });
     fireEvent.click(screen.getByRole('button', { name: 'Start count' }));
     await waitFor(() => expect(calls.some((c) => c.method === 'POST' && c.path === '/stock-counts')).toBe(true));
     expect(calls.find((c) => c.method === 'POST')!.body).toEqual({ warehouseId: 'w1' });
@@ -150,3 +152,72 @@ describe('Stock operation barcode scan', () => {
     expect(await within(screen.getByRole('form', { name: 'Stock operation' })).findByText(/No product has barcode NOPE-0001/)).toBeInTheDocument();
   });
 });
+
+describe('working offline', () => {
+  const openCountWithTee = async () => {
+    auth.role = 'staff';
+    fireEvent.click(await screen.findByRole('button', { name: /#3/ }));
+    await screen.findByLabelText('Scan or type a barcode');
+    scan('4006381333931');
+    await screen.findByLabelText('Counted TEE');
+  };
+  const online = (value: boolean) => vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(value);
+  const lineBody = { lines: [{ productId: 'p1', countedQuantity: 1 }] };
+
+  it('scans known products from the local list without any network call', async () => {
+    const calls = mockApi(base());
+    online(false);
+    renderPage();
+    await openCountWithTee();
+    expect(calls.some((c) => c.path.startsWith('/products/by-barcode/'))).toBe(false);
+  });
+
+  it('keeps counts on the device when offline, shows how many are waiting, and syncs when the connection returns', async () => {
+    const calls = mockApi({ ...base(), 'PUT /stock-counts/c1/lines': count() });
+    const net = online(false);
+    renderPage();
+    await openCountWithTee();
+    fireEvent.click(screen.getByRole('button', { name: 'Save counts' }));
+    expect(await screen.findByText(/1 count waiting to sync/)).toBeInTheDocument();
+    expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    expect(await offlineQueue.size()).toBe(1);
+
+    net.mockReturnValue(true);
+    window.dispatchEvent(new Event('online'));
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true));
+    expect(calls.find((c) => c.method === 'PUT')!.body).toEqual(lineBody);
+    await waitFor(() => expect(screen.queryByText(/waiting to sync/)).not.toBeInTheDocument());
+    expect(await offlineQueue.size()).toBe(0);
+  });
+
+  it('treats a failed request like being offline: nothing is lost', async () => {
+    mockApi({ ...base(), 'PUT /stock-counts/c1/lines': () => { throw new TypeError('Failed to fetch'); } });
+    renderPage();
+    await openCountWithTee();
+    fireEvent.click(screen.getByRole('button', { name: 'Save counts' }));
+    expect(await screen.findByText(/1 count waiting to sync/)).toBeInTheDocument();
+    expect(await offlineQueue.size()).toBe(1);
+  });
+
+  it('tells the person when a waiting count could not be applied because it was submitted meanwhile', async () => {
+    await offlineQueue.add('c1', [{ productId: 'p1', countedQuantity: 4 }]);
+    mockApi({ ...base(), 'PUT /stock-counts/c1/lines': () => new Response(JSON.stringify({ error: { code: 'CONFLICT', message: 'This count is already submitted' } }), { status: 409 }) });
+    auth.role = 'staff';
+    renderPage();
+    expect(await screen.findByText(/Count #3 could not be synced: This count is already submitted/)).toBeInTheDocument();
+    expect(await offlineQueue.size()).toBe(0);
+  });
+
+  it('refuses to submit while offline and says the counts are safe', async () => {
+    const calls = mockApi({ ...base(), 'PUT /stock-counts/c1/lines': count() });
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    online(false);
+    renderPage();
+    await openCountWithTee();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit count' }));
+    expect(await screen.findByText(/You are offline/)).toBeInTheDocument();
+    expect(calls.some((c) => c.path.endsWith('/submit'))).toBe(false);
+    expect(await offlineQueue.size()).toBe(1);
+  });
+});
+
