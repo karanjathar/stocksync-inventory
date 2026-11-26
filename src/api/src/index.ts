@@ -8,6 +8,7 @@ import { createContainer } from './container.js';
 import { createApp } from './http/app.js';
 import { startScheduler } from './jobs/scheduler.js';
 import { createShutdown } from './shutdown.js';
+import { PgBus } from './realtime/pgBus.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -48,6 +49,10 @@ async function main(): Promise<void> {
   const eraseTimer = c.tenantEraser ? setInterval(() => { void c.tenantEraser!.runDue().catch((err: unknown) => logger.warn({ err: String(err) }, 'business erasure run failed')); }, 30 * 60_000) : undefined;
   eraseTimer?.unref();
 
+  // Several API replicas: events published on one reach the dashboards connected to the others (Postgres LISTEN/NOTIFY).
+  const realtime = new PgBus({ connectionString: env.DATABASE_APP_URL ?? env.DATABASE_URL, ssl: env.DATABASE_SSL, pool, logger }, c.events);
+  await realtime.start();
+
   const here = path.dirname(fileURLToPath(import.meta.url));
   const staticDir = path.resolve(here, '../../web/dist');
   const app = createApp(c, { staticDir });
@@ -60,6 +65,7 @@ async function main(): Promise<void> {
   const shutdown = createShutdown([
     { name: 'http', run: () => new Promise<void>((resolve) => { server.close(() => resolve()); server.closeIdleConnections(); }) },
     { name: 'scheduler', run: async () => { stopScheduler(); } },
+    { name: 'realtime', run: async () => { await realtime.stop(); } },
     { name: 'jobs', run: () => c.jobs.stop() },
     { name: 'database', run: async () => { await platformPool.end(); await pool.end(); } },
   ], { timeoutMs: 25_000, exit: (code) => process.exit(code), log: (msg, data) => logger.info(data ?? {}, msg) });
