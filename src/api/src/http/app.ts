@@ -13,6 +13,8 @@ import { signupRoutes } from './routes/signup.js';
 import { onboardingRoutes } from './routes/onboarding.js';
 import { usageRoutes } from './routes/plans.js';
 import { billingRoutes } from './routes/billing.js';
+import { auditRoutes } from './routes/audit.js';
+import { auditTrail } from './middleware/audit.js';
 import { userRoutes } from './routes/users.js';
 import { stockRoutes } from './routes/stock.js';
 import { settingsRoutes } from './routes/settings.js';
@@ -96,7 +98,7 @@ export function createApp(c: Container, opts: AppOptions = {}): Express {
   api.use('/platform', platformRoutes(c));
 
   // Each group below requires a valid token.
-  const secure = requireAuth(c.auth);
+  const secure = [requireAuth(c.auth), auditTrail(c)];
   api.use('/users', secure, userRoutes(c));
   api.use('/categories', secure, categoryRoutes(c));
   api.use('/products', secure, productRoutes(c));
@@ -115,11 +117,12 @@ export function createApp(c: Container, opts: AppOptions = {}): Express {
   api.use('/onboarding', secure, onboardingRoutes(c));
   api.use('/usage', secure, usageRoutes(c));
   api.use('/billing', secure, billingRoutes(c));
+  api.use('/audit-log', secure, auditRoutes(c));
   api.use('/channel-config', secure, channelConfigRoutes(c));
   api.use('/purchase-orders', secure, purchaseOrderRoutes(c));
   api.use('/reorder-suggestions', secure, reorderRoutes(c));
   api.use('/stock-counts', secure, stockCountRoutes(c));
-  api.get('/dashboard', secure, async (_req, res) => { res.json(await dashboardStats(pool)); });
+  api.get('/dashboard', ...secure, async (_req, res) => { res.json(await dashboardStats(pool)); });
 
   app.use('/api', api);
   app.use('/api', notFoundHandler);

@@ -104,7 +104,7 @@ describe('guards: the matrix covers the real route table', () => {
   it('every top-level mount in app.ts is accounted for', () => {
     const src = readFileSync(new URL('../src/http/app.ts', import.meta.url), 'utf8');
     const mounts = [...src.matchAll(/api\.use\('\/([a-z-]+)'/g)].map((m) => m[1]!);
-    const known = ['auth', 'signup', 'public', 'platform', 'users', 'categories', 'products', 'warehouses', 'stock', 'suppliers', 'customers', 'settings', 'orders', 'messages', 'channels', 'uploads', 'payments', 'ops', 'channel-config', 'onboarding', 'usage', 'billing', 'purchase-orders', 'reorder-suggestions', 'stock-counts'];
+    const known = ['auth', 'signup', 'public', 'platform', 'users', 'categories', 'products', 'warehouses', 'stock', 'suppliers', 'customers', 'settings', 'orders', 'messages', 'channels', 'uploads', 'payments', 'ops', 'channel-config', 'onboarding', 'usage', 'billing', 'audit-log', 'purchase-orders', 'reorder-suggestions', 'stock-counts'];
     expect(mounts.filter((m) => !known.includes(m)), 'a new API area must be added to this suite deliberately').toEqual([]);
   });
 });

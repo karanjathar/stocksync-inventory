@@ -3,6 +3,8 @@ import jwt, { type SignOptions } from 'jsonwebtoken';
 import type pg from 'pg';
 import { NotFoundError, UnauthorizedError } from '../domain/errors.js';
 import type { Tenant, TenantStatus } from '../domain/types.js';
+import { runWithTenant } from '../db/tenant.js';
+import type { AuditInput } from './audit.js';
 
 const DUMMY_HASH = bcrypt.hashSync('dummy-password-for-timing', 4);
 export interface PlatformAdmin { id: string; email: string }
@@ -45,6 +47,24 @@ export class PlatformService {
   async listTenants(): Promise<Tenant[]> {
     const { rows } = await this.pool.query<Tenant>('SELECT id, slug, name, status, plan, created_at AS "createdAt" FROM tenants ORDER BY created_at');
     return rows;
+  }
+
+  /** Each business with its plan, subscription state and this month's metered usage. Counters and billing state only: never a business's own records. */
+  async overview(): Promise<(Tenant & { subscription: string | null; chatMessages: number; invoices: number })[]> {
+    const period = `${new Date().getUTCFullYear()}-${String(new Date().getUTCMonth() + 1).padStart(2, '0')}`;
+    const { rows } = await this.pool.query<Tenant & { subscription: string | null; chatMessages: number; invoices: number }>(
+      `SELECT t.id, t.slug, t.name, t.status, t.plan, t.created_at AS "createdAt", s.status AS subscription,
+              COALESCE((SELECT sum(used) FROM usage_counters u WHERE u.tenant_id = t.id AND u.metric = 'chat_messages' AND u.period = $1), 0)::int AS "chatMessages",
+              COALESCE((SELECT sum(used) FROM usage_counters u WHERE u.tenant_id = t.id AND u.metric = 'invoices' AND u.period = $1), 0)::int AS invoices
+       FROM tenants t LEFT JOIN subscriptions s ON s.tenant_id = t.id ORDER BY t.created_at`, [period]);
+    return rows;
+  }
+
+  /** Leaves a line in a business's own audit trail (write-only: the platform role cannot read it back). */
+  async audit(tenantId: string, admin: PlatformAdmin, e: Pick<AuditInput, 'action' | 'entity' | 'entityId' | 'detail'>): Promise<void> {
+    await runWithTenant(tenantId, () => this.pool.query(
+      'INSERT INTO audit_log (actor, action, entity, entity_id, detail) VALUES ($1, $2, $3, $4, $5)',
+      [`platform:${admin.email}`, e.action, e.entity ?? 'tenants', e.entityId ?? tenantId, JSON.stringify(e.detail ?? {})]));
   }
 
   /** Businesses whose background work should run. */

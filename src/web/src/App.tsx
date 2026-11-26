@@ -17,6 +17,8 @@ import { Inbox } from './pages/Inbox';
 import { SettingsPage } from './pages/SettingsPage';
 import { Users } from './pages/Users';
 import { Usage } from './pages/Usage';
+import { AuditLog } from './pages/AuditLog';
+import { Platform } from './pages/Platform';
 import { Shop } from './pages/Shop';
 import { ShopOrder } from './pages/ShopOrder';
 import { Account } from './pages/Account';
@@ -41,6 +43,7 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/platform" element={<Platform />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/verify-email" element={<VerifyEmail />} />
       <Route path="/shop" element={<Shop />} />
@@ -61,6 +64,7 @@ export function App() {
         <Route path="account" element={<Account />} />
         <Route path="settings" element={<RequireAuth role="admin"><SettingsPage /></RequireAuth>} />
         <Route path="users" element={<RequireAuth role="admin"><Users /></RequireAuth>} />
+        <Route path="activity" element={<RequireAuth role="admin"><AuditLog /></RequireAuth>} />
         <Route path="usage" element={<RequireAuth role="admin"><Usage /></RequireAuth>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

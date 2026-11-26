@@ -141,8 +141,8 @@ describe('guard: every table is either tenant-scoped with RLS or explicitly plat
       WHERE n.nspname = 'public' AND c.relkind = 'r'
         AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = 'tenant_id' AND NOT a.attisdropped)`);
     expect(rows.length).toBeGreaterThan(20);
-    for (const r of rows.filter((x) => !QUEUE_TABLES.includes(x.relname))) // subscriptions has two on purpose: a read-only policy for businesses and one for the platform role (webhooks write it).
-      expect(r, r.relname).toMatchObject({ relrowsecurity: true, policies: r.relname === 'subscriptions' ? 2 : 1 });
+    for (const r of rows.filter((x) => !QUEUE_TABLES.includes(x.relname))) // These have two on purpose: one for the business, one for the platform role (subscriptions: webhooks write; usage_counters: the console reads).
+      expect(r, r.relname).toMatchObject({ relrowsecurity: true, policies: ['subscriptions', 'usage_counters'].includes(r.relname) ? 2 : 1 });
   });
 
   it('no other table exists unless it is on the platform list (a new table must choose)', async () => {

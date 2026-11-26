@@ -25,14 +25,15 @@ export function platformRoutes(c: Container): Router {
     const { email, password } = parse(z.object({ email: z.string().trim().min(1).max(320), password: z.string().min(1).max(200) }), req.body);
     res.json(await platform.login(email, password));
   });
-  r.get('/tenants', requirePlatform, async (_req, res) => { res.json(await platform.listTenants()); });
+  r.get('/tenants', requirePlatform, async (_req, res) => { res.json(await platform.overview()); });
   r.get('/queue', requirePlatform, async (_req, res) => { res.json(await platform.queueOverview()); });
   r.patch('/tenants/:id', requirePlatform, async (req, res) => {
     const { status, plan } = parse(z.object({ status: z.enum(['ACTIVE', 'SUSPENDED']).optional(), plan: z.string().regex(/^[A-Z][A-Z0-9_]{1,19}$/).optional() })
       .refine((v) => v.status !== undefined || v.plan !== undefined, 'status or plan is required'), req.body);
     const id = idParam(req);
-    if (plan) await c.planAdmin!.assign(id, plan);
-    res.json(status ? await platform.setStatus(id, status) : (await platform.listTenants()).find((t) => t.id === id));
+    if (plan) { await c.planAdmin!.assign(id, plan); await platform.audit(id, req.platformAdmin!, { action: 'PLATFORM plan change', detail: { values: { plan } } }); }
+    if (status) { await platform.setStatus(id, status); await platform.audit(id, req.platformAdmin!, { action: status === 'SUSPENDED' ? 'PLATFORM suspend' : 'PLATFORM unsuspend', detail: { values: { status } } }); }
+    res.json((await platform.listTenants()).find((t) => t.id === id));
   });
   const limit = z.number().int().min(0).nullable();
   r.get('/plans', requirePlatform, async (_req, res) => { res.json(await c.planAdmin!.list()); });
