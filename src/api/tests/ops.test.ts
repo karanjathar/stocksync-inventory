@@ -68,7 +68,7 @@ describe('GET /api/ops/status', () => {
 
   it('reports queue depth, message health and the last maintenance runs', async () => {
     await t.pool.query('TRUNCATE jobs, channel_messages, maintenance_runs');
-    await t.pool.query(`INSERT INTO jobs (kind, status, run_at) VALUES ('a','pending', now() - interval '120 seconds'), ('a','pending', now()), ('a','running', now()), ('a','dead', now()), ('a','done', now())`);
+    await t.pool.query(`INSERT INTO jobs (kind, status, run_at, tenant_id) VALUES ('a','pending', now() - interval '120 seconds', current_tenant()), ('a','pending', now(), current_tenant()), ('a','running', now(), current_tenant()), ('a','dead', now(), current_tenant()), ('a','done', now(), current_tenant())`);
     await t.pool.query(`INSERT INTO channel_messages (channel, direction, external_user, text, status, created_at) VALUES
       ('whatsapp','out','1','f1','failed', now()), ('whatsapp','out','1','f2','failed', now() - interval '30 hours'),
       ('whatsapp','out','1','q','queued', now()), ('whatsapp','in','1','in','ok', now())`);

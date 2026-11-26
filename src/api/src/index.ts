@@ -40,7 +40,7 @@ async function main(): Promise<void> {
   }
 
   c.jobs.start({ concurrency: 4, pollMs: 1000 });
-  const stopScheduler = startScheduler(pool, c.jobs, (err) => logger.warn({ err: String(err) }, 'maintenance scheduling failed'));
+  const stopScheduler = startScheduler(pool, c.jobs, (err) => logger.warn({ err: String(err) }, 'maintenance scheduling failed'), 60_000, c.platform ? () => c.platform!.activeTenantIds() : undefined);
 
   const here = path.dirname(fileURLToPath(import.meta.url));
   const staticDir = path.resolve(here, '../../web/dist');

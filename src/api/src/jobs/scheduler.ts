@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { runWithTenant } from '../db/tenant.js';
 import type { JobQueue } from './queue.js';
 
 const TASKS = [
@@ -11,7 +12,12 @@ const TASKS = [
  * Safe with several replicas: the dedupe key keeps one pending/running job per task, and ran_at is written by the job itself.
  * Returns the tasks enqueued by this call.
  */
-export async function scheduleDue(pool: pg.Pool, queue: JobQueue): Promise<string[]> {
+export async function scheduleDue(pool: pg.Pool, queue: JobQueue, tenantIds?: string[]): Promise<string[]> {
+  if (tenantIds) { // one pass per business, each inside its own tenant context (its own runs, its own jobs)
+    const all: string[] = [];
+    for (const id of tenantIds) all.push(...(await runWithTenant(id, () => scheduleDue(pool, queue))));
+    return all;
+  }
   const { rows } = await pool.query<{ task: string; age_ms: number }>('SELECT task, extract(epoch FROM now() - ran_at) * 1000 AS age_ms FROM maintenance_runs');
   const age = new Map(rows.map((r) => [r.task, Number(r.age_ms)]));
   const enqueued: string[] = [];
@@ -24,8 +30,8 @@ export async function scheduleDue(pool: pg.Pool, queue: JobQueue): Promise<strin
 }
 
 /** Checks every minute whether a task is due. */
-export function startScheduler(pool: pg.Pool, queue: JobQueue, onError: (err: unknown) => void, tickMs = 60_000): () => void {
-  const tick = () => { scheduleDue(pool, queue).catch(onError); };
+export function startScheduler(pool: pg.Pool, queue: JobQueue, onError: (err: unknown) => void, tickMs = 60_000, tenantIds?: () => Promise<string[]>): () => void {
+  const tick = () => { (async () => scheduleDue(pool, queue, tenantIds ? await tenantIds() : undefined))().catch(onError); };
   tick();
   const timer = setInterval(tick, tickMs);
   return () => clearInterval(timer);

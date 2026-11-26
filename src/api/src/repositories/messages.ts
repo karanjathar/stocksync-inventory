@@ -45,10 +45,10 @@ export class MessagesRepo {
     const args = [m.channel, m.to, m.text.slice(0, 4096), m.status, m.options?.length ? JSON.stringify(m.options) : null, JSON.stringify(m.payload),
       m.payload.notify?.event ?? m.event ?? null, m.error?.code ?? null, m.error?.message ?? null];
     const insert = `INSERT INTO channel_messages (channel, direction, external_user, text, status, options, payload, event, error_code, error_message, created_at)
-       VALUES ($1, 'out', $2, $3, $4, $5, $6, $7, $8, $9, clock_timestamp()) RETURNING id`;
+       VALUES ($1, 'out', $2, $3, $4, $5, $6, $7, $8, $9, clock_timestamp()) RETURNING id, tenant_id`;
     const sql = m.status === 'queued'
-      ? `WITH m AS (${insert}), j AS (INSERT INTO jobs (kind, payload, dedupe_key, run_at)
-           SELECT 'message.send', jsonb_build_object('messageId', id), id::text, now() + interval '30 seconds' FROM m) SELECT id FROM m`
+      ? `WITH m AS (${insert}), j AS (INSERT INTO jobs (kind, payload, dedupe_key, run_at, tenant_id)
+           SELECT 'message.send', jsonb_build_object('messageId', id), id::text, now() + interval '30 seconds', tenant_id FROM m) SELECT id FROM m`
       : insert;
     const { rows } = await this.db.query<{ id: string }>(sql, args);
     return rows[0]!.id;
@@ -77,9 +77,9 @@ export class MessagesRepo {
   async requeueFailed(id: string): Promise<'ok' | 'missing' | 'conflict'> {
     const { rowCount } = await this.db.query(
       `WITH u AS (UPDATE channel_messages SET status = 'queued', error_code = NULL, error_message = NULL, status_at = now()
-                  WHERE id = $1 AND direction = 'out' AND status = 'failed' RETURNING id)
-       INSERT INTO jobs (kind, payload, dedupe_key) SELECT 'message.send', jsonb_build_object('messageId', id), id::text FROM u
-       ON CONFLICT (kind, dedupe_key) WHERE dedupe_key IS NOT NULL AND status IN ('pending','running') DO NOTHING`, [id]);
+                  WHERE id = $1 AND direction = 'out' AND status = 'failed' RETURNING id, tenant_id)
+       INSERT INTO jobs (kind, payload, dedupe_key, tenant_id) SELECT 'message.send', jsonb_build_object('messageId', id), id::text, tenant_id FROM u
+       ON CONFLICT ((COALESCE(tenant_id, '00000000-0000-0000-0000-000000000000'::uuid)), kind, dedupe_key) WHERE dedupe_key IS NOT NULL AND status IN ('pending','running') DO NOTHING`, [id]);
     if (rowCount) return 'ok';
     const exists = await this.db.query('SELECT 1 FROM channel_messages WHERE id = $1', [id]);
     return exists.rowCount ? 'conflict' : 'missing';

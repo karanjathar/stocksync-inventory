@@ -26,6 +26,7 @@ export function platformRoutes(c: Container): Router {
     res.json(await platform.login(email, password));
   });
   r.get('/tenants', requirePlatform, async (_req, res) => { res.json(await platform.listTenants()); });
+  r.get('/queue', requirePlatform, async (_req, res) => { res.json(await platform.queueOverview()); });
   r.patch('/tenants/:id', requirePlatform, async (req, res) => {
     const { status } = parse(z.object({ status: z.enum(['ACTIVE', 'SUSPENDED']) }), req.body);
     res.json(await platform.setStatus(idParam(req), status));

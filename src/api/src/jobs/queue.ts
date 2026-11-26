@@ -1,6 +1,7 @@
 import type { Queryable } from '../db/pool.js';
+import { currentTenantId, runWithTenant } from '../db/tenant.js';
 
-export interface Job { id: number; kind: string; payload: Record<string, unknown>; attempts: number; maxAttempts: number }
+export interface Job { id: number; kind: string; payload: Record<string, unknown>; attempts: number; maxAttempts: number; tenantId: string | null }
 export type JobHandler = (job: Job) => Promise<void>;
 export interface EnqueueOptions { runAt?: Date; dedupeKey?: string; maxAttempts?: number }
 export interface StartOptions { concurrency?: number; pollMs?: number }
@@ -18,7 +19,7 @@ export function backoffMs(attempts: number, rand: () => number = Math.random): n
   return Math.round(base * (0.8 + 0.4 * rand()));
 }
 
-interface JobRow { id: number; kind: string; payload: Record<string, unknown>; attempts: number; max_attempts: number }
+interface JobRow { id: number; kind: string; payload: Record<string, unknown>; attempts: number; max_attempts: number; tenant_id: string | null }
 
 /** Postgres-backed queue (docs/3_SCHEMAS.md 3.15/3.16): FOR UPDATE SKIP LOCKED, safe with several replicas. */
 export class JobQueue {
@@ -38,9 +39,9 @@ export class JobQueue {
   /** Returns the new job id, or null when an open job with the same dedupe key already exists. */
   async enqueue(kind: string, payload: Record<string, unknown> = {}, o: EnqueueOptions = {}): Promise<number | null> {
     const { rows } = await this.db.query<{ id: number }>(
-      `INSERT INTO jobs (kind, payload, dedupe_key, run_at, max_attempts) VALUES ($1, $2, $3, COALESCE($4, now()), $5)
-       ON CONFLICT (kind, dedupe_key) WHERE dedupe_key IS NOT NULL AND status IN ('pending','running') DO NOTHING RETURNING id`,
-      [kind, JSON.stringify(payload), o.dedupeKey ?? null, o.runAt ?? null, o.maxAttempts ?? 6]);
+      `INSERT INTO jobs (kind, payload, dedupe_key, run_at, max_attempts, tenant_id) VALUES ($1, $2, $3, COALESCE($4, now()), $5, $6)
+       ON CONFLICT ((COALESCE(tenant_id, '00000000-0000-0000-0000-000000000000'::uuid)), kind, dedupe_key) WHERE dedupe_key IS NOT NULL AND status IN ('pending','running') DO NOTHING RETURNING id`,
+      [kind, JSON.stringify(payload), o.dedupeKey ?? null, o.runAt ?? null, o.maxAttempts ?? 6, currentTenantId() ?? null]); // the business that enqueues it is the business it runs as
     return rows[0]?.id ?? null;
   }
 
@@ -52,8 +53,8 @@ export class JobQueue {
       `UPDATE jobs SET status = 'running', attempts = attempts + 1, locked_until = now() + make_interval(secs => $2), updated_at = now()
        WHERE id IN (SELECT id FROM jobs WHERE (status = 'pending' AND run_at <= now()) OR (status = 'running' AND locked_until < now())
                     ORDER BY run_at FOR UPDATE SKIP LOCKED LIMIT $1)
-       RETURNING id, kind, payload, attempts, max_attempts`, [limit, this.opts.lockSeconds ?? 300]);
-    await Promise.all(rows.map((r) => this.execute({ id: r.id, kind: r.kind, payload: r.payload, attempts: r.attempts, maxAttempts: r.max_attempts })));
+       RETURNING id, kind, payload, attempts, max_attempts, tenant_id`, [limit, this.opts.lockSeconds ?? 300]);
+    await Promise.all(rows.map((r) => this.execute({ id: r.id, kind: r.kind, payload: r.payload, attempts: r.attempts, maxAttempts: r.max_attempts, tenantId: r.tenant_id })));
     return rows.length;
   }
 
@@ -61,7 +62,8 @@ export class JobQueue {
     try {
       const handler = this.handlers.get(job.kind);
       if (!handler) throw new PermanentJobError(`no handler for job kind "${job.kind}"`);
-      await handler(job);
+      // The handler runs as the business that enqueued the job, whichever worker picked it up (row-level security applies inside it).
+      await (job.tenantId ? runWithTenant(job.tenantId, () => handler(job)) : handler(job));
       await this.db.query("UPDATE jobs SET status = 'done', locked_until = NULL, updated_at = now() WHERE id = $1", [job.id]);
     } catch (err) {
       const message = (err instanceof Error ? err.message : String(err)).slice(0, 500);

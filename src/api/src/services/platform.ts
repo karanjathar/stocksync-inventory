@@ -47,6 +47,22 @@ export class PlatformService {
     return rows;
   }
 
+  /** Businesses whose background work should run. */
+  async activeTenantIds(): Promise<string[]> {
+    return (await this.pool.query<{ id: string }>("SELECT id FROM tenants WHERE status = 'ACTIVE'")).rows.map((r) => r.id);
+  }
+
+  /** Whole-platform queue health: all businesses together, plus the workers' heartbeats (no payloads, no business data). */
+  async queueOverview(): Promise<{ queue: { pending: number; running: number; dead: number; oldestPendingSec: number }; workers: { workerId: string; seenAt: string }[] }> {
+    const [counts, oldest, workers] = await Promise.all([
+      this.pool.query<{ status: string; n: number }>('SELECT status, count(*)::int AS n FROM jobs GROUP BY status'),
+      this.pool.query<{ age: number }>("SELECT COALESCE(floor(GREATEST(0, extract(epoch FROM now() - min(run_at)))), 0)::int AS age FROM jobs WHERE status = 'pending' AND run_at <= now()"),
+      this.pool.query<{ workerId: string; seenAt: string }>('SELECT worker_id AS "workerId", seen_at AS "seenAt" FROM worker_heartbeats ORDER BY worker_id'),
+    ]);
+    const n = (s: string) => counts.rows.find((r) => r.status === s)?.n ?? 0;
+    return { queue: { pending: n('pending'), running: n('running'), dead: n('dead'), oldestPendingSec: oldest.rows[0]?.age ?? 0 }, workers: workers.rows };
+  }
+
   async setStatus(id: string, status: Extract<TenantStatus, 'ACTIVE' | 'SUSPENDED'>): Promise<Tenant> {
     const { rows } = await this.pool.query<Tenant>('UPDATE tenants SET status = $2 WHERE id = $1 RETURNING id, slug, name, status, plan, created_at AS "createdAt"', [id, status]);
     if (!rows[0]) throw new NotFoundError('Business');

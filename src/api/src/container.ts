@@ -8,6 +8,7 @@ import { CustomersRepo } from './repositories/customers.js';
 import type { Category, Supplier, Warehouse } from './domain/types.js';
 import { AuthService } from './services/auth.js';
 import { PlatformService } from './services/platform.js';
+import { DEFAULT_TENANT_ID } from './db/tenant.js';
 import { TenantsRepo } from './repositories/tenants.js';
 import { StockService } from './services/stock.js';
 import { SettingsService } from './services/settings.js';
@@ -62,7 +63,7 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   // The platform console uses its own restricted database role; without that pool its routes answer 501.
   const platform = opts.platformPool ? new PlatformService(opts.platformPool, env.JWT_SECRET, env.JWT_EXPIRES_IN, rounds) : undefined;
   const stock = new StockService(pool, (err) => logger.error({ err }, 'stock observer failed'));
-  const events = new EventBus();
+  const events = new EventBus(env.TENANT_FALLBACK === 'default' ? DEFAULT_TENANT_ID : undefined);
   stock.onChanged(async (changes) => {
     for (const ch of changes) {
       const p = await repos.products.get(ch.productId);
