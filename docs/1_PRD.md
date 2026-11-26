@@ -175,3 +175,44 @@ Messenger message tags, an external queue/broker (Service Bus, Redis), multi-rep
 ### 1.9.1 Status (2026-11-26)
 FR-R3-1 to FR-R3-6 are built and tested (T59–T66, T68). **FR-R3-7 (real-service verification) is NOT done:** the script and runbook exist (`scripts/verify/real-services.mjs`, DEPLOYMENT_GUIDE §5.8) but T67 is blocked until the owner provides Razorpay test keys and a WhatsApp test number. Additional finding fixed while building: template parameters built from customer-controlled text are normalised (R3-01).
 
+
+---
+
+## 1.10 Release 4 — Procurement, GST invoicing, barcode & automatic refunds (Tier 2 of the roadmap)
+
+### Goal
+Close the loop a small Indian retailer lives in every day: **buy** stock (purchase orders), **sell** it with a legal **GST invoice**, **count** it with a phone camera, and **refund** customers without leaving the app.
+
+### Functional requirements
+- **FR-R4-1 Purchase orders.** A PO belongs to a supplier and has lines (product, quantity, unit cost). Lifecycle `DRAFT → SENT → PARTIALLY_RECEIVED → RECEIVED`, or `CANCELLED` (only before any receipt). Receiving goes **only through StockService** (one receipt per line per call, idempotent on a client-supplied receipt id, never over-receiving a line). Costs are integer minor units.
+- **FR-R4-2 Reorder suggestions.** Products at or below their reorder level are listed with a suggested quantity (`max(reorderLevel × 2 − total, 1)`) and their usual supplier (the supplier of the most recent PO line for that product). One click creates a DRAFT PO per supplier.
+- **FR-R4-3 GST invoices.** Each product has an HSN/SAC code and a GST rate (basis points, e.g. 1800 = 18 %). Settings hold the seller's legal name, GSTIN, address, state code, invoice prefix and whether prices include tax (default yes, as MRP). An invoice is created when an order is confirmed (idempotent), has a **gapless sequential number per financial year** (April–March, e.g. `INV/2026-27/000042`), is an **immutable snapshot** of seller, buyer, lines and tax, and splits tax into CGST+SGST (same state) or IGST (different state). Tax is computed per line in integer paise; line taxes sum exactly to the invoice tax and the invoice total equals the order total. A cancelled order's invoice becomes `VOID` (the number is never reused).
+- **FR-R4-4 Invoice delivery.** Staff download a PDF from the Orders page; the customer gets it from their order status page (token link, only once confirmed) and as a WhatsApp document when the order is confirmed (template-aware like all notifications).
+- **FR-R4-5 Barcodes.** Products have an optional unique barcode (EAN-13/UPC/Code-128 text). `GET /api/products/by-barcode/:code` resolves a scan. The web app scans with the phone camera (`BarcodeDetector` where supported) or a USB/Bluetooth scanner acting as a keyboard, in Inventory operations and Stock counts.
+- **FR-R4-6 Stock counts.** A count session records counted quantity per product for one warehouse; submitting computes variances against the system and applies them as ADJUST movements through StockService with reason "Stock count #N". Counts can be captured offline on the phone and synced later.
+- **FR-R4-7 Automatic refunds.** For a REFUND_DUE order staff press **Refund via Razorpay**: the server refunds exactly the captured amount (never client-supplied), idempotently; the `refund.processed` webhook (signature-verified, event-id idempotent) moves the order to REFUNDED and tells the customer; `refund.failed` flags it for manual handling. "Mark refunded" stays for refunds done outside the app.
+
+### Acceptance criteria
+- Receiving the same receipt id twice changes stock once; receiving more than ordered is refused; all stock changes appear in the movement ledger with the PO number.
+- Invoice numbers have no gaps or duplicates under 30 concurrent confirmations; regenerating an invoice never changes its number or amounts; for random carts and rates, `sum(line tax) == invoice tax` and `taxable + tax == total` exactly.
+- Invoice PDFs open, show GSTIN/HSN/CGST/SGST or IGST and the amount in words, and are only reachable by staff or the order's own token.
+- A refund is issued at most once per payment even with double-clicks and webhook replays; the amount sent always equals the captured amount.
+- All gates green; existing tests unchanged in behaviour.
+
+### Non-goals (Release 4)
+E-invoicing IRN/QR through the government portal, GST returns filing, e-way bills, batch/expiry and variants (Release 4b), partial refunds, supplier portals, multi-currency.
+
+### Credentials needed (human)
+None to build. Real verification of refunds reuses the Razorpay test keys (see 1.8 and DEPLOYMENT_GUIDE §5.8). The seller's real GSTIN is entered in Settings by the owner; a **chartered accountant should review the invoice format** before real use.
+
+---
+
+## 1.11 Release 5 — Scale & intelligence (Tier 3 of the roadmap) — OUTLINE ONLY
+
+To be detailed with `/engine-replan` after Release 4, because it changes the data model and needs owner decisions first.
+- **Multi-tenant SaaS.** Many businesses in one installation: tenant id on every table with PostgreSQL row-level security, tenant-scoped users/settings/webhooks (per-tenant WhatsApp/Razorpay credentials in Key Vault), sign-up and onboarding wizard, plans and billing (Razorpay Subscriptions).
+- **Scale-out.** Realtime events across replicas (Azure Web PubSub or Postgres LISTEN/NOTIFY), httpOnly-cookie sessions with CSRF protection, separate worker revision.
+- **AI layer (Claude API).** Natural-language ordering in Hindi/English/Hinglish with the existing tap flows as fallback, reorder/demand forecasting, "ask your inventory" assistant. Cost caps per tenant, no PII in prompts beyond what the task needs.
+- **Analytics.** Margins, dead stock, best sellers, chat-to-purchase funnel.
+- **Polish.** WCAG 2.2 AA, Hindi and other languages, performance budgets, demo data.
+- **Open decisions for the owner:** tenancy model (shared schema + RLS, recommended, vs database per tenant), pricing/plans, which languages first, data-residency needs.

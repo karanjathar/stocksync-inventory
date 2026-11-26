@@ -36,6 +36,8 @@
   **Next session, in order:** (1) owner supplies credentials → run §5.8 → record PASS/FAIL in 7_SECURITY_AUDIT.md → `engine unblock`/finish T67; (2) `npm run e2e`; (3) `/engine-review` of Phases 10–12; (4) then roadmap Tier 2 (GST invoicing, purchase orders, barcode scanning, Razorpay API refunds) via `/engine-replan`.
   *Local run recipe (cloud session):* `service postgresql start`; DBs `inventory` and `inventory_test` (user postgres/postgres); `TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/inventory_test node engine/engine.mjs gate`; app: `npm run build` then start with the dummy env from `.env.example` on port 8080 (admin@example.com / ChangeMe123!).
 
+- **Replan 2026-11-26 (Release 4 = Tier 2, outline of Release 5 = Tier 3):** PRD 1.10/1.11, schemas 3.19–3.21, decisions D-013..D-016, tasks T69–T86 (Phases 13–17: purchase orders + reorder, GST invoicing, barcode + stock counts, automatic Razorpay refunds, hardening). T67 (real-service verification, blocked on owner credentials) moved to its own deferred Phase 18 so it no longer blocks Phase 12/13. Release 5 (multi-tenant, scale-out, AI, analytics) is an outline only and needs owner decisions (tenancy model, plans, languages) before `/engine-replan`.
+
 ## Approvals
 - plan — approved by Claude on 2026-11-06
 - phase Foundation — baseline (complete when the plan was approved)

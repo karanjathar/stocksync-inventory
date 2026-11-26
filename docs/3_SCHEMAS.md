@@ -359,3 +359,55 @@ WhatsApp status webhook: `entry[].changes[].value.statuses[] = { id, status, tim
 | `GET /api/ops/status` | admin | `{ queue:{pending, running, dead, oldestPendingSec}, messages:{failed24h, queued}, maintenance:[{task, ranAt, result}] }` |
 | `POST /api/messages/:id/retry` | staff | only `failed` outbound messages → `queued` + job; 409 otherwise |
 | `PATCH /api/settings` | admin | accepts `whatsappTemplates`, `maintenance` |
+
+# Release 4 contracts (procurement, GST, barcode, refunds)
+
+## 3.19 Release 4 Database (migrations 006–009)
+```sql
+-- 006_purchase_orders.sql
+CREATE TABLE purchase_orders (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), number serial UNIQUE,
+  supplier_id uuid NOT NULL REFERENCES suppliers(id), warehouse_id uuid NOT NULL REFERENCES warehouses(id),
+  status text NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT','SENT','PARTIALLY_RECEIVED','RECEIVED','CANCELLED')),
+  notes text NOT NULL DEFAULT '', created_by uuid REFERENCES users(id), created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE purchase_order_lines (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), po_id uuid NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  product_id uuid NOT NULL REFERENCES products(id), quantity int NOT NULL CHECK (quantity > 0), received_quantity int NOT NULL DEFAULT 0,
+  unit_cost_cents int NOT NULL CHECK (unit_cost_cents >= 0), CHECK (received_quantity <= quantity), UNIQUE (po_id, product_id));
+CREATE TABLE purchase_receipts (receipt_id text NOT NULL, po_id uuid NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (po_id, receipt_id));   -- idempotency of a receive call
+-- 007_gst_invoices.sql
+ALTER TABLE products ADD COLUMN hsn_code text, ADD COLUMN gst_rate_bp int NOT NULL DEFAULT 0 CHECK (gst_rate_bp BETWEEN 0 AND 2800);
+ALTER TABLE customers ADD COLUMN gstin text, ADD COLUMN state_code text;                 -- 2-digit GST state code
+CREATE TABLE invoice_counters (fy text PRIMARY KEY, last_number int NOT NULL);           -- fy like '2026-27'
+CREATE TABLE invoices (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), order_id uuid NOT NULL UNIQUE REFERENCES orders(id),
+  fy text NOT NULL, seq int NOT NULL, number text NOT NULL UNIQUE, status text NOT NULL DEFAULT 'ISSUED' CHECK (status IN ('ISSUED','VOID')),
+  issued_at timestamptz NOT NULL DEFAULT now(), snapshot jsonb NOT NULL, taxable_cents int NOT NULL, tax_cents int NOT NULL, total_cents int NOT NULL,
+  UNIQUE (fy, seq));
+-- 008_barcodes_counts.sql
+ALTER TABLE products ADD COLUMN barcode text; CREATE UNIQUE INDEX uq_products_barcode ON products(barcode) WHERE barcode IS NOT NULL;
+CREATE TABLE stock_counts (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), number serial UNIQUE, warehouse_id uuid NOT NULL REFERENCES warehouses(id),
+  status text NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','SUBMITTED','CANCELLED')), created_by uuid REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now(), submitted_at timestamptz);
+CREATE TABLE stock_count_lines (count_id uuid NOT NULL REFERENCES stock_counts(id) ON DELETE CASCADE, product_id uuid NOT NULL REFERENCES products(id),
+  counted_quantity int NOT NULL CHECK (counted_quantity >= 0), system_quantity int, PRIMARY KEY (count_id, product_id));
+-- 009_refunds.sql
+ALTER TABLE payments ADD COLUMN provider_payment_id text, ADD COLUMN refund_id text, ADD COLUMN refund_status text CHECK (refund_status IN ('PENDING','PROCESSED','FAILED'));
+```
+Settings additions: `gst: { legalName, gstin, address, stateCode, invoicePrefix: 'INV', pricesIncludeTax: true }`.
+
+## 3.20 GST computation (pure function `computeInvoice`, integer paise)
+Per line: `gross = unitPrice × qty`. Inclusive prices: `taxable = round(gross × 10000 / (10000 + rateBp))`, `tax = gross − taxable`. Exclusive: `taxable = gross`, `tax = round(gross × rateBp / 10000)`. Same state (buyer state = seller state, or buyer has none): `cgst = floor(tax/2)`, `sgst = tax − cgst`; otherwise `igst = tax`. Invoice totals are the sums of the line values, so they reconcile exactly. Rounding is half-up (`Math.round` on non-negative integers).
+Number: `${prefix}/${fy}/${seq padded to 6}`; the financial year runs 1 April–31 March in India (Asia/Kolkata). The counter row is locked with `SELECT … FOR UPDATE` inside the issuing transaction so numbers are gapless.
+
+## 3.21 Release 4 REST API
+| Method & path | Role | Notes |
+|---|---|---|
+| `GET/POST /api/purchase-orders`, `GET /:id`, `PATCH /:id` (draft only) | staff (GET viewer) | create/edit DRAFT |
+| `POST /api/purchase-orders/:id/send` · `/cancel` | staff | DRAFT→SENT; cancel refused after any receipt |
+| `POST /api/purchase-orders/:id/receive` | staff | `{ receiptId, lines:[{productId, quantity}] }`, idempotent on receiptId |
+| `GET /api/reorder-suggestions` · `POST /api/reorder-suggestions/create-pos` | viewer / staff | one DRAFT PO per supplier |
+| `GET /api/orders/:id/invoice` (JSON) · `/invoice.pdf` | staff | issues the invoice if the order is CONFIRMED/FULFILLED and none exists |
+| `GET /api/public/orders/:token/invoice.pdf` | token | only when the order is confirmed or fulfilled |
+| `GET /api/products/by-barcode/:code` | viewer | 404 when unknown |
+| `POST/GET /api/stock-counts`, `PUT /:id/lines`, `POST /:id/submit` · `/cancel` | staff | submit applies variances via StockService.adjust |
+| `POST /api/orders/:id/refund` | staff | REFUND_DUE only; amount = captured payment amount |
+Razorpay refund: `POST /v1/payments/{payment_id}/refund` body `{ amount, speed:'normal', receipt, notes }`, Basic auth; webhook events `refund.processed`, `refund.failed` carry `payload.refund.entity { id, payment_id, amount, status }`.

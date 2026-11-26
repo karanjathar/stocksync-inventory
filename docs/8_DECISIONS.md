@@ -47,3 +47,18 @@ Consequences: no template-approval workflow to build; a wrong mapping fails visi
 Context: the owner's goal is a world top-1% product; the audit's accepted risks (silent message loss, 24 h rule, unbounded tables, no readiness) block a confident launch.
 Decision: reliability and operations come before new features (GST invoicing, POs, barcode, multi-tenant follow in Tier 2/3).
 Consequences: Phases 10–12 below; the real-service run (T67) waits for human-provided test credentials.
+
+## D-013 Prices are GST-inclusive by default; tax is back-calculated per line (2026-11-26)
+Context: Indian retail shows MRP (tax included). Existing orders store only totals.
+Decision: a setting `gst.pricesIncludeTax` (default true) selects inclusive or exclusive computation; invoices snapshot every input so later setting changes never alter an issued invoice.
+Consequences: no change to order totals or payment amounts; an accountant must review before real use; e-invoicing (IRN) is out of scope.
+
+## D-014 Gapless invoice numbers through a locked counter row (2026-11-26)
+Decision: one counter row per financial year, locked inside the issuing transaction; a cancelled order voids its invoice and the number is never reused.
+Consequences: invoice issuing serialises per year (fine at SMB volume); numbers stay gapless as Indian rules expect.
+
+## D-015 Refund state lives on the payment, not a new order status (2026-11-26)
+Decision: the order stays REFUND_DUE until Razorpay's signed `refund.processed` webhook arrives; `payments.refund_status` tracks PENDING/PROCESSED/FAILED. Avoids another enum migration across the web app and chat views.
+
+## D-016 Barcode scanning is progressive (2026-11-26)
+Decision: use the browser `BarcodeDetector` API when present and otherwise a text input that also accepts USB/Bluetooth scanners (keyboard wedge); no heavy WASM scanner dependency in v1.
