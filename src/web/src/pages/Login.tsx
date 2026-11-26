@@ -3,9 +3,11 @@ import { Link, Navigate, useLocation } from 'react-router';
 import { useAuth } from '../auth';
 import { errorText } from '../api/client';
 import { ErrorBanner, Field } from '../components/ui';
+import { LanguageSwitch, useT } from '../i18n';
 
 export function Login() {
   const { user, login } = useAuth();
+  const { t } = useT();
   const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -32,19 +34,20 @@ export function Login() {
 
   return (
     <div className="login-wrap">
-      <form className="card login" onSubmit={submit} aria-label="Sign in">
+      <form className="card login" onSubmit={submit} aria-label={t('login.title')}>
         <div className="brand big">📦 StockSync</div>
-        <p className="muted">Sign in to manage your inventory.</p>
+        <LanguageSwitch />
+        <p className="muted">{t('login.intro')}</p>
         <ErrorBanner error={error} />
-        <Field label="Email">
+        <Field label={t('login.email')}>
           <input type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
-        <Field label="Password">
+        <Field label={t('login.password')}>
           <input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
         </Field>
-        <button className="primary" type="submit" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
-        <Link className="muted small" to="/signup">New here? Create a business account</Link>
-        <a className="muted small" href="/shop">Visit the shop →</a>
+        <button className="primary" type="submit" disabled={busy}>{busy ? t('login.busy') : t('login.submit')}</button>
+        <Link className="muted small" to="/signup">{t('login.newHere')}</Link>
+        <a className="muted small" href="/shop">{t('login.visitShop')}</a>
       </form>
     </div>
   );

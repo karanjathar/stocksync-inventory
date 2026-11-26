@@ -5,7 +5,7 @@ export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'FULFILLED' | 'CANCELLED';
 export type PaymentMethod = 'COD' | 'ONLINE';
 export type PaymentStatus = 'UNPAID' | 'PAID' | 'REFUND_DUE' | 'REFUNDED';
 export type MovementType = 'IN' | 'OUT' | 'ADJUST' | 'TRANSFER_IN' | 'TRANSFER_OUT';
-export interface User { id: string; email: string; name: string; role: Role; createdAt: string }
+export interface User { id: string; email: string; name: string; role: Role; language: 'en' | 'hi'; createdAt: string }
 export interface AuthUser { id: string; email: string; role: Role; tenantId: string }
 export interface Category { id: string; name: string }
 export interface Product { id: string; sku: string; name: string; description: string; categoryId: string | null;
@@ -18,7 +18,7 @@ export interface StockMovement { id: string; productId: string; sku: string; war
   userId: string | null; createdAt: string }
 export interface Supplier { id: string; name: string; email: string | null; phone: string | null; notes: string; leadTimeDays: number }
 export interface Customer { id: string; name: string; phone: string | null; email: string | null; channel: OrderChannel | string; channelUserId: string | null;
-  gstin: string | null; stateCode: string | null }
+  gstin: string | null; stateCode: string | null; language?: 'en' | 'hi' | null }
 export interface OrderItem { productId: string; sku: string; name: string; quantity: number; unitPriceCents: number }
 export interface Order { id: string; number: number; customerId: string; customerName: string; channel: OrderChannel;
   status: OrderStatus; warehouseId: string | null; totalCents: number; notes: string; items: OrderItem[]; createdAt: string; updatedAt: string;

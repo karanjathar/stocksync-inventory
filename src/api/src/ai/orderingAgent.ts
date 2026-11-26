@@ -14,6 +14,7 @@ import type { SettingsService } from '../services/settings.js';
 import type { AiGateway } from './gateway.js';
 import type { AiBlock, AiMessage, AiTool } from './client.js';
 import { definePrompt, leaksPrompt, UNTRUSTED_INPUT_RULES } from './prompts.js';
+import { t } from '../i18n/messages.js';
 
 /** Version 1 of the ordering prompt. A change is a new version; the customer's words are never part of it. */
 export const ORDER_AGENT_PROMPT = definePrompt('order-agent', 1, `You help customers of an online shop order from its chat. The customer may write English, Hindi (Devanagari) or Hinglish (Hindi in Latin letters); always answer in the customer's own language and style, in one or two short sentences.
@@ -121,7 +122,7 @@ export class OrderingAgent {
           if (p?.isActive && p.totalQuantity > 0) rows.push({ id: `prod:${p.id}`, title: truncate(p.name, LIMITS.rowTitle), description: truncate(fmt(p.priceCents), LIMITS.rowDescription) });
         }
         if (rows.length < 2) return bad('fewer than two of those products are in stock; search again');
-        return { result: 'A tap list was shown to the customer.', end: { text: 'Which one do you mean? Tap to choose 👇', list: { button: 'Choose', sections: [{ title: 'Options', rows }] } } };
+        return { result: 'A tap list was shown to the customer.', end: { text: t('ai.choose'), list: { button: t('ai.choose.button'), sections: [{ title: t('ai.choose.section'), rows }] } } };
       }
       case 'checkout': {
         if (!noArgs.safeParse(input).success) return bad('invalid arguments');
@@ -139,8 +140,8 @@ export class OrderingAgent {
     if (!said) return undefined;
     const cart = await this.carts.get(customerId);
     const buttons = cart.lines.length
-      ? [{ id: 'checkout', title: '🧾 Checkout' }, { id: 'cart', title: '🛒 My cart' }, { id: 'catalog', title: '🛍 Browse' }]
-      : [{ id: 'catalog', title: '🛍 Browse' }, { id: 'menu', title: '🏠 Menu' }];
+      ? [{ id: 'checkout', title: t('btn.checkout') }, { id: 'cart', title: t('btn.cart') }, { id: 'catalog', title: t('btn.browse') }]
+      : [{ id: 'catalog', title: t('btn.browse') }, { id: 'menu', title: t('btn.menu') }];
     return { text: said, buttons };
   }
 

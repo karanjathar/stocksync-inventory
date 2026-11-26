@@ -45,6 +45,7 @@ describe('menu & browsing (T31)', () => {
       [`cat:${id.apparel}:0`, 'Apparel', '12 products'],
       [`cat:${id.home}:0`, 'Home', '1 product'],
       ['cat:all:0', 'All products', '13 products'],
+      ['lang:hi', '🌐 हिंदी में देखें', undefined],                                    // the language switch is always one tap away
     ]);
   });
 

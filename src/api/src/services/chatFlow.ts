@@ -8,12 +8,12 @@ import type { ProductsRepo } from '../repositories/products.js';
 import type { SimpleRepo } from '../repositories/simple.js';
 import type { Category } from '../domain/types.js';
 import { formatMoney } from './money.js';
+import { count, currentLang, t, type MessageKey } from '../i18n/messages.js';
 import type { SettingsService } from './settings.js';
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const PAGE = 9;
 const QTY_CHOICES = [1, 2, 3, 4, 5, 10];
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /** Payment port for checkout. Phase 6 default: cash on delivery only; Razorpay plugs in via setPaymentOptions (T35/T37). */
 export interface PaymentOptions {
@@ -25,7 +25,7 @@ export interface PaymentOptions {
 }
 const CASH_ONLY: PaymentOptions = {
   available: async () => ({ online: false, cod: true }),
-  onlineCheckout: async (order) => ({ text: `Order #${order.number} created. We'll send your payment link shortly.` }),
+  onlineCheckout: async (order) => ({ text: `Order #${order.number} created. We'll send your payment link shortly.` }), // replaced by the payments service whenever online payment is configured
   resendLink: async () => ({ text: 'Online payment is not available right now.' }),
 };
 
@@ -52,6 +52,7 @@ export class ChatFlow {
     const money = (c: number) => formatMoney(c, s.currency);
     try {
       if (action === 'menu') return this.menu(s.businessName);
+      if (action === 'lang:en' || action === 'lang:hi') return { ...this.menu(s.businessName), text: `${t('lang.set')}\n\n${this.menu(s.businessName).text}` }; // the language itself is stored by BotService before this runs
       if (action === 'catalog') return await this.catalog();
       let m = new RegExp(`^cat:(${UUID}|all):(-?\\d{1,4})$`).exec(action);
       if (m) return await this.category(m[1]!, Math.max(0, Number(m[2])), money);
@@ -69,7 +70,7 @@ export class ChatFlow {
       if (m) return await this.payLink(msg, Number(m[1]));
       m = /^order:(\d{1,9})$/.exec(action);
       if (m) return await this.orderDetail(msg, Number(m[1]), money);
-      if (/^(prod|qty|cat|order|paylink):/.test(action)) return this.sorry('That option is no longer valid.');
+      if (/^(prod|qty|cat|order|paylink):/.test(action)) return this.sorry(t('sorry.invalidOption'));
       return undefined;
     } catch (err) {
       if (err instanceof AppError) return this.sorry(err.message);
@@ -79,8 +80,8 @@ export class ChatFlow {
 
   menu(businessName: string): BotReply {
     return {
-      text: `👋 Welcome to ${businessName}! Tap a button to shop. (You can also type "help" for text commands.)`,
-      buttons: [{ id: 'catalog', title: '🛍 Browse' }, { id: 'cart', title: '🛒 My cart' }, { id: 'orders', title: '📦 My orders' }],
+      text: t('menu.welcome', { name: businessName }),
+      buttons: [{ id: 'catalog', title: t('btn.browse') }, { id: 'cart', title: t('btn.cart') }, { id: 'orders', title: t('btn.orders') }],
     };
   }
 
@@ -90,7 +91,7 @@ export class ChatFlow {
 
   private async catalog(): Promise<BotReply> {
     const products = await this.orderable();
-    if (!products.length) return { text: 'Our shelves are being restocked — please check back soon!' };
+    if (!products.length) return { text: t('catalog.restocking') };
     const counts = new Map<string, number>();
     for (const p of products) if (p.categoryId) counts.set(p.categoryId, (counts.get(p.categoryId) ?? 0) + 1);
     const cats = (await this.categories.list()).filter((c) => counts.has(c.id));
@@ -98,53 +99,54 @@ export class ChatFlow {
       const s = await this.settings.get();
       return this.category(cats[0]?.id ?? 'all', 0, (c) => formatMoney(c, s.currency));
     }
-    const rows: ReplyListRow[] = cats.slice(0, 9).map((c) => ({ id: `cat:${c.id}:0`, title: c.name, description: plural(counts.get(c.id)!, 'product') }));
-    rows.push({ id: 'cat:all:0', title: 'All products', description: plural(products.length, 'product') });
-    return { text: 'What are you looking for?', list: { button: 'Categories', sections: [{ title: 'Categories', rows }] } };
+    const rows: ReplyListRow[] = cats.slice(0, 9).map((c) => ({ id: `cat:${c.id}:0`, title: c.name, description: count('product', counts.get(c.id)!) }));
+    rows.push({ id: 'cat:all:0', title: t('catalog.all'), description: count('product', products.length) });
+    rows.push({ id: currentLang() === 'hi' ? 'lang:en' : 'lang:hi', title: t('row.switchLang') });
+    return { text: t('catalog.ask'), list: { button: t('catalog.categories'), sections: [{ title: t('catalog.categories'), rows }] } };
   }
 
   private async category(categoryId: string, offset: number, money: (c: number) => string): Promise<BotReply> {
-    if (categoryId !== 'all' && !(await this.categories.get(categoryId))) return this.sorry('That category no longer exists.');
+    if (categoryId !== 'all' && !(await this.categories.get(categoryId))) return this.sorry(t('category.gone'));
     const all = (await this.orderable()).filter((p) => categoryId === 'all' || p.categoryId === categoryId);
     const page = all.slice(offset, offset + PAGE);
-    if (!page.length) return { text: 'Nothing available here right now.', buttons: [{ id: 'catalog', title: '🛍 Browse' }] };
-    const rows: ReplyListRow[] = page.map((p) => ({ id: `prod:${p.id}`, title: p.name, description: `${money(p.priceCents)} · ${p.totalQuantity} left` }));
+    if (!page.length) return { text: t('category.empty'), buttons: [{ id: 'catalog', title: t('btn.browse') }] };
+    const rows: ReplyListRow[] = page.map((p) => ({ id: `prod:${p.id}`, title: p.name, description: t('row.left', { price: money(p.priceCents), n: p.totalQuantity }) }));
     const rest = all.length - offset - PAGE;
-    if (rest > 0) rows.push({ id: `cat:${categoryId}:${offset + PAGE}`, title: 'More…', description: `Show ${rest} more` });
-    const name = categoryId === 'all' ? 'All products' : (await this.categories.get(categoryId))!.name;
-    return { text: `${name} — pick a product:`, list: { button: 'Products', sections: [{ title: name, rows }] } };
+    if (rest > 0) rows.push({ id: `cat:${categoryId}:${offset + PAGE}`, title: t('more.title'), description: t('more.desc', { n: rest }) });
+    const name = categoryId === 'all' ? t('catalog.all') : (await this.categories.get(categoryId))!.name;
+    return { text: t('category.pick', { name }), list: { button: t('category.products'), sections: [{ title: name, rows }] } };
   }
 
   private async product(productId: string, money: (c: number) => string): Promise<BotReply> {
     const p = await this.products.get(productId);
-    if (!p) return this.sorry('That product no longer exists.');
-    if (!p.isActive || p.totalQuantity <= 0) return this.sorry(`${p.name} is not available right now.`);
+    if (!p) return this.sorry(t('product.gone'));
+    if (!p.isActive || p.totalQuantity <= 0) return this.sorry(t('product.unavailable', { name: p.name }));
     const attrs = Object.entries(p.attributes).map(([k, v]) => `${k}: ${v}`).join(' · ');
     const text = [
       `*${p.name}*`,
-      `${money(p.priceCents)} per ${p.unit} · ${p.totalQuantity} in stock`,
+      t('product.line', { price: money(p.priceCents), unit: p.unit, n: p.totalQuantity }),
       p.description, attrs,
-      'How many would you like?',
+      t('product.howMany'),
     ].filter(Boolean).join('\n');
     const rows = QTY_CHOICES.filter((n) => n <= p.totalQuantity).map((n) => ({ id: `qty:${p.id}:${n}`, title: String(n), description: money(n * p.priceCents) }));
-    return { text, list: { button: 'Choose quantity', sections: [{ title: 'Quantity', rows }] } };
+    return { text, list: { button: t('product.chooseQty'), sections: [{ title: t('product.quantity'), rows }] } };
   }
 
   private async addToCart(msg: InboundMessage, productId: string, quantity: number, money: (c: number) => string): Promise<BotReply> {
     const customer = await this.customers.findOrCreateByChannel(msg.channel, msg.from, msg.senderName);
     const p = await this.products.get(productId);
-    if (!p) return this.sorry('That product no longer exists.');
+    if (!p) return this.sorry(t('product.gone'));
     const { added, capped } = await this.carts.add(customer.id, productId, quantity);
     const cart = await this.carts.get(customer.id);
     const items = cart.lines.reduce((n, l) => n + l.quantity, 0);
     const lines = [
-      added > 0 ? `✅ Added ${added} × ${p.name} to your cart.` : `Your cart already has all available ${p.name}.`,
-      capped ? `(We have only ${p.totalQuantity} available.)` : '',
-      `🛒 Cart: ${plural(items, 'item')} · ${money(cart.totalCents)}`,
+      added > 0 ? t('cart.added', { n: added, name: p.name }) : t('cart.already', { name: p.name }),
+      capped ? t('cart.capped', { n: p.totalQuantity }) : '',
+      t('cart.summary', { items: count('item', items), total: money(cart.totalCents) }),
     ].filter(Boolean);
     return {
       text: lines.join('\n'),
-      buttons: [{ id: 'checkout', title: '🧾 Checkout' }, { id: 'catalog', title: '🛍 Keep shopping' }, { id: 'cart:clear', title: '🗑 Clear cart' }],
+      buttons: [{ id: 'checkout', title: t('btn.checkout') }, { id: 'catalog', title: t('btn.keep') }, { id: 'cart:clear', title: t('btn.clear') }],
     };
   }
 
@@ -156,50 +158,50 @@ export class ChatFlow {
   private cartLines(cart: Awaited<ReturnType<ChatCartsRepo['get']>>, money: (c: number) => string): string {
     return [
       ...cart.lines.map((l) => `${l.quantity} × ${l.name} — ${money(l.quantity * l.unitPriceCents)}`),
-      `*Total: ${money(cart.totalCents)}*`,
+      t('cart.total', { total: money(cart.totalCents) }),
     ].join('\n');
   }
 
   private emptyCart(adjusted: boolean): BotReply {
-    const note = adjusted ? 'Some items changed since you added them (no longer available). ' : '';
-    return { text: `${note}Your cart is empty.`, buttons: [{ id: 'catalog', title: '🛍 Browse' }, { id: 'menu', title: '🏠 Menu' }] };
+    const note = adjusted ? t('cart.changedEmpty') : '';
+    return { text: `${note}${t('cart.empty')}`, buttons: [{ id: 'catalog', title: t('btn.browse') }, { id: 'menu', title: t('btn.menu') }, { id: currentLang() === 'hi' ? 'lang:en' : 'lang:hi', title: t('btn.switchLang') }] };
   }
 
   private async showCart(msg: InboundMessage, money: (c: number) => string): Promise<BotReply> {
     const { cart } = await this.cartOf(msg);
     if (!cart.lines.length) return this.emptyCart(cart.adjusted);
-    const note = cart.adjusted ? '⚠️ Some items changed since you added them (stock or availability).\n' : '';
+    const note = cart.adjusted ? `${t('cart.changed')}\n` : '';
     return {
-      text: `${note}🛒 *Your cart*\n${this.cartLines(cart, money)}`,
-      buttons: [{ id: 'checkout', title: '🧾 Checkout' }, { id: 'catalog', title: '🛍 Keep shopping' }, { id: 'cart:clear', title: '🗑 Clear cart' }],
+      text: `${note}${t('cart.title')}\n${this.cartLines(cart, money)}`,
+      buttons: [{ id: 'checkout', title: t('btn.checkout') }, { id: 'catalog', title: t('btn.keep') }, { id: 'cart:clear', title: t('btn.clear') }],
     };
   }
 
   private async clearCart(msg: InboundMessage): Promise<BotReply> {
     const customer = await this.customers.findOrCreateByChannel(msg.channel, msg.from, msg.senderName);
     await this.carts.clear(customer.id);
-    return { text: '🗑 Cart cleared.', buttons: [{ id: 'catalog', title: '🛍 Browse' }] };
+    return { text: t('cart.cleared'), buttons: [{ id: 'catalog', title: t('btn.browse') }] };
   }
 
   private async checkout(msg: InboundMessage, money: (c: number) => string): Promise<BotReply> {
     const { cart } = await this.cartOf(msg);
     if (!cart.lines.length) return this.emptyCart(cart.adjusted);
     const { online, cod } = await this.payments.available();
-    if (!online && !cod) return this.sorry('ordering is paused right now. Please try again later.');
-    const note = cart.adjusted ? '⚠️ Some items changed since you added them — please check:\n' : '';
+    if (!online && !cod) return this.sorry(t('checkout.paused'));
+    const note = cart.adjusted ? `${t('checkout.changed')}\n` : '';
     const buttons = [
-      ...(online ? [{ id: 'pay:online', title: '💳 Pay online' }] : []),
-      ...(cod ? [{ id: 'pay:cod', title: '💵 Cash on delivery' }] : []),
-      { id: 'cart', title: '✏️ Edit cart' },
+      ...(online ? [{ id: 'pay:online', title: t('btn.payOnline') }] : []),
+      ...(cod ? [{ id: 'pay:cod', title: t('btn.cod') }] : []),
+      { id: 'cart', title: t('btn.edit') },
     ];
-    return { text: `${note}🧾 *Checkout*\n${this.cartLines(cart, money)}\n\nHow would you like to pay?`, buttons };
+    return { text: `${note}${t('checkout.title')}\n${this.cartLines(cart, money)}\n\n${t('checkout.how')}`, buttons };
   }
 
   private async placeOrder(msg: InboundMessage, method: PaymentMethod, money: (c: number) => string): Promise<BotReply> {
     const customer = await this.customers.findOrCreateByChannel(msg.channel, msg.from, msg.senderName);
     const { online, cod } = await this.payments.available();
-    if (method === 'ONLINE' && !online) return this.sorry('online payment is not available right now. You can choose Cash on delivery at checkout.');
-    if (method === 'COD' && !cod) return this.sorry('cash on delivery is not available. Please pay online at checkout.');
+    if (method === 'ONLINE' && !online) return this.sorry(t('pay.onlineUnavailable'));
+    if (method === 'COD' && !cod) return this.sorry(t('pay.codUnavailable'));
     // Take the cart atomically: duplicate/concurrent taps find it empty instead of creating a second order (T46).
     const cart = await this.carts.take(customer.id);
     if (!cart.lines.length) return this.emptyCart(cart.adjusted);
@@ -213,60 +215,56 @@ export class ChatFlow {
     }
     if (method === 'ONLINE') return this.payments.onlineCheckout(order, msg);
     return {
-      text: `✅ Order #${order.number} placed — Cash on delivery.\nTotal: ${money(order.totalCents)}\nWe'll confirm shortly.`,
-      buttons: [{ id: 'orders', title: '📦 My orders' }, { id: 'catalog', title: '🛍 Keep shopping' }],
+      text: t('order.placedCod', { n: order.number, total: money(order.totalCents) }),
+      buttons: [{ id: 'orders', title: t('btn.orders') }, { id: 'catalog', title: t('btn.keep') }],
     };
   }
-
-  private static readonly STATUS: Record<Order['status'], string> = { PENDING: 'Pending', CONFIRMED: 'Confirmed', FULFILLED: 'Fulfilled', CANCELLED: 'Cancelled' };
-  private static readonly METHOD: Record<PaymentMethod, string> = { COD: 'Cash on delivery', ONLINE: 'Online' };
-  private static readonly PAYMENT: Record<Order['paymentStatus'], string> = { UNPAID: 'unpaid', PAID: 'paid ✅', REFUND_DUE: 'refund due', REFUNDED: 'refunded' };
 
   private async myOrders(msg: InboundMessage, money: (c: number) => string): Promise<BotReply> {
     const customer = await this.customers.findOrCreateByChannel(msg.channel, msg.from, msg.senderName);
     const orders = await this.orders.list({ customerId: customer.id, limit: 5 });
-    if (!orders.length) return { text: 'You have no orders yet.', buttons: [{ id: 'catalog', title: '🛍 Browse' }] };
+    if (!orders.length) return { text: t('orders.none'), buttons: [{ id: 'catalog', title: t('btn.browse') }] };
     const rows = orders.map((o) => {
       const items = o.items.reduce((n, i) => n + i.quantity, 0);
       return {
         id: `order:${o.number}`,
-        title: `#${o.number} · ${ChatFlow.STATUS[o.status]}`,
-        description: `${money(o.totalCents)} · ${plural(items, 'item')} · ${ChatFlow.METHOD[o.paymentMethod]}`,
+        title: `#${o.number} · ${t(`status.${o.status}` as MessageKey)}`,
+        description: `${money(o.totalCents)} · ${count('item', items)} · ${t(`method.${o.paymentMethod}` as MessageKey)}`,
       };
     });
-    return { text: '📦 Your recent orders:', list: { button: 'My orders', sections: [{ title: 'Recent orders', rows }] } };
+    return { text: t('orders.recent'), list: { button: t('orders.button'), sections: [{ title: t('orders.section'), rows }] } };
   }
 
   private async orderDetail(msg: InboundMessage, number: number, money: (c: number) => string): Promise<BotReply> {
     const customer = await this.customers.findOrCreateByChannel(msg.channel, msg.from, msg.senderName);
     const order = await this.orders.getByNumber(number);
     // Same answer for "missing" and "not yours": never reveal other customers' orders.
-    if (!order || order.customerId !== customer.id) return this.sorry("we couldn't find that order.");
+    if (!order || order.customerId !== customer.id) return this.sorry(t('order.notFound'));
     const text = [
-      `*Order #${order.number}*`,
-      `Status: ${ChatFlow.STATUS[order.status]}`,
-      `Payment: ${ChatFlow.METHOD[order.paymentMethod]} · ${ChatFlow.PAYMENT[order.paymentStatus]}`,
+      t('order.title', { n: order.number }),
+      t('order.status', { s: t(`status.${order.status}` as MessageKey) }),
+      t('order.payment', { method: t(`method.${order.paymentMethod}` as MessageKey), state: t(`paystate.${order.paymentStatus}` as MessageKey) }),
       ...order.items.map((i) => `${i.quantity} × ${i.name}`),
-      `Total: ${money(order.totalCents)}`,
+      t('order.total', { total: money(order.totalCents) }),
     ].join('\n');
-    return { text, buttons: [{ id: 'orders', title: '📦 My orders' }, { id: 'catalog', title: '🛍 Browse' }] };
+    return { text, buttons: [{ id: 'orders', title: t('btn.orders') }, { id: 'catalog', title: t('btn.browse') }] };
   }
 
   /** paylink:<n> — (re)send the pay link for my own unpaid online order. */
   private async payLink(msg: InboundMessage, number: number): Promise<BotReply> {
     const customer = await this.customers.findOrCreateByChannel(msg.channel, msg.from, msg.senderName);
     const order = await this.orders.getByNumber(number);
-    if (!order || order.customerId !== customer.id) return this.sorry("we couldn't find that order.");
-    const back = [{ id: 'orders', title: '📦 My orders' }, { id: 'catalog', title: '🛍 Browse' }];
-    if (order.status === 'CANCELLED') return { text: `Order #${order.number} was cancelled, so there is nothing to pay.`, buttons: back };
-    if (order.paymentStatus === 'PAID') return { text: `✅ Order #${order.number} is already paid. Thank you!`, buttons: back };
-    if (order.paymentStatus === 'REFUND_DUE') return { text: `We received a payment for order #${order.number} and a refund is being arranged.`, buttons: back };
-    if (order.paymentStatus === 'REFUNDED') return { text: `Your payment for order #${order.number} has been refunded.`, buttons: back };
-    if (order.paymentMethod === 'COD') return { text: `Order #${order.number} is cash on delivery — nothing to pay online.`, buttons: back };
+    if (!order || order.customerId !== customer.id) return this.sorry(t('order.notFound'));
+    const back = [{ id: 'orders', title: t('btn.orders') }, { id: 'catalog', title: t('btn.browse') }];
+    if (order.status === 'CANCELLED') return { text: t('paylink.cancelled', { n: order.number }), buttons: back };
+    if (order.paymentStatus === 'PAID') return { text: t('paylink.paid', { n: order.number }), buttons: back };
+    if (order.paymentStatus === 'REFUND_DUE') return { text: t('paylink.refundDue', { n: order.number }), buttons: back };
+    if (order.paymentStatus === 'REFUNDED') return { text: t('paylink.refunded', { n: order.number }), buttons: back };
+    if (order.paymentMethod === 'COD') return { text: t('paylink.cod', { n: order.number }), buttons: back };
     return this.payments.resendLink(order, msg);
   }
 
   private sorry(message: string): BotReply {
-    return { text: `Sorry — ${message}`, buttons: [{ id: 'catalog', title: '🛍 Browse' }, { id: 'menu', title: '🏠 Menu' }] };
+    return { text: t('sorry.prefix', { message }), buttons: [{ id: 'catalog', title: t('btn.browse') }, { id: 'menu', title: t('btn.menu') }, { id: currentLang() === 'hi' ? 'lang:en' : 'lang:hi', title: t('btn.switchLang') }] };
   }
 }

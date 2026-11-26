@@ -7,6 +7,7 @@ import type { OrdersService } from './orders.js';
 import type { SettingsService } from './settings.js';
 
 import { formatMoney } from './money.js';
+import { detectLanguage, languageCommand, runWithLang, t, type Lang } from '../i18n/messages.js';
 import type { ChatFlow } from './chatFlow.js';
 
 export { formatMoney };
@@ -28,7 +29,26 @@ export class BotService {
   /** Maps tapped actions (docs/3_SCHEMAS.md §3.12) to the command they stand for. */
   private static readonly ACTION_COMMANDS: Record<string, string> = { catalog: 'catalog', menu: 'help', help: 'help' };
 
+  /** Which language this customer is spoken to in: an explicit choice wins, then what we stored, otherwise what their first message looks like (and we remember it). */
+  private async languageFor(msg: InboundMessage): Promise<{ lang: Lang; chosen: boolean }> {
+    const customer = await this.customers.findOrCreateByChannel(msg.channel, msg.from, msg.senderName);
+    const explicit = msg.action === 'lang:hi' ? 'hi' : msg.action === 'lang:en' ? 'en' : msg.action === undefined ? languageCommand(msg.text) : undefined;
+    if (explicit) { await this.customers.setLanguage(customer.id, explicit); return { lang: explicit, chosen: true }; }
+    if (customer.language) return { lang: customer.language, chosen: false };
+    const detected = detectLanguage(msg.text);
+    await this.customers.setLanguage(customer.id, detected);
+    return { lang: detected, chosen: false };
+  }
+
   async handle(msg: InboundMessage): Promise<BotReply> {
+    const { lang, chosen } = await this.languageFor(msg);
+    return runWithLang(lang, async () => {
+      if (chosen && this.flow) return this.flow.handle({ ...msg, action: `lang:${lang}` }).then((r) => r ?? { text: t('lang.set') }); // confirm in the new language, with the menu
+      return this.handleInLanguage(msg);
+    });
+  }
+
+  private async handleInLanguage(msg: InboundMessage): Promise<BotReply> {
     if (msg.action !== undefined && this.flow) {
       const flowReply = await this.flow.handle(msg);
       if (flowReply) return flowReply;
@@ -45,7 +65,7 @@ export class BotService {
     const multiLineOrder = command.split('\n').filter((l) => l.trim()).length > 1 && /^order\s/im.test(command);
     if (!isWelcome || multiLineOrder) return { text };
     // FR-R2-7: the welcome carries the tap-to-order menu; text commands stay documented in the text.
-    const buttons = this.flow?.menu('').buttons ?? [{ id: 'catalog', title: '🛍 Browse' }];
+    const buttons = this.flow?.menu('').buttons ?? [{ id: 'catalog', title: t('btn.browse') }];
     return { text, buttons };
   }
 
@@ -91,12 +111,8 @@ export class BotService {
       }
       default:
         return [
-          `👋 Welcome to ${s.businessName}! You can send:`,
-          '• catalog — see what is in stock',
-          '• stock <SKU> — check availability',
-          '• price <SKU> — check the price',
-          '• order <SKU> <qty> — place an order',
-          '• status <order#> — track your order',
+          t('bot.welcome', { name: s.businessName }),
+          t('bot.help.catalog'), t('bot.help.stock'), t('bot.help.price'), t('bot.help.order'), t('bot.help.status'), t('bot.help.lang'),
         ].join('\n');
     }
   }

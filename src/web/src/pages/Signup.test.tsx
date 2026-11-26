@@ -28,7 +28,7 @@ describe('Signup', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
     expect(await screen.findByText('Check your email')).toBeInTheDocument();
     expect(calls.find((c) => c.path === '/signup')?.body).toEqual({ businessName: 'Corner Shop', slug: 'corner-shop', ownerName: 'Asha', email: 'a@b.c', password: 'a-long-password' });
-    expect(screen.getByText('a@b.c')).toBeInTheDocument();
+    expect(screen.getByText(/confirmation link to a@b\.c/)).toBeInTheDocument();
   });
 
   it('shows the server message when the address is taken', async () => {
@@ -45,7 +45,7 @@ describe('VerifyEmail', () => {
     const calls = mockApi({ 'POST /signup/verify': { slug: 'corner-shop' } });
     renderAt('/verify-email?token=abc');
     expect(await screen.findByText(/You're all set/)).toBeInTheDocument();
-    expect(screen.getByText('/shop/corner-shop')).toBeInTheDocument();
+    expect(screen.getByText(/ready at \/shop\/corner-shop/)).toBeInTheDocument();
     expect(calls.filter((c) => c.path === '/signup/verify')).toHaveLength(1);
   });
   it('explains a bad link', async () => {

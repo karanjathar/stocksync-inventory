@@ -5,8 +5,12 @@ import { SimpleRepo } from './simple.js';
 export class CustomersRepo extends SimpleRepo<Customer> {
   constructor(private readonly q: Queryable) {
     super(q, 'customers',
-      { name: 'name', phone: 'phone', email: 'email', channel: 'channel', channelUserId: 'channel_user_id', gstin: 'gstin', stateCode: 'state_code' },
+      { name: 'name', phone: 'phone', email: 'email', channel: 'channel', channelUserId: 'channel_user_id', gstin: 'gstin', stateCode: 'state_code', language: 'language' },
       'created_at DESC', ['name', 'phone', 'email']);
+  }
+
+  async setLanguage(id: string, language: 'en' | 'hi'): Promise<void> {
+    await this.q.query('UPDATE customers SET language = $2 WHERE id = $1', [id, language]);
   }
 
   /** Upserts the customer behind a chat identity; existing records are never overwritten. */

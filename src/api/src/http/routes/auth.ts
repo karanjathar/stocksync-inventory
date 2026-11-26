@@ -85,6 +85,12 @@ export function authRoutes(c: Container): Router {
     await startBrowserSession(res, me, me.tenantId);
     res.status(204).end();
   });
+  // The signed-in user's own interface language (it follows them to other devices).
+  r.patch('/language', auth, async (req, res) => {
+    const { language } = parse(z.object({ language: z.enum(['en', 'hi']) }).strict(), req.body);
+    await c.repos.users.setLanguage(currentUser(req).id, language);
+    res.json({ language });
+  });
   r.get('/me', auth, async (req, res) => {
     const user = await c.repos.users.findById(currentUser(req).id);
     if (!user) throw new NotFoundError('User');

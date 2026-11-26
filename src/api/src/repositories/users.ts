@@ -1,7 +1,7 @@
 import type { Queryable } from '../db/pool.js';
 import type { Role, User } from '../domain/types.js';
 
-const COLS = `id, email, name, role, created_at AS "createdAt"`;
+const COLS = `id, email, name, role, language, created_at AS "createdAt"`;
 
 export interface UserWithHash extends User { passwordHash: string }
 export interface LoginRecord extends UserWithHash { tenantId: string; tenantStatus: string }
@@ -40,6 +40,10 @@ export class UsersRepo {
   async findForAuth(id: string): Promise<(User & { validAfterMs: number }) | undefined> {
     const { rows } = await this.db.query<User & { validAfterMs: number }>(`SELECT ${COLS}, (extract(epoch FROM sessions_valid_after) * 1000)::float8 AS "validAfterMs" FROM users WHERE id = $1`, [id]);
     return rows[0];
+  }
+
+  async setLanguage(id: string, language: 'en' | 'hi'): Promise<void> {
+    await this.db.query('UPDATE users SET language = $2 WHERE id = $1', [id, language]);
   }
 
   async list(): Promise<User[]> {

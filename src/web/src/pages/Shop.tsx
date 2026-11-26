@@ -4,6 +4,7 @@ import { api, ApiError, errorText } from '../api/client';
 import { money, whatsappLink } from '../format';
 import { Badge, Empty, ErrorBanner, Field } from '../components/ui';
 import { isSafePaymentUrl, redirectTo } from '../redirect';
+import { LanguageSwitch, useT } from '../i18n';
 import type { PaymentMethod, PlacedOrder, PublicCatalog, PublicOrderStatus, PublicProduct } from '../api/types';
 
 // Every business has its own cart and "resume payment" memory, so a shopper using two shops never mixes them.
@@ -26,6 +27,7 @@ const forgetLastOnline = (slug?: string) => { try { localStorage.removeItem(keyF
 
 /** Public storefront: browse, cart, checkout on the website or hand the cart to WhatsApp. */
 export function Shop() {
+  const { t } = useT();
   const { slug } = useParams(); // /shop/<slug> is one business's shop; plain /shop is the original single shop
   const base = slug ? `/public/s/${encodeURIComponent(slug)}` : '/public';
   const [catalog, setCatalog] = useState<PublicCatalog | null>(null);
@@ -114,20 +116,21 @@ export function Shop() {
   return (
     <div>
       <header className="shop-head">
-        <h1 style={{ fontSize: 'clamp(1.1rem, 4vw, 1.5rem)' }}>{catalog?.settings.businessName ?? 'Shop'}</h1>
+        <h1 style={{ fontSize: 'clamp(1.1rem, 4vw, 1.5rem)' }}>{catalog?.settings.businessName ?? t('shop.title')}</h1>
         <div className="spacer" />
-        <input type="search" aria-label="Search products" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ maxWidth: 260 }} />
-        <button className="primary" aria-label={`View cart (${itemCount} items)`} onClick={() => document.getElementById('cart')?.scrollIntoView({ behavior: 'smooth' })}>🛒 {itemCount}</button>
+        <LanguageSwitch />
+        <input type="search" aria-label={t('shop.searchLabel')} placeholder={t('shop.searchPlaceholder')} value={search} onChange={(e) => setSearch(e.target.value)} style={{ maxWidth: 260 }} />
+        <button className="primary" aria-label={t('shop.viewCart', { n: itemCount })} onClick={() => document.getElementById('cart')?.scrollIntoView({ behavior: 'smooth' })}>🛒 {itemCount}</button>
       </header>
       <div className="shop-layout">
         <div className="grid">
           <ErrorBanner error={error} />
           {resume && (
             <div className="banner ok">
-              ⏳ You have an unpaid order. <Link to={`/shop/order/${resume.token}`}>Continue payment for order #{resume.number}</Link>
+              {t('shop.unpaid')} <Link to={`/shop/order/${resume.token}`}>{t('shop.continuePayment', { n: resume.number })}</Link>
             </div>
           )}
-          {catalog && !visible.length && <Empty>No products found.</Empty>}
+          {catalog && !visible.length && <Empty>{t('shop.noProducts')}</Empty>}
           <div className="shop-grid">
             {visible.map((p) => (
               <article key={p.id} className="card product-card">
@@ -138,56 +141,56 @@ export function Shop() {
                 <div className="row">
                   <span className="price">{money(p.priceCents, currency)}</span>
                   <span className="spacer" />
-                  {p.inStock ? <Badge tone="good">{p.available} in stock</Badge> : <Badge tone="bad">Out of stock</Badge>}
+                  {p.inStock ? <Badge tone="good">{t('shop.inStock', { n: p.available })}</Badge> : <Badge tone="bad">{t('shop.outOfStock')}</Badge>}
                 </div>
-                <button className="primary" aria-label={`Add ${p.name} to cart`} disabled={!p.inStock || (cart[p.id] ?? 0) >= p.available} onClick={() => add(p)}>
-                  Add to cart
+                <button className="primary" aria-label={t('shop.addLabel', { name: p.name })} disabled={!p.inStock || (cart[p.id] ?? 0) >= p.available} onClick={() => add(p)}>
+                  {t('shop.add')}
                 </button>
               </article>
             ))}
           </div>
         </div>
-        <aside id="cart" className="card cart" role="region" aria-label="Cart">
-          <h2>Your cart</h2>
+        <aside id="cart" className="card cart" role="region" aria-label={t('shop.cart')}>
+          <h2>{t('shop.yourCart')}</h2>
           {lines.length ? (
             <>
               <ul className="feed">
                 {lines.map((l) => (
                   <li key={l.product.id}>
                     <span style={{ flex: 1 }}>{l.qty} × {l.product.name}</span>
-                    <button className="small" aria-label={`Remove one ${l.product.name}`} onClick={() => add(l.product, -1)}>−</button>
+                    <button className="small" aria-label={t('shop.removeOne', { name: l.product.name })} onClick={() => add(l.product, -1)}>−</button>
                     <span>{money(l.product.priceCents * l.qty, currency)}</span>
                   </li>
                 ))}
               </ul>
-              <div className="row" style={{ margin: '12px 0' }}><strong>Total</strong><span className="spacer" /><strong>{money(total, currency)}</strong></div>
+              <div className="row" style={{ margin: '12px 0' }}><strong>{t('shop.total')}</strong><span className="spacer" /><strong>{money(total, currency)}</strong></div>
               <form className="grid" onSubmit={checkout} style={{ gap: 10 }}>
-                <Field label="Your name"><input required value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" /></Field>
-                <Field label="Phone (WhatsApp)"><input required type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" placeholder="+15551234567" /></Field>
+                <Field label={t('shop.yourName')}><input required value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" /></Field>
+                <Field label={t('shop.phone')}><input required type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" placeholder="+15551234567" /></Field>
                 {methods.length > 1 ? (
                   <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
-                    <legend>Payment</legend>
+                    <legend>{t('shop.payment')}</legend>
                     {methods.map((m) => (
                       <label key={m} className="row small" style={{ margin: '4px 0' }}>
                         <input type="radio" name="payment" style={{ width: 'auto' }} checked={method === m} onChange={() => setChosen(m)} />
-                        {m === 'ONLINE' ? 'Pay online (UPI / cards)' : 'Cash on delivery'}
+                        {m === 'ONLINE' ? t('shop.payOnline') : t('shop.cod')}
                       </label>
                     ))}
                   </fieldset>
                 ) : methods.length === 1 ? (
-                  <p className="small muted">{method === 'ONLINE' ? '💳 You will pay online (UPI / cards).' : '💵 Pay cash on delivery.'}</p>
+                  <p className="small muted">{method === 'ONLINE' ? t('shop.willPayOnline') : t('shop.willPayCod')}</p>
                 ) : (
-                  <p className="banner error">Ordering is temporarily unavailable. Please try again later{catalog?.settings.whatsappNumber ? ' or order on WhatsApp' : ''}.</p>
+                  <p className="banner error">{t('shop.unavailable')}{catalog?.settings.whatsappNumber ? t('shop.orWhatsApp') : ''}.</p>
                 )}
-                <button className="primary" type="submit" disabled={busy || !method}>Place order</button>
+                <button className="primary" type="submit" disabled={busy || !method}>{t('shop.placeOrder')}</button>
               </form>
               {catalog?.settings.whatsappNumber && (
                 <p style={{ textAlign: 'center' }}>
-                  <a href={whatsappLink(catalog.settings.whatsappNumber, waText)} target="_blank" rel="noreferrer">💬 Or order on WhatsApp</a>
+                  <a href={whatsappLink(catalog.settings.whatsappNumber, waText)} target="_blank" rel="noreferrer">{t('shop.orderOnWhatsApp')}</a>
                 </p>
               )}
             </>
-          ) : <Empty>Your cart is empty.</Empty>}
+          ) : <Empty>{t('shop.cartEmpty')}</Empty>}
         </aside>
       </div>
     </div>
