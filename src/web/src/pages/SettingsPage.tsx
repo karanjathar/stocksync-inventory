@@ -10,6 +10,7 @@ const EVENTS: { key: string; label: string }[] = [
   { key: 'order_confirmed', label: 'Order confirmed' }, { key: 'order_cancelled', label: 'Order cancelled' }, { key: 'order_fulfilled', label: 'Order fulfilled' },
   { key: 'payment_received', label: 'Payment received' }, { key: 'payment_link', label: 'Payment link' }, { key: 'refund_due', label: 'Refund on its way' },
   { key: 'refunded', label: 'Refund issued' }, { key: 'low_stock_alert', label: 'Low-stock alert (staff)' },
+  { key: 'invoice_ready', label: 'Invoice ready' },
 ];
 const RELEASE3_DEFAULTS = { whatsappTemplates: {}, maintenance: { unpaidOrderTtlHours: 48, chatRetentionDays: 365 },
   gst: { legalName: '', gstin: '', address: '', stateCode: '', invoicePrefix: 'INV', pricesIncludeTax: true } };
@@ -123,7 +124,7 @@ export function SettingsPage() {
 
         <Card title="WhatsApp templates">
           <p className="small muted">WhatsApp only lets you message customers first within 24 hours of their last message. For anything later (order updates, payment links, alerts) Meta needs an approved <strong>template</strong>. Create it in WhatsApp Manager, then map it here.
-            Parameters are filled in order from: <code>orderNumber, total, businessName, customerName, productName, quantity, paymentLink</code>.</p>
+            Parameters are filled in order from: <code>orderNumber, total, businessName, customerName, productName, quantity, paymentLink, invoiceLink</code>.</p>
           {EVENTS.map((ev) => {
             const t = form.whatsappTemplates[ev.key as keyof Settings['whatsappTemplates']];
             return (

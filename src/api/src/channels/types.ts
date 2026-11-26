@@ -8,6 +8,8 @@ export interface ChannelAdapter {
   send(to: string, text: string): Promise<string | void>;
   /** Rich reply; adapters without it get renderPlain() text via the hub. */
   sendReply?(to: string, reply: BotReply): Promise<string | void>;
+  /** A document the platform downloads from `url` (WhatsApp). */
+  sendDocument?(to: string, doc: { url: string; filename: string; caption: string }): Promise<string | void>;
   /** Approved message template (WhatsApp): the only way to start a conversation outside the 24-hour window. */
   sendTemplate?(to: string, template: TemplateMessage): Promise<string | void>;
 }

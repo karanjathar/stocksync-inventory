@@ -25,6 +25,7 @@ import { Maintenance } from './jobs/maintenance.js';
 import { PurchaseOrdersService } from './services/purchaseOrders.js';
 import { ReorderService } from './services/reorder.js';
 import { InvoiceService } from './services/invoices.js';
+import { InvoiceNotifier } from './services/invoiceNotifier.js';
 import { registerMessageSend } from './jobs/messageSend.js';
 import { randomUUID } from 'node:crypto';
 import { WhatsAppAdapter } from './channels/whatsapp.js';
@@ -85,6 +86,8 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   stock.onChanged((changes) => alerts.onStockChanged(changes));
   const notifier = new OrderNotifier(customers, settings, messenger);
   orders.onStatusChange((order, previous) => notifier.onStatusChange(order, previous));
+  const invoiceNotifier = new InvoiceNotifier(invoices, customers, settings, messenger, env.JWT_SECRET, env.PUBLIC_BASE_URL, logger);
+  orders.onStatusChange((order, previous) => invoiceNotifier.onStatusChange(order, previous));
   const carts = new ChatCartsRepo(pool);
   const chatFlow = new ChatFlow(repos.products, repos.categories, customers, carts, settings, orders);
   const bot = new BotService(repos.products, orders, customers, settings, chatFlow);

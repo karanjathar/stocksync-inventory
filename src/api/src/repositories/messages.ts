@@ -7,6 +7,7 @@ export type OutboundPayload = (
   | { kind: 'text'; text: string }
   | { kind: 'reply'; reply: BotReply }
   | { kind: 'template'; name: string; language: string; params: string[] }
+  | { kind: 'document'; url: string; filename: string; caption: string }
 ) & { notify?: { event: NotificationEvent; params: Partial<Record<TemplateParam, string>> } };
 
 // Legacy outbound rows written as 'ok' read as 'sent' (docs/3_SCHEMAS.md 3.15).

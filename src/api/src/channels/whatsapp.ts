@@ -31,6 +31,10 @@ export class WhatsAppAdapter implements ChannelAdapter {
     }
   }
 
+  async sendDocument(to: string, d: { url: string; filename: string; caption: string }): Promise<string | undefined> {
+    return this.post(to, { type: 'document', document: { link: d.url, filename: d.filename.slice(0, 240), caption: d.caption.slice(0, 1024) } });
+  }
+
   async sendTemplate(to: string, t: TemplateMessage): Promise<string | undefined> {
     return this.post(to, { type: 'template', template: { name: t.name, language: { code: t.language },
       ...(t.params.length ? { components: [{ type: 'body', parameters: t.params.map((text) => ({ type: 'text', text: text.slice(0, 1024) })) }] } : {}) } });

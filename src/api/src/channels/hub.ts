@@ -36,6 +36,11 @@ export class ChannelHub implements Messenger {
     await this.dispatch(channel, to, text, { kind: 'text', text }, [], notify);
   }
 
+  /** Sends a document (WhatsApp) stored first like every message; the text stand-in carries the link for logs and other channels. */
+  async document(channel: ChannelName, to: string, doc: { url: string; filename: string; caption: string }, notify?: NotifyOpts): Promise<void> {
+    await this.dispatch(channel, to, `${doc.caption}\n${doc.url}`, { kind: 'document', ...doc }, [], notify);
+  }
+
   /** Template for an event from Settings, with parameters filled in the mapped order ('-' when a value is missing). */
   private async templateFor(event: NotificationEvent, params: Partial<Record<TemplateParam, string>>): Promise<TemplateMessage | null> {
     const mapping = (await this.getSettings?.())?.whatsappTemplates[event];
@@ -104,6 +109,10 @@ export class ChannelHub implements Messenger {
     if (payload.kind === 'template') {
       if (!adapter.sendTemplate) throw new ChannelError(adapter.name, 400, 'channel does not support templates');
       return adapter.sendTemplate(to, { name: payload.name, language: payload.language, params: payload.params });
+    }
+    if (payload.kind === 'document') {
+      const { url, filename, caption } = payload;
+      return adapter.sendDocument ? adapter.sendDocument(to, { url, filename, caption }) : adapter.send(to, `${caption}\n${url}`);
     }
     if (payload.kind === 'reply' && adapter.sendReply) return adapter.sendReply(to, payload.reply);
     return adapter.send(to, textOf(payload, text));

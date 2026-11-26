@@ -28,10 +28,10 @@ export interface CustomFieldDef { key: string; label: string; type: 'text' | 'nu
 /** Outbound message lifecycle (inbound rows keep status 'ok'). */
 export type OutboundStatus = 'queued' | 'sent' | 'delivered' | 'read' | 'failed' | 'skipped';
 export const NOTIFICATION_EVENTS = ['order_confirmed', 'order_cancelled', 'order_fulfilled', 'payment_received',
-  'payment_link', 'refund_due', 'refunded', 'low_stock_alert'] as const;
+  'payment_link', 'refund_due', 'refunded', 'low_stock_alert', 'invoice_ready'] as const;
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
 /** Placeholders a WhatsApp template body may use, filled in order from the event. */
-export const TEMPLATE_PARAMS = ['orderNumber', 'total', 'businessName', 'customerName', 'productName', 'quantity', 'paymentLink'] as const;
+export const TEMPLATE_PARAMS = ['orderNumber', 'total', 'businessName', 'customerName', 'productName', 'quantity', 'paymentLink', 'invoiceLink'] as const;
 export type TemplateParam = (typeof TEMPLATE_PARAMS)[number];
 export interface WhatsAppTemplateMapping { name: string; language: string; params: TemplateParam[] }
 export interface MaintenanceSettings { unpaidOrderTtlHours: number; chatRetentionDays: number }

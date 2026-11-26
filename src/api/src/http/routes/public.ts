@@ -8,6 +8,7 @@ import { ALLOWED_IMAGE_TYPES } from '../../storage/blob.js';
 import { requireRole } from '../middleware/auth.js';
 import { parse } from '../validate.js';
 import { renderInvoicePdf } from '../../services/invoicePdf.js';
+import { verifyInvoiceSignature } from '../../services/signedUrl.js';
 
 const orderSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -115,6 +116,19 @@ export function publicRoutes(c: Container): Router {
     const order = token.success ? await c.orders.getByPublicToken(token.data) : undefined;
     if (!order || (order.status !== 'CONFIRMED' && order.status !== 'FULFILLED')) throw new NotFoundError('Invoice');
     const invoice = await c.invoices.issue(order.id).catch((err: unknown) => { if (err instanceof ConflictError) throw new NotFoundError('Invoice'); throw err; });
+    const pdf = await renderInvoicePdf(invoice);
+    res.set({ 'content-type': 'application/pdf', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff',
+      'content-disposition': `inline; filename="invoice-${invoice.number.replace(/[^A-Za-z0-9-]/g, '-')}.pdf"` }).send(pdf);
+  });
+
+  /** Signed download link sent in chat (T77): bound to one invoice and expiring. Any failure is the same plain 404. */
+  r.get('/invoices/:id/download.pdf', invoiceLimiter, async (req, res) => {
+    const id = z.string().uuid().safeParse(req.params.id);
+    const exp = typeof req.query.exp === 'string' ? req.query.exp : '';
+    const sig = typeof req.query.sig === 'string' ? req.query.sig : '';
+    if (!id.success || !verifyInvoiceSignature(c.env.JWT_SECRET, id.data, exp, sig)) throw new NotFoundError('Invoice');
+    const invoice = await c.invoices.get(id.data);
+    if (!invoice) throw new NotFoundError('Invoice');
     const pdf = await renderInvoicePdf(invoice);
     res.set({ 'content-type': 'application/pdf', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff',
       'content-disposition': `inline; filename="invoice-${invoice.number.replace(/[^A-Za-z0-9-]/g, '-')}.pdf"` }).send(pdf);

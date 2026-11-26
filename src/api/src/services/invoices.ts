@@ -38,6 +38,11 @@ export class InvoiceService {
     private readonly logger?: Logger,
   ) {}
 
+  async get(id: string): Promise<Invoice | undefined> {
+    const { rows } = await this.pool.query<Invoice>(`SELECT ${COLUMNS} FROM invoices WHERE id = $1`, [id]);
+    return rows[0];
+  }
+
   async getByOrder(orderId: string): Promise<Invoice | undefined> {
     const { rows } = await this.pool.query<Invoice>(`SELECT ${COLUMNS} FROM invoices WHERE order_id = $1`, [orderId]);
     return rows[0];
