@@ -22,7 +22,7 @@ export class MessagesRepo {
   async logInbound(m: InboundMessage): Promise<boolean> {
     const { rowCount } = await this.db.query(
       `INSERT INTO channel_messages (channel, direction, external_user, external_id, text, created_at)
-       VALUES ($1, 'in', $2, $3, $4, clock_timestamp()) ON CONFLICT (external_id) DO NOTHING`,
+       VALUES ($1, 'in', $2, $3, $4, clock_timestamp()) ON CONFLICT (tenant_id, external_id) DO NOTHING`,
       [m.channel, m.from, m.externalId ?? null, m.text.slice(0, 4096)],
     );
     return (rowCount ?? 0) > 0;

@@ -15,7 +15,7 @@ export class CustomersRepo extends SimpleRepo<Customer> {
     const phone = channel === 'whatsapp' || channel === 'web' ? `+${channelUserId.replace(/^\+/, '')}` : null;
     await this.q.query(
       `INSERT INTO customers (name, phone, channel, channel_user_id) VALUES ($1, $2, $3, $4)
-       ON CONFLICT (channel, channel_user_id) DO NOTHING`, [name, phone, channel, channelUserId]);
+       ON CONFLICT (tenant_id, channel, channel_user_id) DO NOTHING`, [name, phone, channel, channelUserId]);
     const { rows } = await this.q.query<{ id: string }>(
       'SELECT id FROM customers WHERE channel = $1 AND channel_user_id = $2', [channel, channelUserId]);
     return (await this.get(rows[0]!.id))!;

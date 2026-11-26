@@ -77,7 +77,7 @@ export class SettingsService {
     for (const [key, value] of Object.entries(patch)) {
       if (value === undefined) continue;
       await this.db.query(
-        'INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value',
+        'INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value',
         [key, JSON.stringify(value)]);
     }
     return this.get();

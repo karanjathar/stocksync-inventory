@@ -71,3 +71,7 @@ export type StockCountStatus = 'OPEN' | 'SUBMITTED' | 'CANCELLED';
 export interface StockCountLine { productId: string; sku: string; name: string; countedQuantity: number; systemQuantity: number; variance: number }
 export interface StockCount { id: string; number: number; warehouseId: string; warehouseCode: string; status: StockCountStatus; createdAt: string; submittedAt: string | null; lineCount: number; lines: StockCountLine[] }
 
+// ---- Release 5: tenancy (docs/3_SCHEMAS.md 3.22) ----
+export type TenantStatus = 'ACTIVE' | 'SUSPENDED' | 'DELETING';
+export interface Tenant { id: string; slug: string; name: string; status: TenantStatus; plan: string; createdAt: string }
+

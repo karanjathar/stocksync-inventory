@@ -34,7 +34,7 @@ describe('migrations 003–004 on an existing Release 1 database (T29, T58)', ()
     // Release 1/2 rows: outbound messages were logged as 'ok' (T59 normalises them to 'sent').
     await pool.query("INSERT INTO channel_messages (channel, direction, external_user, text, status) VALUES ('whatsapp','out','91999','legacy','ok'), ('whatsapp','in','91999','hello','ok')");
 
-    expect(await migrate(pool)).toEqual(['003_payments_chat.sql', '004_refunded.sql', '005_outbox_jobs.sql', '006_purchase_orders.sql', '007_gst_invoices.sql', '008_barcodes_counts.sql', '009_refunds.sql']);
+    expect(await migrate(pool)).toEqual(['003_payments_chat.sql', '004_refunded.sql', '005_outbox_jobs.sql', '006_purchase_orders.sql', '007_gst_invoices.sql', '008_barcodes_counts.sql', '009_refunds.sql', '010_tenancy.sql']);
     expect(await migrate(pool)).toEqual([]);
 
     const { rows } = await pool.query<{ payment_method: string; payment_status: string; public_token: string }>('SELECT payment_method, payment_status, public_token FROM orders ORDER BY number');
@@ -149,6 +149,70 @@ describe('migration 008 barcodes and counts (T79)', () => {
     await expect(q('UPDATE stock_count_lines SET counted_quantity = -1 WHERE count_id = $1', [count.id])).rejects.toMatchObject({ code: '23514' });
     await q('DELETE FROM stock_counts WHERE id = $1', [count.id]);
     expect((await q('SELECT 1 FROM stock_count_lines WHERE count_id = $1', [count.id])).rowCount).toBe(0);
+  });
+});
+
+describe('migration 010 tenancy (T88)', () => {
+  const q = (sql: string, args: unknown[] = []) => pool.query(sql, args);
+  const TABLES = ['users', 'categories', 'products', 'warehouses', 'stock_levels', 'stock_movements', 'suppliers', 'customers', 'orders', 'order_items', 'settings',
+    'channel_messages', 'payments', 'webhook_events', 'chat_carts', 'purchase_orders', 'purchase_order_lines', 'purchase_receipts', 'invoice_counters', 'invoices', 'stock_counts', 'stock_count_lines'];
+
+  it('creates a default tenant and moves every existing row into it, keeping numbers', async () => {
+    const tenants = (await q('SELECT id, slug, status, plan FROM tenants')).rows;
+    expect(tenants).toHaveLength(1);
+    expect(tenants[0]).toMatchObject({ slug: 'default', status: 'ACTIVE', plan: 'FREE' });
+    for (const t of TABLES) {
+      const col = (await q("SELECT is_nullable FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 AND column_name = 'tenant_id'", [SCHEMA, t])).rows[0];
+      expect(col, t).toEqual({ is_nullable: 'NO' });
+      expect((await q(`SELECT count(*)::int AS n FROM ${t} WHERE tenant_id <> $1`, [tenants[0].id])).rows[0].n, t).toBe(0);
+    }
+    // The orders created in the Release 1 test above keep their numbers, and new ones continue after them.
+    const numbers = (await q('SELECT number FROM orders ORDER BY number')).rows.map((r) => r.number);
+    const cust = (await q("SELECT id FROM customers LIMIT 1")).rows[0].id as string;
+    const fresh = (await q("INSERT INTO orders (customer_id, channel, status, total_cents) VALUES ($1, 'manual', 'PENDING', 1) RETURNING number", [cust])).rows[0].number as number;
+    expect(fresh).toBe(Math.max(...numbers) + 1);
+  });
+
+  it('lets two tenants use the same SKU, barcode, warehouse code, category and customer identity', async () => {
+    const t2 = (await q("INSERT INTO tenants (slug, name) VALUES ('second', 'Second Shop') RETURNING id")).rows[0].id as string;
+    const withTenant = (sql: string, args: unknown[] = []) => q(sql.replace('INSERT INTO ', 'INSERT INTO ').replace(/\(/, '(tenant_id, ').replace('VALUES (', `VALUES ('${t2}', `), args);
+    await q("INSERT INTO products (sku, name, price_cents, barcode) VALUES ('TWIN', 'One', 1, 'TWIN-CODE-1')");
+    await withTenant("INSERT INTO products (sku, name, price_cents, barcode) VALUES ('TWIN', 'Two', 1, 'TWIN-CODE-1')");
+    await expect(q("INSERT INTO products (sku, name, price_cents) VALUES ('TWIN', 'Dup', 1)")).rejects.toMatchObject({ code: '23505' });
+    await q("INSERT INTO warehouses (code, name) VALUES ('TWINW', 'a')");
+    await withTenant("INSERT INTO warehouses (code, name) VALUES ('TWINW', 'b')");
+    await expect(q("INSERT INTO warehouses (code, name) VALUES ('TWINW', 'c')")).rejects.toMatchObject({ code: '23505' });
+    await q("INSERT INTO categories (name) VALUES ('Twin Cat')");
+    await withTenant("INSERT INTO categories (name) VALUES ('Twin Cat')");
+    await q("INSERT INTO customers (name, channel, channel_user_id) VALUES ('c', 'whatsapp', '9100')");
+    await withTenant("INSERT INTO customers (name, channel, channel_user_id) VALUES ('c', 'whatsapp', '9100')");
+    await expect(q("INSERT INTO customers (name, channel, channel_user_id) VALUES ('c', 'whatsapp', '9100')")).rejects.toMatchObject({ code: '23505' });
+    await q("INSERT INTO settings (key, value) VALUES ('twin', '1')");
+    await withTenant("INSERT INTO settings (key, value) VALUES ('twin', '2')");
+    await expect(q("INSERT INTO settings (key, value) VALUES ('twin', '3')")).rejects.toMatchObject({ code: '23505' });
+    await q("INSERT INTO invoice_counters (fy, last_number) VALUES ('2030-31', 1)");
+    await withTenant("INSERT INTO invoice_counters (fy, last_number) VALUES ('2030-31', 1)");
+  });
+
+  it('numbers orders, purchase orders and counts per tenant', async () => {
+    const t2 = (await q("SELECT id FROM tenants WHERE slug = 'second'")).rows[0].id as string;
+    const c1 = (await q("SELECT id FROM customers WHERE channel_user_id = '9100' AND tenant_id <> $1", [t2])).rows[0].id as string;
+    const c2 = (await q("SELECT id FROM customers WHERE channel_user_id = '9100' AND tenant_id = $1", [t2])).rows[0].id as string;
+    const ins = (cust: string, tenant: string) => q("INSERT INTO orders (tenant_id, customer_id, channel, status, total_cents) VALUES ($1, $2, 'manual', 'PENDING', 1) RETURNING number", [tenant, cust]);
+    const first = (await ins(c2, t2)).rows[0].number as number;
+    const second = (await ins(c2, t2)).rows[0].number as number;
+    expect([first, second]).toEqual([1, 2]);                         // the second tenant starts at 1
+    const def = (await q('SELECT id FROM tenants WHERE slug = $1', ['default'])).rows[0].id as string;
+    expect((await ins(c1, def)).rows[0].number).toBeGreaterThan(2);  // the first tenant keeps counting from its own history
+    await expect(q("INSERT INTO orders (tenant_id, customer_id, channel, status, total_cents, number) VALUES ($1, $2, 'manual', 'PENDING', 1, 1)", [t2, c2])).rejects.toMatchObject({ code: '23505' });
+    const wh = (await q("SELECT id FROM warehouses WHERE tenant_id = $1 LIMIT 1", [t2])).rows[0].id as string;
+    expect((await q('INSERT INTO stock_counts (tenant_id, warehouse_id) VALUES ($1, $2) RETURNING number', [t2, wh])).rows[0].number).toBe(1);
+  });
+
+  it('keeps unique tenant slugs and valid statuses', async () => {
+    await expect(q("INSERT INTO tenants (slug, name) VALUES ('second', 'dup')")).rejects.toMatchObject({ code: '23505' });
+    await expect(q("INSERT INTO tenants (slug, name) VALUES ('Bad Slug!', 'x')")).rejects.toMatchObject({ code: '23514' });
+    await expect(q("UPDATE tenants SET status = 'GONE' WHERE slug = 'second'")).rejects.toMatchObject({ code: '23514' });
   });
 });
 
