@@ -82,3 +82,9 @@ Decision: Claude via tool use with strict schemas; customer text is untrusted da
 
 ## D-022 Realtime across replicas with Postgres LISTEN/NOTIFY (2026-11-26)
 Decision: no new service; events are published with `pg_notify` (tenant id in the payload) and each replica fans out to its own SSE clients. Revisit Azure Web PubSub only beyond a few thousand concurrent dashboards.
+
+## D-018a Row-level security is ENABLEd, not FORCEd (2026-11-26)
+Context: the plan said FORCEd policies. A FORCEd policy also binds the table owner, so any future owner-run data migration would silently see no rows, and the Azure admin cannot bypass it.
+Decision: policies are enabled, the app connects through `SET ROLE stocksync_app` (non-owner, NOSUPERUSER, NOBYPASSRLS), a connection that cannot assume the role is discarded (fail closed), and startup refuses to run unless `assertAppRoleIsRestricted` passes. A guard test fails if any table with a `tenant_id` lacks RLS, or a new table is added without choosing between tenant-scoped and platform-level.
+Consequences: isolation holds for raw SQL with no WHERE; it does not defend against injected SQL that calls `set_config('app.tenant_id', …)`, so queries stay parameterised (reviewed in T95). Foreign-key checks ignore RLS, so services must still look up referenced rows through tenant-scoped queries (also T95).
+

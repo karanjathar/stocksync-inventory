@@ -2,7 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pino from 'pino';
 import { loadEnv } from './config/env.js';
-import { createPool } from './db/pool.js';
+import { assertAppRoleIsRestricted, createPool } from './db/pool.js';
 import { migrate } from './db/migrate.js';
 import { createContainer } from './container.js';
 import { createApp } from './http/app.js';
@@ -20,9 +20,14 @@ async function main(): Promise<void> {
     logger.info('Application Insights enabled');
   }
 
-  const pool = createPool({ connectionString: env.DATABASE_URL, ssl: env.DATABASE_SSL });
-  const applied = await migrate(pool);
+  // Two pools: the owner pool only migrates and looks up the default tenant; everything else runs as the restricted role (row-level security).
+  const ownerPool = createPool({ connectionString: env.DATABASE_URL, ssl: env.DATABASE_SSL, max: 2 });
+  const applied = await migrate(ownerPool);
   if (applied.length) logger.info({ applied }, 'database migrations applied');
+  const defaultTenant = (await ownerPool.query<{ id: string }>("SELECT id FROM tenants WHERE slug = 'default'")).rows[0]?.id;
+  await ownerPool.end();
+  const pool = createPool({ connectionString: env.DATABASE_URL, ssl: env.DATABASE_SSL, appRole: env.DB_APP_ROLE, ...(env.TENANT_FALLBACK === 'default' && defaultTenant ? { fallbackTenantId: defaultTenant } : {}) });
+  await assertAppRoleIsRestricted(pool);
 
   const c = createContainer({ env, pool, logger });
   const admin = await c.auth.bootstrapAdmin(env.ADMIN_EMAIL, env.ADMIN_PASSWORD);

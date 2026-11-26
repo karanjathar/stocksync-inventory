@@ -60,7 +60,8 @@ See `.env.example`: NODE_ENV, PORT, CORS_ORIGINS, PUBLIC_BASE_URL, DATABASE_URL,
 JWT_SECRET, JWT_EXPIRES_IN, ADMIN_EMAIL, ADMIN_PASSWORD, AZURE_STORAGE_CONNECTION_STRING,
 AZURE_STORAGE_CONTAINER, APPLICATIONINSIGHTS_CONNECTION_STRING, META_APP_SECRET, META_VERIFY_TOKEN,
 META_GRAPH_VERSION, WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, MESSENGER_PAGE_TOKEN,
-INSTAGRAM_PAGE_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET.
+INSTAGRAM_PAGE_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, DB_APP_ROLE, TENANT_FALLBACK.
+`DB_APP_ROLE` is the restricted PostgreSQL role the app serves requests as (migration 011) so row-level security applies; the migrating user must be allowed to `SET ROLE` to it. `TENANT_FALLBACK=default` keeps single-business behaviour for requests, jobs and webhooks that carry no tenant, until those resolve their own tenant (T91–T94); it is removed before sign-up opens (T95).
 Tests use `TEST_DATABASE_URL` (default `postgres://postgres@localhost:5432/inventory_test`).
 
 ## 2.6 Commands

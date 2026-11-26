@@ -1,3 +1,4 @@
+import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { buildTestApp, TEST_ENV, type TestApp } from './helpers/app.js';
@@ -37,9 +38,11 @@ describe('/readyz', () => {
   it('is 503 with migrations:false when a migration has not been applied', async () => {
     t.c.jobs.start({ concurrency: 1, pollMs: 50 });
     await sleep(150);
-    await t.pool.query("UPDATE schema_migrations SET name = 'zzz_renamed.sql' WHERE name = '005_outbox_jobs.sql'");
+    const owner = new pg.Pool({ connectionString: TEST_DATABASE_URL }); // migration history is owner-only
+    await owner.query("UPDATE schema_migrations SET name = 'zzz_renamed.sql' WHERE name = '005_outbox_jobs.sql'");
     const res = await request(t.app).get('/readyz');
-    await t.pool.query("UPDATE schema_migrations SET name = '005_outbox_jobs.sql' WHERE name = 'zzz_renamed.sql'");
+    await owner.query("UPDATE schema_migrations SET name = '005_outbox_jobs.sql' WHERE name = 'zzz_renamed.sql'");
+    await owner.end();
     await t.c.jobs.stop();
     expect(res.status).toBe(503);
     expect(res.body.checks).toMatchObject({ db: true, migrations: false });

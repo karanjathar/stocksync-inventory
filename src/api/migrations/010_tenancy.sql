@@ -5,8 +5,9 @@ CREATE TABLE tenants (id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL, status text NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','SUSPENDED','DELETING')),
   plan text NOT NULL DEFAULT 'FREE', created_at timestamptz NOT NULL DEFAULT now());
 
-INSERT INTO tenants (slug, name)
-VALUES ('default', COALESCE((SELECT value #>> '{}' FROM settings WHERE key = 'businessName'), 'My business'));
+-- The default tenant has a fixed, well-known id (it is not a secret) so bootstrap code and tests can refer to it.
+INSERT INTO tenants (id, slug, name)
+VALUES ('00000000-0000-4000-8000-000000000001', 'default', COALESCE((SELECT value #>> '{}' FROM settings WHERE key = 'businessName'), 'My business'));
 
 -- The tenant of the current request (app.tenant_id), falling back to the default tenant until row-level security makes the context mandatory.
 CREATE FUNCTION current_tenant() RETURNS uuid LANGUAGE sql STABLE AS $$

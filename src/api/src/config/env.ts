@@ -22,6 +22,10 @@ const schema = z.object({
     .string()
     .refine((v) => /^postgres(ql)?:\/\//.test(v), 'must be a postgres:// connection string'),
   DATABASE_SSL: bool,
+  /** Restricted role the app serves requests as, so row-level security applies (D-018). The connecting user must be allowed to SET ROLE to it. */
+  DB_APP_ROLE: z.string().regex(/^[a-z_][a-z0-9_]{0,62}$/).default('stocksync_app'),
+  /** `default`: requests, jobs and webhooks without a tenant context run as the default tenant (single-business mode, until T94/T95). `off`: strict. */
+  TENANT_FALLBACK: z.enum(['default', 'off']).default('default'),
   JWT_SECRET: z.string().min(32, 'must be at least 32 characters'),
   JWT_EXPIRES_IN: z.string().default('12h'),
   ADMIN_EMAIL: optional,

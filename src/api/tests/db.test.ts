@@ -1,6 +1,6 @@
+import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type pg from 'pg';
-import { freshDb } from './helpers/db.js';
+import { freshDb, TEST_DATABASE_URL } from './helpers/db.js';
 import { migrate } from '../src/db/migrate.js';
 import { withTx } from '../src/db/tx.js';
 
@@ -21,8 +21,8 @@ describe('migrations', () => {
   });
 
   it('is idempotent', async () => {
-    const applied = await migrate(pool);
-    expect(applied).toEqual([]);
+    const owner = new pg.Pool({ connectionString: TEST_DATABASE_URL }); // the app role may not touch migration history
+    try { expect(await migrate(owner)).toEqual([]); } finally { await owner.end(); }
   });
 });
 

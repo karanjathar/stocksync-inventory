@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { createHmac } from 'node:crypto';
-import { buildTestApp, type TestApp } from './helpers/app.js';
+import { buildTestApp, TEST_ENV, type TestApp } from './helpers/app.js';
+import { createContainer } from '../src/container.js';
+import { loadEnv } from '../src/config/env.js';
 import { fakeFetch } from './helpers/fakeFetch.js';
 
 /** Release 3 security regression suite (docs/7_SECURITY_AUDIT.md §7.R3). */
@@ -57,14 +59,14 @@ describe('R3-02 delivery receipts cannot touch other channels or other ids', () 
 describe('R3-03 retries are bounded (no amplification)', () => {
   it('a message that always fails is sent at most 7 times in total and then stays failed', async () => {
     const failing = fakeFetch(503, { error: { message: 'down' } });
-    const t2 = await buildTestApp({ WHATSAPP_TOKEN: 'tok', WHATSAPP_PHONE_NUMBER_ID: '99' }, { fetch: failing.fn });
-    try {
-      await t2.c.hub.send('whatsapp', '1555', 'hi');
-      for (let i = 0; i < 20; i++) { await t2.pool.query("UPDATE jobs SET run_at = now() WHERE status = 'pending'"); await t2.c.jobs.runOnce(); }
-      expect(failing.calls.length).toBe(7);
-      expect((await t2.pool.query("SELECT status FROM channel_messages WHERE direction = 'out'")).rows[0].status).toBe('failed');
-      expect((await t2.pool.query("SELECT count(*)::int AS n FROM jobs WHERE status IN ('pending','running')")).rows[0].n).toBe(0);
-    } finally { await t2.close(); }
+    // A second container on the SAME database (never reset the DB inside a test file) whose provider always answers 503.
+    const c2 = createContainer({ env: loadEnv({ ...TEST_ENV, WHATSAPP_TOKEN: 'tok', WHATSAPP_PHONE_NUMBER_ID: '99' }), pool: t.pool, fetch: failing.fn });
+    await t.pool.query('TRUNCATE jobs, channel_messages');
+    await c2.hub.send('whatsapp', '1555', 'hi');
+    for (let i = 0; i < 20; i++) { await t.pool.query("UPDATE jobs SET run_at = now() WHERE status = 'pending'"); await c2.jobs.runOnce(); }
+    expect(failing.calls.length).toBe(7);
+    expect((await t.pool.query("SELECT status FROM channel_messages WHERE direction = 'out'")).rows[0].status).toBe('failed');
+    expect((await t.pool.query("SELECT count(*)::int AS n FROM jobs WHERE status IN ('pending','running')")).rows[0].n).toBe(0);
   });
 
   it('hammering Retry on one failed message queues one job and one send', async () => {

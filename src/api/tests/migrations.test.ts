@@ -9,14 +9,17 @@ import { migrate } from '../src/db/migrate.js';
 
 const MIGRATIONS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
 const SCHEMA = 'upgrade_t29';
+const DEFAULT_TENANT = '00000000-0000-4000-8000-000000000001';
 let main: pg.Pool;
 let pool: pg.Pool;
 
 beforeAll(async () => {
-  main = await freshDb();
+  (await freshDb()).end(); // makes sure the shared public schema (pgcrypto, the app role) exists
+  main = new pg.Pool({ connectionString: TEST_DATABASE_URL }); // the owner: schema DDL is not something the app role may do
   await main.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE; CREATE SCHEMA ${SCHEMA}`);
   // Isolated schema: simulates an existing Release 1 database without touching the shared test schema.
-  pool = new pg.Pool({ connectionString: TEST_DATABASE_URL, options: `-c search_path=${SCHEMA},public` });
+  // The owner bypasses RLS but still needs a tenant for the NOT NULL tenant_id default; it is set on every connection at start.
+  pool = new pg.Pool({ connectionString: TEST_DATABASE_URL, options: `-c search_path=${SCHEMA},public -c app.tenant_id=${DEFAULT_TENANT}` });
 });
 afterAll(async () => {
   await pool.end();
@@ -34,7 +37,7 @@ describe('migrations 003–004 on an existing Release 1 database (T29, T58)', ()
     // Release 1/2 rows: outbound messages were logged as 'ok' (T59 normalises them to 'sent').
     await pool.query("INSERT INTO channel_messages (channel, direction, external_user, text, status) VALUES ('whatsapp','out','91999','legacy','ok'), ('whatsapp','in','91999','hello','ok')");
 
-    expect(await migrate(pool)).toEqual(['003_payments_chat.sql', '004_refunded.sql', '005_outbox_jobs.sql', '006_purchase_orders.sql', '007_gst_invoices.sql', '008_barcodes_counts.sql', '009_refunds.sql', '010_tenancy.sql']);
+    expect(await migrate(pool)).toEqual(['003_payments_chat.sql', '004_refunded.sql', '005_outbox_jobs.sql', '006_purchase_orders.sql', '007_gst_invoices.sql', '008_barcodes_counts.sql', '009_refunds.sql', '010_tenancy.sql', '011_rls.sql']);
     expect(await migrate(pool)).toEqual([]);
 
     const { rows } = await pool.query<{ payment_method: string; payment_status: string; public_token: string }>('SELECT payment_method, payment_status, public_token FROM orders ORDER BY number');
