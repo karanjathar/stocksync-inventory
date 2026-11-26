@@ -17,6 +17,7 @@ import { Inbox } from './pages/Inbox';
 import { SettingsPage } from './pages/SettingsPage';
 import { Users } from './pages/Users';
 import { Usage } from './pages/Usage';
+import { Assistant } from './pages/Assistant';
 import { AuditLog } from './pages/AuditLog';
 import { Platform } from './pages/Platform';
 import { Shop } from './pages/Shop';
@@ -65,6 +66,7 @@ export function App() {
         <Route path="settings" element={<RequireAuth role="admin"><SettingsPage /></RequireAuth>} />
         <Route path="users" element={<RequireAuth role="admin"><Users /></RequireAuth>} />
         <Route path="activity" element={<RequireAuth role="admin"><AuditLog /></RequireAuth>} />
+        <Route path="assistant" element={<Assistant />} />
         <Route path="usage" element={<RequireAuth role="admin"><Usage /></RequireAuth>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

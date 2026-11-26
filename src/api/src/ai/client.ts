@@ -1,7 +1,9 @@
 import { z } from 'zod';
+import { AppError } from '../domain/errors.js';
 
-export class AiError extends Error {
-  constructor(readonly status: number, readonly code: string, message: string) { super(message); this.name = 'AiError'; }
+/** An AI problem the API can show as it is (status and code reach the caller; messages never contain the key). */
+export class AiError extends AppError {
+  constructor(status: number, code: string, message: string) { super(status, code, message); }
 }
 
 export interface AiConfig { apiKey?: string | undefined; apiBase: string; model: string; timeoutMs: number; maxAttempts: number }
