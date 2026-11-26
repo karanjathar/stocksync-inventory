@@ -3,6 +3,7 @@
 //   A. Website: shop → "Pay online" → (fake) Razorpay page → signed webhook → order status page shows paid & confirmed.
 //   B. WhatsApp: tap-through bot conversation via signed Meta webhooks → pay link → pay → "payment received" message.
 //   C. Security: forged payment webhooks are rejected.
+//   D. Release 4: GST invoice PDF, shopper invoice link, barcode lookup, purchase order receiving in the browser, stock count.
 //
 // Run:   npm run build && node scripts/e2e/payments.e2e.mjs        (or: npm run e2e)
 // Needs: PostgreSQL (E2E_DATABASE_URL, default postgres://postgres@localhost:5432/inventory_e2e — recreated each run)
@@ -235,6 +236,48 @@ async function main() {
     check((await admPage.locator('tr', { hasText: '#' + orderA.number }).textContent()).includes('paid'), 'staff see the web order as paid on the Orders page');
     check((await admPage.locator('tr', { hasText: '#' + orderB.number }).textContent()).includes('Online'), 'staff see the WhatsApp order as an Online payment');
     await admPage.screenshot({ path: path.join(OUT, 'orders-paid.png') });
+
+    // ---- D. Release 4: GST invoice, purchasing, barcode, stock count -----------------------
+    console.log('\nD. Release 4 flows');
+    await admin('PUT', '/api/settings', { gst: { legalName: 'E2E Shop Pvt Ltd', gstin: '27AAPFU0939F1ZV', address: '12 MG Road, Pune', stateCode: '27', invoicePrefix: 'E2E', pricesIncludeTax: true } });
+    await admin('PATCH', `/api/products/${tee.id}`, { hsnCode: '610910', gstRateBp: 1200, barcode: '4006381333931' });
+    const buyer = await admin('POST', '/api/customers', { name: 'Invoice Buyer' });
+    const gstOrder = await admin('POST', '/api/orders', { customerId: buyer.id, items: [{ productId: tee.id, quantity: 1 }] });
+    await admin('POST', `/api/orders/${gstOrder.id}/confirm`, { warehouseId: wh.id });
+    const pdfRes = await fetch(`${APP}/api/orders/${gstOrder.id}/invoice.pdf`, { headers: { authorization: `Bearer ${token}` } });
+    const pdfBytes = Buffer.from(await pdfRes.arrayBuffer());
+    check(pdfRes.status === 200 && pdfRes.headers.get('content-type') === 'application/pdf' && pdfBytes.subarray(0, 5).toString() === '%PDF-', 'staff can download the GST invoice as a PDF');
+    const invoice = await admin('GET', `/api/orders/${gstOrder.id}/invoice`);
+    check(/^E2E\/\d{4}-\d{2}\/000001$/.test(invoice.number) && invoice.totalCents === 49900 && invoice.taxableCents + invoice.taxCents === 49900, `invoice ${invoice.number} reconciles exactly to the order total`);
+    const pubToken = (await admin('GET', `/api/orders/${gstOrder.id}`)).publicToken;
+    const pub = await (await fetch(`${APP}/api/public/orders/${pubToken}`)).json();
+    check(pub.invoiceAvailable === true && !JSON.stringify(pub).includes('E2E/'), 'the shopper\'s status page offers the invoice without exposing its details');
+    const pubPdf = await fetch(`${APP}/api/public/orders/${pubToken}/invoice.pdf`);
+    check(pubPdf.status === 200 && (await pubPdf.arrayBuffer()).byteLength > 1000, 'the shopper can download their own invoice with just the order link');
+    const byCode = await admin('GET', '/api/products/by-barcode/4006381333931');
+    check(byCode.id === tee.id, 'a scanned EAN-13 barcode finds the product');
+
+    const sup = await admin('POST', '/api/suppliers', { name: 'E2E Supplier' });
+    const po = await admin('POST', '/api/purchase-orders', { supplierId: sup.id, warehouseId: wh.id, lines: [{ productId: tee.id, quantity: 10, unitCostCents: 20000 }] });
+    await admin('POST', `/api/purchase-orders/${po.id}/send`, {});
+    const stockBeforePo = await stock();
+    await admPage.goto(`${APP}/purchase-orders`);
+    const poRow = admPage.locator('tr', { hasText: `#${po.number}` });
+    await poRow.getByRole('button', { name: 'Receive' }).click();
+    await admPage.getByLabel('Receive TEE').fill('6');
+    await admPage.getByRole('button', { name: 'Confirm receipt' }).click();
+    await waitFor(async () => (await stock()) === stockBeforePo + 6, 'the browser receipt to reach stock');
+    check((await stock()) === stockBeforePo + 6, 'receiving 6 of 10 units in the Purchasing page added exactly 6 to stock');
+    check((await admin('GET', `/api/purchase-orders/${po.id}`)).status === 'PARTIALLY_RECEIVED', 'the purchase order is now partially received');
+
+    const count = await admin('POST', '/api/stock-counts', { warehouseId: wh.id });
+    const onHand = await stock();
+    await admin('PUT', `/api/stock-counts/${count.id}/lines`, { lines: [{ productId: tee.id, countedQuantity: onHand - 2 }] });
+    await admin('POST', `/api/stock-counts/${count.id}/submit`, {});
+    check((await stock()) === onHand - 2, 'a submitted stock count corrected the stock by its variance');
+    await admPage.goto(`${APP}/orders`);
+    await admPage.locator('tr', { hasText: '#' + gstOrder.number }).getByRole('button', { name: 'Invoice' }).waitFor();
+    ok('the Orders page offers an Invoice button for the confirmed order');
 
     const real = consoleErrors.filter((e) => !/favicon|Failed to load resource.*404/i.test(e));
     check(real.length === 0, `no browser console errors${real.length ? `: ${real.join(' | ')}` : ''}`);

@@ -177,7 +177,7 @@ Customers can pay online from the shop and from chat (UPI, cards, netbanking) th
 3. Add a **webhook** (look for *Webhooks* in Settings):
    - URL: `$APP_URL/webhooks/razorpay` (Settings → Payments in StockSync shows the exact URL)
    - Secret: any long random string, e.g. `openssl rand -hex 24` — keep it, it is `RAZORPAY_WEBHOOK_SECRET`
-   - Events: **`payment_link.paid`**, **`payment_link.expired`**, **`payment_link.cancelled`**
+   - Events: **`payment_link.paid`**, **`payment_link.expired`**, **`payment_link.cancelled`**, and (for one-click refunds) **`refund.processed`**, **`refund.failed`**
 4. Put `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` and `RAZORPAY_WEBHOOK_SECRET` into `infra/channels.secrets.json` and redeploy as in 5.3 (they go to Key Vault).
 5. In StockSync: **Settings** → currency `INR`, set a **default warehouse** (paid orders are confirmed from it automatically), and check the Payments card shows ✅ *Online payments are available*.
 6. Test it: place an order on `$APP_URL/shop` choosing **Pay online**, pay with Razorpay's test card or test UPI details (they are listed in Razorpay's Test Mode documentation), and watch the order page change to *Payment received — your order is confirmed*. Then check **Orders** (badge *paid*, status *confirmed*, stock reduced) and repeat from WhatsApp by tapping **Browse → … → Checkout → Pay online**.
@@ -226,6 +226,19 @@ WhatsApp only allows free-form messages to a customer within **24 hours** of the
 **Cleanup (Settings → Maintenance).** Unpaid online orders are cancelled after the chosen number of hours (default 48), webhook records older than 30 days are deleted daily, and chat history older than the retention days (default 365; 0 keeps everything) is deleted daily.
 
 **Health.** `/healthz` is a cheap liveness check. `/readyz` also checks migrations and the background worker and returns 503 naming the failing check; the Container App readiness and startup probes use it. Admins see queue depth, failed messages and the last cleanup runs on the Dashboard under **System health**.
+
+### 5.7c GST invoicing, barcodes and refunds (Release 4)
+
+**GST invoices.** In **Settings → GST invoicing** enter your legal name, GSTIN, registered address and state (the state must match the first two digits of the GSTIN) and an invoice prefix. Until all of these are filled in, nothing is invoiced and orders still confirm normally. Then set an **HSN/SAC code** and **GST rate** on each product (Products → edit). Shop prices are treated as GST-**inclusive** (MRP); the tax is calculated backwards from the price, so what the customer pays never changes. For a business buyer add their GSTIN and state on the customer record, and the invoice switches to IGST when their state differs from yours.
+- An invoice is created when an order is **confirmed**; staff download it from **Orders → Invoice**, and the customer gets it on WhatsApp (as a document, or as the `invoice_ready` template outside the 24-hour window, see §5.7b; add `invoiceLink` as a template parameter) or as a link on other chat channels and on their order page.
+- Invoice numbers run `PREFIX/2026-27/000001` and restart every 1 April. A cancelled order's invoice becomes VOID and its number is never reused.
+- **Before real use, have your chartered accountant check a sample invoice** (layout, wording, rounding). E-invoicing (IRN/QR on the government portal) is not included. Names in Hindi and the rupee sign currently print as `?` in the PDF (planned fix: bundled font).
+
+**Barcodes and stock counts.** Add a barcode to a product (13 digits must be a valid EAN-13). USB and Bluetooth scanners work like a keyboard: click the scan box and scan. The phone camera works in browsers that support barcode detection (Chrome on Android, recent Safari); others use the typing box. **Stock counts** (menu → Stock counts): start a count for a warehouse, scan each item (each scan adds one), fix quantities, **Save**, then **Submit** to correct stock; every difference is recorded in Movements as "Stock count #N". With no signal, Save keeps the counts on the phone and they sync when it is back online; load the page while you still have signal.
+
+**Purchasing.** Menu → Purchasing: create a purchase order for a supplier, **Send**, and **Receive** as goods arrive (partial deliveries are fine). The Dashboard's **Reorder suggestions** card creates draft orders for low-stock products from their usual supplier.
+
+**Refunds.** For an order marked *refund due*, **Refund via Razorpay** sends the refund for exactly what Razorpay captured (the browser cannot change the amount). The order shows *Refund in progress* until Razorpay's signed webhook confirms; then it becomes *refunded* and the customer is told. In the Razorpay webhook settings also enable **refund.processed** and **refund.failed**. If Razorpay does not answer, wait a minute and press the button again: the same request is repeated and cannot refund twice. **Mark refunded** remains for refunds you do in the Razorpay dashboard. Not yet verified against the live Razorpay API, see §5.8.
 
 ### 5.8 Verify against the real services (test keys, ~15 minutes)
 

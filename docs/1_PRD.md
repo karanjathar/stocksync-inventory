@@ -199,6 +199,9 @@ Close the loop a small Indian retailer lives in every day: **buy** stock (purcha
 - A refund is issued at most once per payment even with double-clicks and webhook replays; the amount sent always equals the captured amount.
 - All gates green; existing tests unchanged in behaviour.
 
+### 1.10.1 Status (2026-11-26)
+FR-R4-1 to FR-R4-7 are built and tested against fakes (T69–T85). Differences from the plan: reorder suggestions subtract quantity already on open purchase orders; tax-exclusive pricing is computed but not issued (D-017); partial Razorpay refunds are recognised and not announced as complete (R4-01); invoice PDFs cannot yet print the rupee sign or Devanagari (T87). Real-service verification of refunds and the idempotency header waits on T67.
+
 ### Non-goals (Release 4)
 E-invoicing IRN/QR through the government portal, GST returns filing, e-way bills, batch/expiry and variants (Release 4b), partial refunds, supplier portals, multi-currency.
 
