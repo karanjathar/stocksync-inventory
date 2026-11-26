@@ -1,7 +1,8 @@
 import type pg from 'pg';
 import type { Express } from 'express';
 import request from 'supertest';
-import { freshDb } from './db.js';
+import { freshDb, TEST_DATABASE_URL } from './db.js';
+import { createPool } from '../../src/db/pool.js';
 import { createApp } from '../../src/http/app.js';
 import { loadEnv, type Env } from '../../src/config/env.js';
 import { createContainer, type Container, type ContainerOverrides } from '../../src/container.js';
@@ -31,8 +32,10 @@ export const TEST_ENV = {
 export async function buildTestApp(envOverrides: Record<string, string> = {}, overrides: ContainerOverrides = {}): Promise<TestApp> {
   const pool = await freshDb();
   const env = loadEnv({ ...TEST_ENV, ...envOverrides });
-  const c = createContainer({ env, pool, ...overrides });
+  const platformPool = createPool({ connectionString: TEST_DATABASE_URL, ssl: false, appRole: 'stocksync_platform' });
+  const c = createContainer({ env, pool, platformPool, ...overrides });
   await c.auth.bootstrapAdmin(env.ADMIN_EMAIL, env.ADMIN_PASSWORD);
+  await c.platform?.bootstrapAdmin(env.PLATFORM_ADMIN_EMAIL, env.PLATFORM_ADMIN_PASSWORD);
   const app = createApp(c);
   let n = 0;
   const tokens = new Map<Role, string>();
@@ -48,6 +51,6 @@ export async function buildTestApp(envOverrides: Record<string, string> = {}, ov
       tokens.set(role, token);
       return token;
     },
-    close: () => pool.end(),
+    close: async () => { await platformPool.end(); await pool.end(); },
   };
 }

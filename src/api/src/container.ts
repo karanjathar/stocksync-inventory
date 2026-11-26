@@ -7,6 +7,8 @@ import { ProductsRepo } from './repositories/products.js';
 import { CustomersRepo } from './repositories/customers.js';
 import type { Category, Supplier, Warehouse } from './domain/types.js';
 import { AuthService } from './services/auth.js';
+import { PlatformService } from './services/platform.js';
+import { TenantsRepo } from './repositories/tenants.js';
 import { StockService } from './services/stock.js';
 import { SettingsService } from './services/settings.js';
 import { EventBus } from './realtime/bus.js';
@@ -37,6 +39,8 @@ import { RazorpayClient } from './payments/razorpay.js';
 import { PaymentService } from './services/payments.js';
 
 export interface ContainerOverrides {
+  /** Connection for the platform console (role with no access to business data). */
+  platformPool?: pg.Pool;
   logger?: Logger;
   fetch?: typeof fetch;
   /** Replaces the channel hub for outbound messages (tests). */
@@ -53,7 +57,10 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
     suppliers: new SimpleRepo<Supplier>(pool, 'suppliers', { name: 'name', email: 'email', phone: 'phone', notes: 'notes' }, 'name', ['name', 'email', 'phone']),
     warehouses: new SimpleRepo<Warehouse>(pool, 'warehouses', { code: 'code', name: 'name', address: 'address' }, 'code', ['code', 'name']),
   };
-  const auth = new AuthService(repos.users, env.JWT_SECRET, env.JWT_EXPIRES_IN, env.NODE_ENV === 'test' ? 4 : 12);
+  const rounds = env.NODE_ENV === 'test' ? 4 : 12;
+  const auth = new AuthService(repos.users, env.JWT_SECRET, env.JWT_EXPIRES_IN, rounds, new TenantsRepo(pool));
+  // The platform console uses its own restricted database role; without that pool its routes answer 501.
+  const platform = opts.platformPool ? new PlatformService(opts.platformPool, env.JWT_SECRET, env.JWT_EXPIRES_IN, rounds) : undefined;
   const stock = new StockService(pool, (err) => logger.error({ err }, 'stock observer failed'));
   const events = new EventBus();
   stock.onChanged(async (changes) => {
@@ -99,7 +106,7 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const images = new ImageStorage(env.AZURE_STORAGE_CONNECTION_STRING, env.AZURE_STORAGE_CONTAINER);
   chatFlow.setPaymentOptions(payments.chatOptions());
   orders.onStatusChange((order, previous) => payments.onOrderStatusChange(order, previous));
-  return { env, pool, logger, repos, auth, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpay, payments };
+  return { env, pool, logger, repos, auth, platform, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpay, payments };
 }
 
 export type Container = ReturnType<typeof createContainer>;

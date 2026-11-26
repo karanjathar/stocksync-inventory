@@ -25,6 +25,11 @@ const schema = z.object({
   /** Restricted role the app serves requests as, so row-level security applies (D-018). The connecting user must be allowed to SET ROLE to it. */
   DB_APP_ROLE: z.string().regex(/^[a-z_][a-z0-9_]{0,62}$/).default('stocksync_app'),
   /** `default`: requests, jobs and webhooks without a tenant context run as the default tenant (single-business mode, until T94/T95). `off`: strict. */
+  /** Restricted role for the platform console (manages businesses, reads no business data). */
+  DB_PLATFORM_ROLE: z.string().regex(/^[a-z_][a-z0-9_]{0,62}$/).default('stocksync_platform'),
+  /** First platform operator, created on startup when no platform admin exists. */
+  PLATFORM_ADMIN_EMAIL: z.string().email().optional(),
+  PLATFORM_ADMIN_PASSWORD: z.string().min(12).optional(),
   TENANT_FALLBACK: z.enum(['default', 'off']).default('default'),
   JWT_SECRET: z.string().min(32, 'must be at least 32 characters'),
   JWT_EXPIRES_IN: z.string().default('12h'),

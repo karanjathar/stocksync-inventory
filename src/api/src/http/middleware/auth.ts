@@ -2,6 +2,7 @@ import type { RequestHandler } from 'express';
 import { ForbiddenError, UnauthorizedError } from '../../domain/errors.js';
 import type { AuthUser, Role } from '../../domain/types.js';
 import type { AuthService } from '../../services/auth.js';
+import { runWithTenant } from '../../db/tenant.js';
 
 const RANK: Record<Role, number> = { viewer: 1, staff: 2, admin: 3 };
 
@@ -10,8 +11,12 @@ export function requireAuth(auth: AuthService): RequestHandler {
     const header = req.headers.authorization ?? '';
     const [scheme, token] = header.split(' ');
     if (scheme !== 'Bearer' || !token) throw new UnauthorizedError();
-    req.user = await auth.authenticate(token);
-    next();
+    const claims = auth.verify(token);
+    // From here on, everything this request does (including every handler after next()) runs as this business.
+    await runWithTenant(claims.tid, async () => {
+      req.user = await auth.authenticateClaims(claims);
+      next();
+    });
   };
 }
 

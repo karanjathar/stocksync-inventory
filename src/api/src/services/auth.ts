@@ -1,10 +1,12 @@
 import bcrypt from 'bcryptjs';
 import jwt, { type SignOptions } from 'jsonwebtoken';
-import { ConflictError, NotFoundError, UnauthorizedError } from '../domain/errors.js';
+import { ConflictError, ForbiddenError, NotFoundError, UnauthorizedError } from '../domain/errors.js';
 import type { AuthUser, Role, User } from '../domain/types.js';
 import type { UsersRepo } from '../repositories/users.js';
+import type { TenantsRepo } from '../repositories/tenants.js';
 
 const BCRYPT_ROUNDS = 12;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Constant-time-ish path for unknown emails so timing does not reveal which emails exist.
 const DUMMY_HASH = bcrypt.hashSync('dummy-password-for-timing', 4);
 
@@ -16,6 +18,7 @@ export class AuthService {
     private readonly secret: string,
     private readonly expiresIn: string,
     private readonly rounds: number = BCRYPT_ROUNDS,
+    private readonly tenants?: TenantsRepo,
   ) {}
 
   async createUser(input: NewUser): Promise<User> {
@@ -45,11 +48,13 @@ export class AuthService {
   }
 
   async login(email: string, password: string): Promise<{ token: string; user: User }> {
-    const found = await this.users.findByEmailWithHash(email.trim().toLowerCase());
+    const found = await this.users.findForLogin(email.trim().toLowerCase());
     const ok = await bcrypt.compare(password, found?.passwordHash ?? DUMMY_HASH);
     if (!found || !ok) throw new UnauthorizedError('Invalid email or password');
-    const { passwordHash: _omit, ...user } = found;
-    const token = jwt.sign({ email: user.email, role: user.role }, this.secret, {
+    // Only after the password is right, so a wrong guess never reveals that an account exists or is suspended.
+    if (found.tenantStatus !== 'ACTIVE') throw new ForbiddenError('This business account is suspended. Please contact support.');
+    const { passwordHash: _omit, tenantId, tenantStatus: _status, ...user } = found;
+    const token = jwt.sign({ typ: 'tenant', tid: tenantId, email: user.email, role: user.role }, this.secret, {
       subject: user.id,
       expiresIn: this.expiresIn as SignOptions['expiresIn'],
       algorithm: 'HS256',
@@ -57,18 +62,28 @@ export class AuthService {
     return { token, user };
   }
 
-  /** Verifies the token AND that the user still exists, using the current role from the DB. */
-  async authenticate(token: string): Promise<AuthUser> {
-    let sub: string | undefined;
+  /** Checks signature, type and tenant claim only (no database). Business tokens are `typ: tenant` with a tenant id; anything else is refused. */
+  verify(token: string): { sub: string; tid: string } {
+    let payload: unknown;
     try {
-      const payload = jwt.verify(token, this.secret, { algorithms: ['HS256'] });
-      sub = typeof payload === 'object' ? payload.sub : undefined;
+      payload = jwt.verify(token, this.secret, { algorithms: ['HS256'] });
     } catch {
       throw new UnauthorizedError('Invalid or expired token');
     }
-    if (!sub) throw new UnauthorizedError('Invalid or expired token');
-    const user = await this.users.findById(sub);
+    const p = typeof payload === 'object' && payload ? (payload as Record<string, unknown>) : {};
+    if (p.typ !== 'tenant' || typeof p.sub !== 'string' || typeof p.tid !== 'string' || !UUID_RE.test(p.tid)) throw new UnauthorizedError('Invalid or expired token');
+    return { sub: p.sub, tid: p.tid };
+  }
+
+  /**
+   * Must run inside `runWithTenant(claims.tid)`. Confirms the user still exists IN THAT BUSINESS (a user id from another business, with
+   * this tenant's claim, finds nothing), takes the current role from the database, and refuses suspended businesses.
+   */
+  async authenticateClaims(claims: { sub: string; tid: string }): Promise<AuthUser> {
+    const user = await this.users.findById(claims.sub);
     if (!user) throw new UnauthorizedError('Invalid or expired token');
-    return { id: user.id, email: user.email, role: user.role };
+    const status = await this.tenants?.currentStatus();
+    if (status !== undefined && status !== 'ACTIVE') throw new ForbiddenError('This business account is suspended. Please contact support.');
+    return { id: user.id, email: user.email, role: user.role, tenantId: claims.tid };
   }
 }

@@ -6,7 +6,7 @@ export type PaymentMethod = 'COD' | 'ONLINE';
 export type PaymentStatus = 'UNPAID' | 'PAID' | 'REFUND_DUE' | 'REFUNDED';
 export type MovementType = 'IN' | 'OUT' | 'ADJUST' | 'TRANSFER_IN' | 'TRANSFER_OUT';
 export interface User { id: string; email: string; name: string; role: Role; createdAt: string }
-export interface AuthUser { id: string; email: string; role: Role }
+export interface AuthUser { id: string; email: string; role: Role; tenantId: string }
 export interface Category { id: string; name: string }
 export interface Product { id: string; sku: string; name: string; description: string; categoryId: string | null;
   unit: string; priceCents: number; reorderLevel: number; imageUrl: string | null; barcode: string | null; hsnCode: string | null; gstRateBp: number;

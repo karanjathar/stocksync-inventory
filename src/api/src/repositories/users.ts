@@ -4,6 +4,7 @@ import type { Role, User } from '../domain/types.js';
 const COLS = `id, email, name, role, created_at AS "createdAt"`;
 
 export interface UserWithHash extends User { passwordHash: string }
+export interface LoginRecord extends UserWithHash { tenantId: string; tenantStatus: string }
 
 export class UsersRepo {
   constructor(private readonly db: Queryable) {}
@@ -20,6 +21,13 @@ export class UsersRepo {
     const { rows } = await this.db.query<UserWithHash>(
       `SELECT ${COLS}, password_hash AS "passwordHash" FROM users WHERE email = $1`, [email],
     );
+    return rows[0];
+  }
+
+  /** Login before any tenant is known: finds the user across businesses through the narrow login_lookup() function. */
+  async findForLogin(email: string): Promise<LoginRecord | undefined> {
+    const { rows } = await this.db.query<LoginRecord>(
+      `SELECT id, email, name, role, created_at AS "createdAt", password_hash AS "passwordHash", tenant_id AS "tenantId", tenant_status AS "tenantStatus" FROM login_lookup($1)`, [email]);
     return rows[0];
   }
 

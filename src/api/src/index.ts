@@ -28,8 +28,10 @@ async function main(): Promise<void> {
   await ownerPool.end();
   const pool = createPool({ connectionString: env.DATABASE_URL, ssl: env.DATABASE_SSL, appRole: env.DB_APP_ROLE, ...(env.TENANT_FALLBACK === 'default' && defaultTenant ? { fallbackTenantId: defaultTenant } : {}) });
   await assertAppRoleIsRestricted(pool);
+  const platformPool = createPool({ connectionString: env.DATABASE_URL, ssl: env.DATABASE_SSL, max: 3, appRole: env.DB_PLATFORM_ROLE });
 
-  const c = createContainer({ env, pool, logger });
+  const c = createContainer({ env, pool, platformPool, logger });
+  if (await c.platform?.bootstrapAdmin(env.PLATFORM_ADMIN_EMAIL, env.PLATFORM_ADMIN_PASSWORD)) logger.warn({ email: env.PLATFORM_ADMIN_EMAIL }, 'platform operator created: change this password after first login');
   const admin = await c.auth.bootstrapAdmin(env.ADMIN_EMAIL, env.ADMIN_PASSWORD);
   if (admin) logger.warn({ email: admin.email }, 'bootstrap admin created: change this password after first login');
   if (c.images.isConfigured()) {
@@ -53,7 +55,7 @@ async function main(): Promise<void> {
     { name: 'http', run: () => new Promise<void>((resolve) => { server.close(() => resolve()); server.closeIdleConnections(); }) },
     { name: 'scheduler', run: async () => { stopScheduler(); } },
     { name: 'jobs', run: () => c.jobs.stop() },
-    { name: 'database', run: () => pool.end() },
+    { name: 'database', run: async () => { await platformPool.end(); await pool.end(); } },
   ], { timeoutMs: 25_000, exit: (code) => process.exit(code), log: (msg, data) => logger.info(data ?? {}, msg) });
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
   process.on('SIGINT', () => void shutdown('SIGINT'));

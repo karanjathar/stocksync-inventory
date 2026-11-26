@@ -20,6 +20,7 @@ import { channelRoutes, messageRoutes } from './routes/messages.js';
 import { publicRoutes, uploadRoutes } from './routes/public.js';
 import { paymentRoutes } from './routes/payments.js';
 import { opsRoutes } from './routes/ops.js';
+import { platformRoutes } from './routes/platform.js';
 import { stockCountRoutes } from './routes/stockCounts.js';
 import { purchaseOrderRoutes, reorderRoutes } from './routes/purchaseOrders.js';
 import { pendingMigrations } from '../db/migrate.js';
@@ -86,6 +87,7 @@ export function createApp(c: Container, opts: AppOptions = {}): Express {
   api.use(rateLimit({ windowMs: 60_000, limit: env.NODE_ENV === 'test' ? 10_000 : 600, standardHeaders: true, legacyHeaders: false }));
   api.use('/auth', authRoutes(c));
   api.use('/public', publicRoutes(c));
+  api.use('/platform', platformRoutes(c));
 
   // Each group below requires a valid token.
   const secure = requireAuth(c.auth);
