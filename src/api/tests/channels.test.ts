@@ -69,7 +69,7 @@ describe('ChannelHub', () => {
     const log = await repo.list({});
     expect(log.map((m) => [m.channel, m.direction, m.status, m.text])).toEqual([
       ['whatsapp', 'out', 'skipped', 'not configured'],
-      ['telegram', 'out', 'ok', 'hello there'],
+      ['telegram', 'out', 'sent', 'hello there'],
     ]);
     expect(hub.status()).toEqual([{ name: 'telegram', configured: true }, { name: 'whatsapp', configured: false }]);
   });

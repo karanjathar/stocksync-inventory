@@ -24,9 +24,21 @@ export interface Order { id: string; number: number; customerId: string; custome
   paymentMethod: PaymentMethod; paymentStatus: PaymentStatus; publicToken: string }
 export interface AlertRecipient { channel: ChannelName; to: string }
 export interface CustomFieldDef { key: string; label: string; type: 'text' | 'number' | 'select'; options?: string[] }
+/** Outbound message lifecycle (inbound rows keep status 'ok'). */
+export type OutboundStatus = 'queued' | 'sent' | 'delivered' | 'read' | 'failed' | 'skipped';
+export const NOTIFICATION_EVENTS = ['order_confirmed', 'order_cancelled', 'order_fulfilled', 'payment_received',
+  'payment_link', 'refund_due', 'refunded', 'low_stock_alert'] as const;
+export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
+/** Placeholders a WhatsApp template body may use, filled in order from the event. */
+export const TEMPLATE_PARAMS = ['orderNumber', 'total', 'businessName', 'customerName', 'productName', 'quantity', 'paymentLink'] as const;
+export type TemplateParam = (typeof TEMPLATE_PARAMS)[number];
+export interface WhatsAppTemplateMapping { name: string; language: string; params: TemplateParam[] }
+export interface MaintenanceSettings { unpaidOrderTtlHours: number; chatRetentionDays: number }
 export interface Settings { businessName: string; currency: string; whatsappNumber: string; defaultWarehouseId: string | null;
-  alertRecipients: AlertRecipient[]; customFields: CustomFieldDef[]; payments: PaymentSettings }
-export interface ChannelMessage { id: string; channel: ChannelName; direction: 'in' | 'out'; externalUser: string; text: string; status: string; createdAt: string }
+  alertRecipients: AlertRecipient[]; customFields: CustomFieldDef[]; payments: PaymentSettings;
+  whatsappTemplates: Partial<Record<NotificationEvent, WhatsAppTemplateMapping>>; maintenance: MaintenanceSettings }
+export interface ChannelMessage { id: string; channel: ChannelName; direction: 'in' | 'out'; externalUser: string; text: string; status: string;
+  createdAt: string; errorCode?: string | null; errorMessage?: string | null }
 /** `action` is the id of a tapped button / list row / quick reply (docs/3_SCHEMAS.md §3.12); absent for typed text. */
 export interface InboundMessage { channel: ChannelName; from: string; text: string; action?: string; externalId?: string; senderName?: string }
 export type RealtimeEvent =

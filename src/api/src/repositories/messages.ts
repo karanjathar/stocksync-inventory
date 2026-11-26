@@ -2,7 +2,10 @@ import type { Queryable } from '../db/pool.js';
 import type { ChannelMessage, ChannelName, InboundMessage } from '../domain/types.js';
 import type { ReplyOption } from '../channels/reply.js';
 
-const COLS = `id, channel, direction, external_user AS "externalUser", text, status, created_at AS "createdAt"`;
+// Legacy outbound rows written as 'ok' read as 'sent' (docs/3_SCHEMAS.md 3.15).
+const COLS = `id, channel, direction, external_user AS "externalUser", text,
+  CASE WHEN direction = 'out' AND status = 'ok' THEN 'sent' ELSE status END AS status,
+  created_at AS "createdAt", error_code AS "errorCode", error_message AS "errorMessage"`;
 
 export class MessagesRepo {
   constructor(private readonly db: Queryable) {}

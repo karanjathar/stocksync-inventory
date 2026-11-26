@@ -31,8 +31,10 @@ describe('migrations 003–004 on an existing Release 1 database (T29, T58)', ()
     await migrate(pool, v1);
     const cust = await pool.query<{ id: string }>("INSERT INTO customers (name) VALUES ('Legacy') RETURNING id");
     await pool.query("INSERT INTO orders (customer_id, channel, status, total_cents) VALUES ($1, 'manual', 'PENDING', 500), ($1, 'web', 'FULFILLED', 900)", [cust.rows[0]!.id]);
+    // Release 1/2 rows: outbound messages were logged as 'ok' (T59 normalises them to 'sent').
+    await pool.query("INSERT INTO channel_messages (channel, direction, external_user, text, status) VALUES ('whatsapp','out','91999','legacy','ok'), ('whatsapp','in','91999','hello','ok')");
 
-    expect(await migrate(pool)).toEqual(['003_payments_chat.sql', '004_refunded.sql']);
+    expect(await migrate(pool)).toEqual(['003_payments_chat.sql', '004_refunded.sql', '005_outbox_jobs.sql']);
     expect(await migrate(pool)).toEqual([]);
 
     const { rows } = await pool.query<{ payment_method: string; payment_status: string; public_token: string }>('SELECT payment_method, payment_status, public_token FROM orders ORDER BY number');
@@ -55,5 +57,29 @@ describe('migrations 003–004 on an existing Release 1 database (T29, T58)', ()
     await pool.query("UPDATE orders SET payment_status = 'REFUNDED' WHERE id = $1", [o!.id]); // allowed since migration 004
     await pool.query("UPDATE orders SET payment_status = 'UNPAID' WHERE id = $1", [o!.id]);
     await expect(pool.query("INSERT INTO webhook_events (provider, event_id) VALUES ('razorpay', 'evt_1'), ('razorpay', 'evt_1')")).rejects.toMatchObject({ code: '23505' });
+  });
+});
+
+describe('migration 005 outbox and jobs (T59)', () => {
+  it('adds outbox columns, normalises legacy statuses and enforces job constraints', async () => {
+    const q = (sql: string, args: unknown[] = []) => pool.query(sql, args);
+    expect(await migrate(pool)).toEqual([]); // idempotent
+    const { rows: cols } = await q("SELECT column_name FROM information_schema.columns WHERE table_name = 'channel_messages' AND table_schema = $1", [SCHEMA]);
+    for (const c of ['payload', 'provider_message_id', 'attempts', 'error_code', 'error_message', 'status_at', 'event']) {
+      expect(cols.map((r: { column_name: string }) => r.column_name)).toContain(c);
+    }
+    const { rows } = await q("SELECT direction, status FROM channel_messages WHERE external_user = '91999' ORDER BY direction");
+    expect(rows).toEqual([{ direction: 'in', status: 'ok' }, { direction: 'out', status: 'sent' }]);
+
+    await q("INSERT INTO channel_messages (channel, direction, external_user, text, provider_message_id) VALUES ('whatsapp','out','1','a','wamid.1')");
+    await expect(q("INSERT INTO channel_messages (channel, direction, external_user, text, provider_message_id) VALUES ('whatsapp','out','2','b','wamid.1')")).rejects.toMatchObject({ code: '23505' });
+
+    await q("INSERT INTO jobs (kind, dedupe_key) VALUES ('maintenance.prune', 'd1')");
+    await expect(q("INSERT INTO jobs (kind, dedupe_key) VALUES ('maintenance.prune', 'd1')")).rejects.toMatchObject({ code: '23505' });
+    await q("UPDATE jobs SET status = 'done' WHERE dedupe_key = 'd1'");
+    await q("INSERT INTO jobs (kind, dedupe_key) VALUES ('maintenance.prune', 'd1')"); // finished jobs free the key
+    await expect(q("INSERT INTO jobs (kind, status) VALUES ('x', 'bogus')")).rejects.toMatchObject({ code: '23514' });
+    await q("INSERT INTO worker_heartbeats (worker_id) VALUES ('w1')");
+    await q("INSERT INTO maintenance_runs (task, ran_at, result) VALUES ('prune', now(), '{}')");
   });
 });

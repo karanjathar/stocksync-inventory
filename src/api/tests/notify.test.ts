@@ -60,7 +60,7 @@ describe('messages & channels API', () => {
     expect(res.status).toBe(202);
     expect(f.calls[0]!.url).toContain('/99/messages');
     const inbox = await request(t.app).get('/api/messages?channel=whatsapp').set(auth(staff));
-    expect(inbox.body[0]).toMatchObject({ direction: 'out', text: 'Hello from the shop', status: 'ok' });
+    expect(inbox.body[0]).toMatchObject({ direction: 'out', text: 'Hello from the shop', status: 'sent' });
     expect((await request(t.app).post('/api/messages/send').set(auth(await t.token('viewer'))).send({ channel: 'whatsapp', to: '1', text: 'x' })).status).toBe(403);
     expect((await request(t.app).post('/api/messages/send').set(auth(staff)).send({ channel: 'sms', to: '1', text: 'x' })).status).toBe(400);
   });

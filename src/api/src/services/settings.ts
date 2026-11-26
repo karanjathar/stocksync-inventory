@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Queryable } from '../db/pool.js';
 import { ValidationError } from '../domain/errors.js';
-import type { Settings } from '../domain/types.js';
+import { NOTIFICATION_EVENTS, TEMPLATE_PARAMS, type Settings } from '../domain/types.js';
 
 export const DEFAULT_SETTINGS: Settings = {
   businessName: 'StockSync',
@@ -11,6 +11,8 @@ export const DEFAULT_SETTINGS: Settings = {
   alertRecipients: [],
   customFields: [],
   payments: { onlineEnabled: true, codEnabled: true, linkExpiryMinutes: 1440 },
+  whatsappTemplates: {},
+  maintenance: { unpaidOrderTtlHours: 48, chatRetentionDays: 365 },
 };
 
 export const settingsPatchSchema = z.object({
@@ -32,6 +34,16 @@ export const settingsPatchSchema = z.object({
     onlineEnabled: z.boolean(),
     codEnabled: z.boolean(),
     linkExpiryMinutes: z.number().int().min(15).max(7 * 24 * 60),
+  }).optional(),
+  // Release 3: event → approved WhatsApp template (created in WhatsApp Manager; we only map names).
+  whatsappTemplates: z.partialRecord(z.enum(NOTIFICATION_EVENTS), z.object({
+    name: z.string().regex(/^[a-z0-9_]{1,512}$/, 'lowercase letters, digits, underscore'),
+    language: z.string().regex(/^[a-z]{2,3}(_[A-Z]{2})?$/, 'e.g. en or en_US'),
+    params: z.array(z.enum(TEMPLATE_PARAMS)).max(10),
+  })).optional(),
+  maintenance: z.object({
+    unpaidOrderTtlHours: z.number().int().min(1).max(720),
+    chatRetentionDays: z.number().int().min(0).max(3650),
   }).optional(),
 });
 
