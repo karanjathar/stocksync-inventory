@@ -36,6 +36,6 @@ export function messageRoutes(c: Container): Router {
 
 export function channelRoutes(c: Container): Router {
   const r = Router();
-  r.get('/', (_req, res) => { res.json(c.hub.status()); });
+  r.get('/', async (_req, res) => { res.json(await c.hub.status()); });
   return r;
 }

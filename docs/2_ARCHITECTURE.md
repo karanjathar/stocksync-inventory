@@ -60,7 +60,8 @@ See `.env.example`: NODE_ENV, PORT, CORS_ORIGINS, PUBLIC_BASE_URL, DATABASE_URL,
 JWT_SECRET, JWT_EXPIRES_IN, ADMIN_EMAIL, ADMIN_PASSWORD, AZURE_STORAGE_CONNECTION_STRING,
 AZURE_STORAGE_CONTAINER, APPLICATIONINSIGHTS_CONNECTION_STRING, META_APP_SECRET, META_VERIFY_TOKEN,
 META_GRAPH_VERSION, WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, MESSENGER_PAGE_TOKEN,
-INSTAGRAM_PAGE_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, DB_APP_ROLE, TENANT_FALLBACK, DB_PLATFORM_ROLE, PLATFORM_ADMIN_EMAIL, PLATFORM_ADMIN_PASSWORD.
+INSTAGRAM_PAGE_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, DB_APP_ROLE, TENANT_FALLBACK, DB_PLATFORM_ROLE, PLATFORM_ADMIN_EMAIL, PLATFORM_ADMIN_PASSWORD, ENCRYPTION_KEY, ENCRYPTION_KEY_VERSION, ENCRYPTION_KEY_PREVIOUS.
+`ENCRYPTION_KEY` (base64, 32 bytes; generate with `openssl rand -base64 32`, keep it in Key Vault) encrypts each business's own WhatsApp/Meta/Telegram/Razorpay credentials. The server's own `WHATSAPP_*`, `META_*`, `TELEGRAM_*` and `RAZORPAY_*` variables apply only to the original default business; every other business must save its own.
 `DB_APP_ROLE` is the restricted PostgreSQL role the app serves requests as (migration 011) so row-level security applies; the migrating user must be allowed to `SET ROLE` to it. `TENANT_FALLBACK=default` keeps single-business behaviour for requests, jobs and webhooks that carry no tenant, until those resolve their own tenant (T91–T94); it is removed before sign-up opens (T95).
 Tests use `TEST_DATABASE_URL` (default `postgres://postgres@localhost:5432/inventory_test`).
 

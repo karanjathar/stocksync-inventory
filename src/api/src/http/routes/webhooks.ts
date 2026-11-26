@@ -1,9 +1,11 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import rateLimit from 'express-rate-limit';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Container } from '../../container.js';
 import { parseMetaWebhook, parseWhatsAppStatuses, parseTelegramUpdate, telegramCallbackId } from '../../channels/parse.js';
 import { verifyWebhookSignature } from '../../payments/razorpay.js';
+import { runWithTenant } from '../../db/tenant.js';
+import { NotFoundError } from '../../domain/errors.js';
 
 export function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
@@ -20,13 +22,27 @@ export function verifyMetaSignature(rawBody: Buffer | undefined, header: string 
 const notConfigured = { error: { code: 'NOT_CONFIGURED', message: 'Webhook secret is not configured' } };
 const badSignature = { error: { code: 'UNAUTHORIZED', message: 'Invalid signature' } };
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Webhooks. Each business has its own URL (`/webhooks/<channel>/<businessId>`) and is verified with its OWN secret, so a payload signed for one
+ * business can never be accepted for another. The original URLs without an id serve the default business (single-business installs).
+ */
 export function webhookRoutes(c: Container): Router {
   const r = Router();
   r.use(rateLimit({ windowMs: 60_000, limit: c.env.NODE_ENV === 'test' ? 10_000 : 1200, standardHeaders: true, legacyHeaders: false }));
 
+  const tenantScope: RequestHandler = async (req, _res, next) => {
+    const raw = req.params.tenantId;
+    if (raw === undefined) { next(); return; }
+    const id = String(raw);
+    if (!UUID_RE.test(id) || !(await c.tenantDirectory.isActive(id))) throw new NotFoundError('Webhook'); // unknown, malformed or suspended
+    await runWithTenant(id, async () => { next(); });
+  };
+
   // Meta (WhatsApp / Messenger / Instagram) subscription handshake.
-  r.get('/meta', (req, res) => {
-    const token = c.env.META_VERIFY_TOKEN;
+  r.get(['/meta', '/meta/:tenantId'], tenantScope, async (req, res) => {
+    const token = (await c.channelCredentials.get('meta'))?.verifyToken;
     if (!token) { res.status(503).json(notConfigured); return; }
     const mode = req.query['hub.mode'];
     const given = req.query['hub.verify_token'];
@@ -38,8 +54,8 @@ export function webhookRoutes(c: Container): Router {
     res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Verification failed' } });
   });
 
-  r.post('/meta', async (req, res) => {
-    const secret = c.env.META_APP_SECRET;
+  r.post(['/meta', '/meta/:tenantId'], tenantScope, async (req, res) => {
+    const secret = (await c.channelCredentials.get('meta'))?.appSecret;
     if (!secret) { res.status(503).json(notConfigured); return; }
     if (!verifyMetaSignature(req.rawBody, req.header('x-hub-signature-256'), secret)) { res.status(401).json(badSignature); return; }
     for (const s of parseWhatsAppStatuses(req.body)) {
@@ -50,8 +66,8 @@ export function webhookRoutes(c: Container): Router {
     res.status(200).send('EVENT_RECEIVED');
   });
 
-  r.post('/telegram', async (req, res) => {
-    const secret = c.env.TELEGRAM_WEBHOOK_SECRET;
+  r.post(['/telegram', '/telegram/:tenantId'], tenantScope, async (req, res) => {
+    const secret = (await c.channelCredentials.get('telegram'))?.webhookSecret;
     if (!secret) { res.status(503).json(notConfigured); return; }
     const given = req.header('x-telegram-bot-api-secret-token') ?? '';
     if (!safeEqual(given, secret)) { res.status(401).json(badSignature); return; }
@@ -63,8 +79,8 @@ export function webhookRoutes(c: Container): Router {
   });
 
   // Razorpay Payment Links: payment state changes only here (D-003). Signature over the raw body, event-id idempotent.
-  r.post('/razorpay', async (req, res) => {
-    const secret = c.razorpay.webhookSecret;
+  r.post(['/razorpay', '/razorpay/:tenantId'], tenantScope, async (req, res) => {
+    const secret = (await c.razorpayProvider.client()).webhookSecret;
     if (!secret) { res.status(503).json(notConfigured); return; }
     if (!verifyWebhookSignature(req.rawBody, req.header('x-razorpay-signature'), secret)) { res.status(401).json(badSignature); return; }
     await c.payments.handleWebhook(req.header('x-razorpay-event-id'), req.rawBody, req.body);

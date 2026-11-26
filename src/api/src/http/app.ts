@@ -20,6 +20,7 @@ import { channelRoutes, messageRoutes } from './routes/messages.js';
 import { publicRoutes, uploadRoutes } from './routes/public.js';
 import { paymentRoutes } from './routes/payments.js';
 import { opsRoutes } from './routes/ops.js';
+import { channelConfigRoutes } from './routes/channelConfig.js';
 import { platformRoutes } from './routes/platform.js';
 import { stockCountRoutes } from './routes/stockCounts.js';
 import { purchaseOrderRoutes, reorderRoutes } from './routes/purchaseOrders.js';
@@ -106,6 +107,7 @@ export function createApp(c: Container, opts: AppOptions = {}): Express {
   api.use('/uploads', secure, uploadRoutes(c));
   api.use('/payments', secure, paymentRoutes(c));
   api.use('/ops', secure, opsRoutes(c));
+  api.use('/channel-config', secure, channelConfigRoutes(c));
   api.use('/purchase-orders', secure, purchaseOrderRoutes(c));
   api.use('/reorder-suggestions', secure, reorderRoutes(c));
   api.use('/stock-counts', secure, stockCountRoutes(c));

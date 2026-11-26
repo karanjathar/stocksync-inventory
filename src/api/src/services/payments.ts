@@ -12,7 +12,7 @@ import { renderPlain, type BotReply } from '../channels/reply.js';
 import type { Order, OrderStatus } from '../domain/types.js';
 import { formatMoney } from './money.js';
 import type { PaymentOptions } from './chatFlow.js';
-import type { RazorpayClient } from '../payments/razorpay.js';
+import type { RazorpayProvider } from '../payments/razorpay.js';
 import type { CustomersRepo } from '../repositories/customers.js';
 import type { OrdersService } from './orders.js';
 import type { SettingsService } from './settings.js';
@@ -28,7 +28,7 @@ const MIN_EXPIRY_MINUTES = 16;
 export class PaymentService {
   constructor(
     private readonly pool: pg.Pool,
-    private readonly razorpay: RazorpayClient,
+    private readonly razorpay: RazorpayProvider,
     private readonly settings: SettingsService,
     private readonly orders: OrdersService,
     private readonly customers: CustomersRepo,
@@ -40,7 +40,7 @@ export class PaymentService {
 
   async config(): Promise<PaymentsConfig> {
     const s = await this.settings.get();
-    const razorpayConfigured = this.razorpay.isConfigured();
+    const razorpayConfigured = (await this.razorpay.client()).isConfigured();
     const base = { razorpayConfigured, codEnabled: s.payments.codEnabled };
     if (!razorpayConfigured) return { ...base, onlineAvailable: false, reason: 'Razorpay keys are not configured on the server.' };
     if (!s.payments.onlineEnabled) return { ...base, onlineAvailable: false, reason: 'Online payments are disabled in Settings.' };
@@ -76,7 +76,7 @@ export class PaymentService {
     const referenceId = `ORD-${order.number}-${randomBytes(3).toString('hex')}`;
     let link;
     try {
-      link = await this.razorpay.createPaymentLink({
+      link = await (await this.razorpay.client()).createPaymentLink({
         amountCents: order.totalCents,
         currency: s.currency,
         referenceId,
@@ -116,7 +116,7 @@ export class PaymentService {
     // 4. Cancel every link we won't use — outside the transaction, best effort (never leave a payable orphan if avoidable).
     const unused = outcome.kind === 'created' ? outcome.staleRef : link.id;
     if (unused) {
-      await this.razorpay.cancelPaymentLink(unused)
+      await (await this.razorpay.client()).cancelPaymentLink(unused)
         .catch((err: unknown) => this.logger.warn({ err: String(err), link: unused }, 'could not cancel unused payment link'));
     }
     if (outcome.kind === 'rejected') throw new ConflictError('Order can no longer be paid online (it was cancelled or paid in the meantime)');
@@ -144,9 +144,9 @@ export class PaymentService {
     // by the webhook), then cancel it at Razorpay on a best-effort basis: an outage must not block the cancellation.
     const closed = await this.pool.query<{ provider_ref: string }>(
       "UPDATE payments SET status = 'CANCELLED', updated_at = now() WHERE order_id = $1 AND status = 'CREATED' RETURNING provider_ref", [order.id]);
-    if (this.razorpay.isConfigured()) {
+    if ((await this.razorpay.client()).isConfigured()) {
       for (const { provider_ref } of closed.rows) {
-        await this.razorpay.cancelPaymentLink(provider_ref)
+        await (await this.razorpay.client()).cancelPaymentLink(provider_ref)
           .catch((err: unknown) => this.logger.warn({ err: String(err), order: order.number }, 'could not cancel payment link at Razorpay'));
       }
     }
@@ -166,7 +166,8 @@ export class PaymentService {
    * Outcome unknown (network, 5xx, 429): the payment stays PENDING and a retry after 60 s repeats the SAME idempotent request, so it cannot refund twice.
    */
   async refund(orderId: string): Promise<{ order: Order; refund: { id: string | null; status: 'PENDING' } }> {
-    if (!this.razorpay.isConfigured()) throw new NotConfiguredError('Razorpay refunds');
+    const rz = await this.razorpay.client();
+    if (!rz.isConfigured()) throw new NotConfiguredError('Razorpay refunds');
     const order = await this.orders.get(orderId);
     if (!order) throw new NotFoundError('Order');
     if (order.paymentStatus !== 'REFUND_DUE') throw new ConflictError('Only orders awaiting a refund can be refunded');
@@ -184,7 +185,7 @@ export class PaymentService {
         : 'There is no captured Razorpay payment on record for this order. Refund it by hand in the Razorpay dashboard, then press Mark refunded.');
     }
     try {
-      const refund = await this.razorpay.refundPayment({
+      const refund = await rz.refundPayment({
         paymentId: payment.providerPaymentId, amountCents: payment.amountCents, receipt: `order-${order.number}`,
         idempotencyKey: `refund-${payment.id}-${payment.attempt}`, notes: { orderNumber: String(order.number) } });
       await this.pool.query('UPDATE payments SET refund_id = $2, updated_at = now() WHERE id = $1', [payment.id, refund.id]);

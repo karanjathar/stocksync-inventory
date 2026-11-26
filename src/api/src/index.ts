@@ -46,7 +46,7 @@ async function main(): Promise<void> {
   const staticDir = path.resolve(here, '../../web/dist');
   const app = createApp(c, { staticDir });
   const server = app.listen(env.PORT, () => {
-    logger.info({ port: env.PORT, channels: c.hub.status() }, 'StockSync API listening');
+    logger.info({ port: env.PORT }, 'StockSync API listening');
   });
   server.keepAliveTimeout = 65_000; // longer than the Azure load balancer idle timeout
 

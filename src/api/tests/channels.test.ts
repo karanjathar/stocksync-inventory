@@ -71,7 +71,7 @@ describe('ChannelHub', () => {
       ['whatsapp', 'out', 'skipped', 'not configured'],
       ['telegram', 'out', 'sent', 'hello there'],
     ]);
-    expect(hub.status()).toEqual([{ name: 'telegram', configured: true }, { name: 'whatsapp', configured: false }]);
+    expect(await hub.status()).toEqual([{ name: 'telegram', configured: true }, { name: 'whatsapp', configured: false }]);
   });
 
   it('logs failures and rethrows', async () => {

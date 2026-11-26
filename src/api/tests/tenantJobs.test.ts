@@ -21,9 +21,11 @@ const tenantToken = async (tenant: string, email: string, role: 'admin' | 'staff
 };
 
 beforeAll(async () => {
-  t = await buildTestApp({ PLATFORM_ADMIN_EMAIL: 'ops@platform.test', PLATFORM_ADMIN_PASSWORD: 'PlatformPass123!', WHATSAPP_TOKEN: 'tok', WHATSAPP_PHONE_NUMBER_ID: '99' },
+  t = await buildTestApp({ PLATFORM_ADMIN_EMAIL: 'ops@platform.test', PLATFORM_ADMIN_PASSWORD: 'PlatformPass123!', ENCRYPTION_KEY: Buffer.alloc(32, 5).toString('base64') },
     { fetch: (async () => new Response(JSON.stringify({ messages: [{ id: 'wamid.T' }] }), { status: 200 })) as typeof fetch });
   A = await addTenant('shop-a', 'Shop A'); B = await addTenant('shop-b', 'Shop B');
+  // Each business sends with its OWN WhatsApp credentials (the server's environment keys belong to the default business only).
+  for (const tenant of [A, B]) await inTenant(tenant, () => t.c.channelCredentials.set('whatsapp', { token: `tok-${tenant.slice(0, 4)}`, phoneNumberId: '990' }));
   server = t.app.listen(0);
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });

@@ -88,3 +88,11 @@ Context: the plan said FORCEd policies. A FORCEd policy also binds the table own
 Decision: policies are enabled, the app connects through `SET ROLE stocksync_app` (non-owner, NOSUPERUSER, NOBYPASSRLS), a connection that cannot assume the role is discarded (fail closed), and startup refuses to run unless `assertAppRoleIsRestricted` passes. A guard test fails if any table with a `tenant_id` lacks RLS, or a new table is added without choosing between tenant-scoped and platform-level.
 Consequences: isolation holds for raw SQL with no WHERE; it does not defend against injected SQL that calls `set_config('app.tenant_id', …)`, so queries stay parameterised (reviewed in T95). Foreign-key checks ignore RLS, so services must still look up referenced rows through tenant-scoped queries (also T95).
 
+## D-023 Per-business webhook URLs instead of routing by payload (2026-11-26)
+Context: the plan routed Meta webhooks by `phone_number_id`/page id found inside the payload. That value is attacker-controlled until the signature is verified, and verifying needs the business's secret, so it would require a lookup before authentication, and the GET handshake has no payload at all.
+Decision: every business gets its own URL (`/webhooks/meta|telegram|razorpay/<businessId>`, shown in Settings → Channel credentials) and is verified with its own secret; unknown, malformed and suspended ids are 404. The original URLs without an id serve the default business so existing single-business installs keep working.
+Consequences: a payload signed for one business can never be accepted for another; each business pastes its own URL into its Meta, Telegram and Razorpay consoles. The business id is not a secret.
+
+## D-024 Server environment keys belong to the default business only (2026-11-26)
+Decision: `WHATSAPP_*`, `META_*`, `TELEGRAM_*`, `RAZORPAY_*` keep working for the original default business; any other business that has not saved its own credentials is simply "not configured". Consequence: no business can ever send or take payments through the operator's accounts by accident. Saved credentials are validated strictly; environment values keep their old independent semantics.
+

@@ -143,8 +143,9 @@ describe('link creation holds no database connection while waiting on Razorpay (
 
   it('an order cancelled while its link is being created ends with no payable link', async () => {
     const o = await orderOf('919900099999');
-    const original = t.c.razorpay.createPaymentLink.bind(t.c.razorpay);
-    const spy = vi.spyOn(t.c.razorpay, 'createPaymentLink').mockImplementationOnce(async (input) => {
+    const rzClient = await t.c.razorpayProvider.client();
+    const original = rzClient.createPaymentLink.bind(rzClient);
+    const spy = vi.spyOn(rzClient, 'createPaymentLink').mockImplementationOnce(async (input) => {
       await t.c.orders.cancel(o.id, null); // staff cancel while Razorpay is still answering
       return original(input);
     });

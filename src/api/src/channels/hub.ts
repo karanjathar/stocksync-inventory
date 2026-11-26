@@ -8,20 +8,31 @@ import { normaliseReply, optionsOf, renderPlain, type BotReply, type ReplyOption
 import { PermanentJobError } from '../jobs/queue.js';
 
 export class ChannelHub implements Messenger {
-  private readonly adapters: Map<ChannelName, ChannelAdapter>;
+  private readonly adapters: Map<ChannelAdapter['name'], ChannelAdapter>;
+  static readonly CHANNELS: ChannelName[] = ['whatsapp', 'messenger', 'instagram', 'telegram'];
 
-  /** `getSettings` supplies the event → WhatsApp template mapping (Settings → WhatsApp templates). */
-  constructor(adapters: ChannelAdapter[], private readonly log: MessagesRepo, private readonly getSettings?: () => Promise<Settings>) {
+  /**
+   * `getSettings` supplies the event → WhatsApp template mapping (Settings → WhatsApp templates).
+   * `resolver`, when given, supplies the adapter of the CURRENT business at call time (each business has its own credentials);
+   * without it the fixed `adapters` are used.
+   */
+  constructor(adapters: ChannelAdapter[], private readonly log: MessagesRepo, private readonly getSettings?: () => Promise<Settings>,
+    private readonly resolver?: (channel: ChannelName) => Promise<ChannelAdapter>) {
     this.adapters = new Map(adapters.map((a) => [a.name, a]));
   }
 
-  status(): { name: ChannelName; configured: boolean }[] {
-    return [...this.adapters.values()].map((a) => ({ name: a.name, configured: a.isConfigured() }));
+  private async adapterFor(channel: ChannelName): Promise<ChannelAdapter | undefined> {
+    return this.resolver ? this.resolver(channel) : this.adapters.get(channel);
+  }
+
+  async status(): Promise<{ name: ChannelName; configured: boolean }[]> {
+    const names = this.resolver ? ChannelHub.CHANNELS : [...this.adapters.keys()];
+    return Promise.all(names.map(async (name) => ({ name, configured: (await this.adapterFor(name))?.isConfigured() ?? false })));
   }
 
   /** Acknowledge a Telegram inline-button tap (stops the client spinner). Best effort. */
   async acknowledgeTap(channel: ChannelName, tapId: string): Promise<void> {
-    const adapter = this.adapters.get(channel);
+    const adapter = await this.adapterFor(channel);
     if (!adapter?.isConfigured() || !(adapter instanceof TelegramAdapter)) return;
     await adapter.answerCallbackQuery(tapId);
   }
@@ -52,7 +63,7 @@ export class ChannelHub implements Messenger {
    * nothing is lost); a permanent failure marks it `failed` and is rethrown.
    */
   private async dispatch(channel: ChannelName, to: string, text: string, base: OutboundPayload, options: ReplyOption[] = [], notify?: NotifyOpts): Promise<void> {
-    const adapter = this.adapters.get(channel);
+    const adapter = await this.adapterFor(channel);
     if (!adapter) throw new ValidationError(`Unknown channel: ${channel}`);
     let payload: OutboundPayload = notify?.event ? { ...base, notify: { event: notify.event, params: notify.params ?? {} } } : base;
     // WhatsApp only allows free-form business messages within 24 h of the user's last message; otherwise a template is required.
@@ -74,7 +85,7 @@ export class ChannelHub implements Messenger {
   async deliver(id: string, o: { immediate?: boolean; finalAttempt?: boolean } = {}): Promise<void> {
     const m = await this.log.getForDelivery(id);
     if (!m || m.status !== 'queued') return; // already sent, failed or gone: nothing to do (idempotent)
-    const adapter = this.adapters.get(m.channel);
+    const adapter = await this.adapterFor(m.channel);
     try {
       if (!adapter?.isConfigured()) throw new ChannelError(m.channel, 400, 'channel is not configured');
       const payload: OutboundPayload = m.payload ?? { kind: 'text', text: m.text };

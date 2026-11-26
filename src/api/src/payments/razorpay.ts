@@ -16,6 +16,9 @@ export interface CreateLinkInput {
 }
 export interface PaymentLink { id: string; shortUrl: string; status: string }
 
+/** Supplies the Razorpay client of the CURRENT business (its own keys), at call time. */
+export interface RazorpayProvider { client(): Promise<RazorpayClient> }
+
 export class RazorpayError extends Error {
   constructor(readonly status: number, detail: string) {
     super(`Razorpay API responded ${status}: ${detail}`);

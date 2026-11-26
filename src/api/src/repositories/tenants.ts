@@ -31,6 +31,10 @@ export class TenantDirectory {
     return (await this.db.query<{ id: string | null }>('SELECT tenant_of_order_token($1::uuid) AS id', [token])).rows[0]?.id ?? undefined;
   }
 
+  async isActive(tenantId: string): Promise<boolean> {
+    return (await this.db.query<{ ok: boolean }>('SELECT tenant_is_active($1::uuid) AS ok', [tenantId])).rows[0]?.ok === true;
+  }
+
   async ofInvoice(invoiceId: string): Promise<string | undefined> {
     return (await this.db.query<{ id: string | null }>('SELECT tenant_of_invoice($1::uuid) AS id', [invoiceId])).rows[0]?.id ?? undefined;
   }

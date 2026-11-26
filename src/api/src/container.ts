@@ -8,7 +8,7 @@ import { CustomersRepo } from './repositories/customers.js';
 import type { Category, Supplier, Warehouse } from './domain/types.js';
 import { AuthService } from './services/auth.js';
 import { PlatformService } from './services/platform.js';
-import { DEFAULT_TENANT_ID } from './db/tenant.js';
+import { currentTenantId, DEFAULT_TENANT_ID } from './db/tenant.js';
 import { TenantDirectory, TenantsRepo } from './repositories/tenants.js';
 import { StockService } from './services/stock.js';
 import { SettingsService } from './services/settings.js';
@@ -36,7 +36,10 @@ import { WhatsAppAdapter } from './channels/whatsapp.js';
 import { MetaPageAdapter } from './channels/metaPage.js';
 import { TelegramAdapter } from './channels/telegram.js';
 import { ImageStorage } from './storage/blob.js';
-import { RazorpayClient } from './payments/razorpay.js';
+import { RazorpayClient, type RazorpayProvider } from './payments/razorpay.js';
+import { ChannelCredentials } from './services/channelCredentials.js';
+import { SecretBox } from './services/secrets.js';
+import type { ChannelAdapter } from './channels/types.js';
 import { PaymentService } from './services/payments.js';
 
 export interface ContainerOverrides {
@@ -83,12 +86,31 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   orders.onStatusChange((order, previous) => invoices.onOrderStatusChange(order, previous));
   const messages = new MessagesRepo(pool);
   const fetchFn = opts.fetch ?? fetch;
-  const hub = new ChannelHub([
-    new WhatsAppAdapter({ token: env.WHATSAPP_TOKEN, phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID, graphVersion: env.META_GRAPH_VERSION, graphBase: env.META_GRAPH_BASE }, fetchFn),
-    new MetaPageAdapter('messenger', { token: env.MESSENGER_PAGE_TOKEN, graphVersion: env.META_GRAPH_VERSION, graphBase: env.META_GRAPH_BASE }, fetchFn),
-    new MetaPageAdapter('instagram', { token: env.INSTAGRAM_PAGE_TOKEN, graphVersion: env.META_GRAPH_VERSION, graphBase: env.META_GRAPH_BASE }, fetchFn),
-    new TelegramAdapter({ token: env.TELEGRAM_BOT_TOKEN }, fetchFn),
-  ], messages, () => settings.get());
+  // Per-business credentials. The server's own environment keys apply only to the original default business (single-business installs).
+  const defined = (o: Record<string, string | undefined>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Record<string, string>;
+  const fallbackIsDefault = env.TENANT_FALLBACK === 'default';
+  const channelCredentials = new ChannelCredentials(pool, SecretBox.fromEnv(env), {
+    meta: defined({ appSecret: env.META_APP_SECRET, verifyToken: env.META_VERIFY_TOKEN }),
+    whatsapp: defined({ token: env.WHATSAPP_TOKEN, phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID }),
+    messenger: defined({ pageToken: env.MESSENGER_PAGE_TOKEN }), instagram: defined({ pageToken: env.INSTAGRAM_PAGE_TOKEN }),
+    telegram: defined({ botToken: env.TELEGRAM_BOT_TOKEN, webhookSecret: env.TELEGRAM_WEBHOOK_SECRET }),
+    razorpay: defined({ keyId: env.RAZORPAY_KEY_ID, keySecret: env.RAZORPAY_KEY_SECRET, webhookSecret: env.RAZORPAY_WEBHOOK_SECRET }),
+  }, fallbackIsDefault, logger);
+  const tenantKey = () => currentTenantId() ?? (fallbackIsDefault ? DEFAULT_TENANT_ID : 'none');
+  const adapterCache = new Map<string, { sig: string; adapter: ChannelAdapter }>();
+  const hub = new ChannelHub([], messages, () => settings.get(), async (channel) => {
+    const cfg = await channelCredentials.get(channel === 'telegram' ? 'telegram' : channel) as Record<string, string> | undefined;
+    const sig = JSON.stringify(cfg ?? null);
+    const key = `${tenantKey()}:${channel}`;
+    const hit = adapterCache.get(key);
+    if (hit?.sig === sig) return hit.adapter;
+    const graph = { graphVersion: env.META_GRAPH_VERSION, ...(env.META_GRAPH_BASE ? { graphBase: env.META_GRAPH_BASE } : {}) };
+    const adapter: ChannelAdapter = channel === 'whatsapp' ? new WhatsAppAdapter({ ...(cfg ? { token: cfg.token, phoneNumberId: cfg.phoneNumberId } : {}), ...graph }, fetchFn)
+      : channel === 'telegram' ? new TelegramAdapter({ ...(cfg ? { token: cfg.botToken } : {}) }, fetchFn)
+      : new MetaPageAdapter(channel, { ...(cfg ? { token: cfg.pageToken } : {}), ...graph }, fetchFn);
+    adapterCache.set(key, { sig, adapter });
+    return adapter;
+  });
   const jobs = new JobQueue(pool, { workerId: `api-${process.pid}-${randomUUID().slice(0, 8)}`, onError: (err, job) => logger.warn({ err: String(err), job: job?.kind, jobId: job?.id }, 'job failed') });
   registerMessageSend(jobs, hub);
   const maintenance = new Maintenance(pool, orders, settings, logger);
@@ -104,12 +126,24 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const chatFlow = new ChatFlow(repos.products, repos.categories, customers, carts, settings, orders);
   const bot = new BotService(repos.products, orders, customers, settings, chatFlow);
   const inbox = new InboxService(messages, events, bot, messenger, logger);
-  const razorpay = new RazorpayClient({ keyId: env.RAZORPAY_KEY_ID, keySecret: env.RAZORPAY_KEY_SECRET, webhookSecret: env.RAZORPAY_WEBHOOK_SECRET, apiBase: env.RAZORPAY_API_BASE }, fetchFn);
-  const payments = new PaymentService(pool, razorpay, settings, orders, customers, env.PUBLIC_BASE_URL, logger, events, messenger);
+  const razorpayCache = new Map<string, { sig: string; client: RazorpayClient }>();
+  const razorpayProvider: RazorpayProvider = {
+    async client() {
+      const cfg = await channelCredentials.get('razorpay');
+      const sig = JSON.stringify(cfg ?? null);
+      const key = tenantKey();
+      const hit = razorpayCache.get(key);
+      if (hit?.sig === sig) return hit.client;
+      const client = new RazorpayClient({ ...(cfg ?? {}), apiBase: env.RAZORPAY_API_BASE }, fetchFn);
+      razorpayCache.set(key, { sig, client });
+      return client;
+    },
+  };
+  const payments = new PaymentService(pool, razorpayProvider, settings, orders, customers, env.PUBLIC_BASE_URL, logger, events, messenger);
   const images = new ImageStorage(env.AZURE_STORAGE_CONNECTION_STRING, env.AZURE_STORAGE_CONTAINER);
   chatFlow.setPaymentOptions(payments.chatOptions());
   orders.onStatusChange((order, previous) => payments.onOrderStatusChange(order, previous));
-  return { env, pool, logger, repos, auth, platform, tenants, tenantDirectory, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpay, payments };
+  return { env, pool, logger, repos, auth, platform, tenants, tenantDirectory, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpayProvider, channelCredentials, payments };
 }
 
 export type Container = ReturnType<typeof createContainer>;

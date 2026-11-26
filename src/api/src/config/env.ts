@@ -30,6 +30,11 @@ const schema = z.object({
   /** First platform operator, created on startup when no platform admin exists. */
   PLATFORM_ADMIN_EMAIL: z.string().email().optional(),
   PLATFORM_ADMIN_PASSWORD: z.string().min(12).optional(),
+  /** AES-256 key (base64, 32 bytes) for per-business channel credentials: `openssl rand -base64 32`. Without it, businesses cannot save their own credentials. */
+  ENCRYPTION_KEY: z.string().refine((v) => Buffer.from(v, 'base64').length === 32, 'must be 32 bytes, base64-encoded').optional(),
+  ENCRYPTION_KEY_VERSION: z.coerce.number().int().min(1).max(255).default(1),
+  /** Old key kept readable while credentials are re-encrypted after a rotation: "<version>:<base64>". */
+  ENCRYPTION_KEY_PREVIOUS: z.string().regex(/^[0-9]{1,3}:[A-Za-z0-9+/=]+$/).optional(),
   TENANT_FALLBACK: z.enum(['default', 'off']).default('default'),
   JWT_SECRET: z.string().min(32, 'must be at least 32 characters'),
   JWT_EXPIRES_IN: z.string().default('12h'),
