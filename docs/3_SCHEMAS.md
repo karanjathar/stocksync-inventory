@@ -436,3 +436,6 @@ The app connects as role `stocksync_app` (not the table owner, no BYPASSRLS); mi
 
 ## 3.25 AI
 Anthropic Messages API with tool use (injectable fetch, model from env). Tools for ordering: `search_products(query)`, `add_to_cart(productId, quantity)`, `show_cart()`; a checkout always returns a confirmation button action id. Staff assistant tools are read-only. `ai_usage(tenant_id, month, input_tokens, output_tokens, cost_micro_usd)`; a hard budget per tenant per month; `ai_enabled` kill switch per tenant and globally. Logs store sizes and tool names, never message content.
+
+## 3.26 Sign-up (migration 018)
+`signup_requests` (email UNIQUE, slug UNIQUE, business_name, owner_name, password_hash, token_hash UNIQUE = SHA-256 of the emailed token, expires_at 24 h, send_count, last_sent_at). No grants to the application role; reached only through SECURITY DEFINER `signup_begin` / `signup_resend` / `signup_complete`. `signup_complete` creates the tenant, its admin user and the `businessName` setting in one transaction and deletes the request (single use). API: `POST /api/signup` and `/resend` answer 202 with one fixed body for new, existing and throttled emails; `POST /api/signup/verify` → 201 `{slug}` or one plain 400. Limits: 1 send per 60 s and 5 per request in the database, plus per-IP and per-email HTTP limiters.

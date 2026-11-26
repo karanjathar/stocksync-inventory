@@ -130,7 +130,7 @@ describe('concurrency and transactions', () => {
 });
 
 describe('guard: every table is either tenant-scoped with RLS or explicitly platform-level', () => {
-  const PLATFORM_TABLES = ['schema_migrations', 'jobs', 'worker_heartbeats', 'tenants', 'platform_admins'];
+  const PLATFORM_TABLES = ['schema_migrations', 'jobs', 'worker_heartbeats', 'tenants', 'platform_admins', 'signup_requests'];
   // The job queue is shared by the workers, which claim work across businesses, so it is NOT row-level secured: it holds ids and kinds only,
   // jobs run inside their own tenant, and the tenant-facing views filter on current_tenant(). The platform queue view is the only cross-tenant read.
   const QUEUE_TABLES = ['jobs'];

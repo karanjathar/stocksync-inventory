@@ -41,6 +41,8 @@ import { ChannelCredentials } from './services/channelCredentials.js';
 import { SecretBox } from './services/secrets.js';
 import type { ChannelAdapter } from './channels/types.js';
 import { PaymentService } from './services/payments.js';
+import { AcsEmailSender, LogEmailSender, type EmailSender } from './services/email.js';
+import { SignupService } from './services/signup.js';
 
 export interface ContainerOverrides {
   /** Connection for the platform console (role with no access to business data). */
@@ -49,6 +51,8 @@ export interface ContainerOverrides {
   fetch?: typeof fetch;
   /** Replaces the channel hub for outbound messages (tests). */
   messenger?: Messenger;
+  /** Replaces the email service (tests). */
+  emailSender?: EmailSender;
 }
 
 export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOverrides) {
@@ -67,6 +71,8 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const auth = new AuthService(repos.users, env.JWT_SECRET, env.JWT_EXPIRES_IN, rounds, tenants);
   // The platform console uses its own restricted database role; without that pool its routes answer 501.
   const platform = opts.platformPool ? new PlatformService(opts.platformPool, env.JWT_SECRET, env.JWT_EXPIRES_IN, rounds) : undefined;
+  const emailSender = opts.emailSender ?? (env.EMAIL_CONNECTION_STRING ? new AcsEmailSender(env.EMAIL_CONNECTION_STRING, env.EMAIL_FROM, opts.fetch) : new LogEmailSender(logger, env.NODE_ENV !== 'production'));
+  const signup = env.SIGNUP_ENABLED ? new SignupService(pool, emailSender, env.PUBLIC_BASE_URL, logger, rounds) : undefined;
   const stock = new StockService(pool, (err) => logger.error({ err }, 'stock observer failed'));
   const events = new EventBus(env.TENANT_FALLBACK === 'default' ? DEFAULT_TENANT_ID : undefined);
   stock.onChanged(async (changes) => {
@@ -143,7 +149,7 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const images = new ImageStorage(env.AZURE_STORAGE_CONNECTION_STRING, env.AZURE_STORAGE_CONTAINER);
   chatFlow.setPaymentOptions(payments.chatOptions());
   orders.onStatusChange((order, previous) => payments.onOrderStatusChange(order, previous));
-  return { env, pool, logger, repos, auth, platform, tenants, tenantDirectory, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpayProvider, channelCredentials, payments };
+  return { env, pool, logger, repos, auth, platform, signup, emailSender, tenants, tenantDirectory, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpayProvider, channelCredentials, payments };
 }
 
 export type Container = ReturnType<typeof createContainer>;

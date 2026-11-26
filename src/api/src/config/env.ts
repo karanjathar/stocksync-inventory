@@ -38,6 +38,11 @@ const schema = z.object({
   /** Old key kept readable while credentials are re-encrypted after a rotation: "<version>:<base64>". */
   ENCRYPTION_KEY_PREVIOUS: z.string().regex(/^[0-9]{1,3}:[A-Za-z0-9+/=]+$/).optional(),
   TENANT_FALLBACK: z.enum(['default', 'off']).default('default'),
+  /** Open self-service sign-up. Refused while TENANT_FALLBACK=default (a request with no business would silently land in the default business). */
+  SIGNUP_ENABLED: bool,
+  /** Azure Communication Services Email: endpoint=https://<name>.communication.azure.com/;accesskey=<key>. Without it, emails are only logged. */
+  EMAIL_CONNECTION_STRING: optional,
+  EMAIL_FROM: z.string().email().default('donotreply@stocksync.example'),
   JWT_SECRET: z.string().min(32, 'must be at least 32 characters'),
   JWT_EXPIRES_IN: z.string().default('12h'),
   ADMIN_EMAIL: optional,
@@ -65,6 +70,7 @@ const schema = z.object({
   // Credentials travel to these hosts in the Authorization header: never over plain http in production.
   // (Loopback is allowed so the local E2E can point the app at its fake providers.)
   .superRefine((env, ctx) => {
+    if (env.SIGNUP_ENABLED && env.TENANT_FALLBACK === 'default') ctx.addIssue({ code: 'custom', path: ['SIGNUP_ENABLED'], message: 'requires TENANT_FALLBACK=off' });
     if (env.NODE_ENV !== 'production') return;
     // A public (https) deployment must not boot with the documented default or a trivially short admin password.
     // The local docker-compose quick start (http://localhost) keeps its convenient default.

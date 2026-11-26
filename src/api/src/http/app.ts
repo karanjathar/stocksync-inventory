@@ -9,6 +9,7 @@ import { errorHandler, notFoundHandler } from './middleware/errors.js';
 import { requireAuth } from './middleware/auth.js';
 import { requestLog } from './middleware/requestLog.js';
 import { authRoutes } from './routes/auth.js';
+import { signupRoutes } from './routes/signup.js';
 import { userRoutes } from './routes/users.js';
 import { stockRoutes } from './routes/stock.js';
 import { settingsRoutes } from './routes/settings.js';
@@ -87,6 +88,7 @@ export function createApp(c: Container, opts: AppOptions = {}): Express {
   const api = Router();
   api.use(rateLimit({ windowMs: 60_000, limit: env.NODE_ENV === 'test' ? 10_000 : 600, standardHeaders: true, legacyHeaders: false }));
   api.use('/auth', authRoutes(c));
+  api.use('/signup', signupRoutes(c));
   api.use('/public', publicRoutes(c));
   api.use('/platform', platformRoutes(c));
 

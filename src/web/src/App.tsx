@@ -4,6 +4,7 @@ import { useAuth } from './auth';
 import { SettingsProvider } from './settings';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
+import { Signup, VerifyEmail } from './pages/Signup';
 import { Dashboard } from './pages/Dashboard';
 import { Products } from './pages/Products';
 import { Inventory } from './pages/Inventory';
@@ -39,6 +40,8 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Signup />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
       <Route path="/shop" element={<Shop />} />
       <Route path="/shop/order/:token" element={<ShopOrder />} />
       <Route path="/shop/:slug" element={<ShopBySlug />} />

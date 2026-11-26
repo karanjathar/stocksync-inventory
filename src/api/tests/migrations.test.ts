@@ -37,7 +37,7 @@ describe('migrations 003–004 on an existing Release 1 database (T29, T58)', ()
     // Release 1/2 rows: outbound messages were logged as 'ok' (T59 normalises them to 'sent').
     await pool.query("INSERT INTO channel_messages (channel, direction, external_user, text, status) VALUES ('whatsapp','out','91999','legacy','ok'), ('whatsapp','in','91999','hello','ok')");
 
-    expect(await migrate(pool)).toEqual(['003_payments_chat.sql', '004_refunded.sql', '005_outbox_jobs.sql', '006_purchase_orders.sql', '007_gst_invoices.sql', '008_barcodes_counts.sql', '009_refunds.sql', '010_tenancy.sql', '011_rls.sql', '012_tenant_maintenance.sql', '013_platform_auth.sql', '014_tenant_jobs.sql', '015_tenant_directory.sql', '016_tenant_channels.sql', '017_tenant_foreign_keys.sql']);
+    expect(await migrate(pool)).toEqual(['003_payments_chat.sql', '004_refunded.sql', '005_outbox_jobs.sql', '006_purchase_orders.sql', '007_gst_invoices.sql', '008_barcodes_counts.sql', '009_refunds.sql', '010_tenancy.sql', '011_rls.sql', '012_tenant_maintenance.sql', '013_platform_auth.sql', '014_tenant_jobs.sql', '015_tenant_directory.sql', '016_tenant_channels.sql', '017_tenant_foreign_keys.sql', '018_signup.sql']);
     expect(await migrate(pool)).toEqual([]);
 
     const { rows } = await pool.query<{ payment_method: string; payment_status: string; public_token: string }>('SELECT payment_method, payment_status, public_token FROM orders ORDER BY number');
