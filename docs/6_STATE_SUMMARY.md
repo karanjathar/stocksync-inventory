@@ -100,7 +100,9 @@
 - **T67** (2026-11-26): Script scripts/verify/real-services.mjs and runbook (DEPLOYMENT_GUIDE §5.8) are written and syntax/guard-checked, but the real run needs Razorpay TEST keys, a webhook secret and a WhatsApp test number from the owner; nothing has been verified against the real services.
 
 ## Handoff — Release 5 progress
-- Phase 19 (Tenancy foundation) DONE: T88–T95 (tenants + RLS, platform role, per-tenant jobs/shop/channel credentials, composite FKs, tenancy security review 7.R5a). Waiting for human approval of the phase.
-- Next: Phase 20 (T96 sign-up/email verification — must remove `TENANT_FALLBACK=default` first; T97–T101), Phase 21 (T102–T105), Phase 22 AI (T106–T110), Phase 23 (T111–T115).
-- Production: set `DATABASE_APP_URL` (restricted login role) — see 7.R5a. Deferred: T67 real Razorpay/WhatsApp run. Credentials needed later: Anthropic API key, platform Razorpay keys, email service, ENCRYPTION_KEY in Key Vault.
-- Gate env: `TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/inventory_test`.
+- Phase 19 (T88–T95) approved. Phase 20 (T96–T101) DONE, waiting for human approval: sign-up with email verification (SIGNUP_ENABLED needs TENANT_FALLBACK=off), onboarding + sample data, plans/limits/usage (402 PLAN_LIMIT), Razorpay Subscriptions billing (platform keys), append-only audit log + platform console, data export/erasure/deletion.
+- Next: Phase 21 (T102 realtime across replicas via LISTEN/NOTIFY, T103 API/worker roles, T104 cookie sessions/CSRF/refresh rotation, T105 per-tenant rate limits/lockout/observability), Phase 22 AI (T106–T110), Phase 23 (T111–T115).
+- Unverified against live services (no credentials): Razorpay Subscriptions + billing webhook payloads, Azure Communication Services Email REST adapter, blob cleanup on deletion, plus the deferred T67 real WhatsApp/Razorpay run.
+- Before opening sign-up in production: set TENANT_FALLBACK=off, SIGNUP_ENABLED=true, EMAIL_CONNECTION_STRING, DATABASE_APP_URL, RAZORPAY_PLATFORM_* and link plans via PUT /api/platform/plans/:code {razorpayPlanId}.
+- Gate env: `TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/inventory_test` (start Postgres with `service postgresql start` after a restart).
+- Tool note: very long bash heredocs can trip the safety check; write big files with the Write tool.
