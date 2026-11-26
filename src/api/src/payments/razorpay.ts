@@ -23,6 +23,10 @@ export class RazorpayError extends Error {
   }
 }
 
+export interface RefundInput { paymentId: string; amountCents: number; receipt: string; idempotencyKey: string; notes?: Record<string, string> }
+export interface Refund { id: string; status: string; amountCents: number }
+
+const refundResponse = z.object({ id: z.string().startsWith('rfnd_'), status: z.string(), amount: z.number().int() });
 const linkResponse = z.object({ id: z.string().startsWith('plink_'), short_url: z.string().url(), status: z.string() });
 
 export class RazorpayClient {
@@ -55,15 +59,29 @@ export class RazorpayClient {
     return { id: parsed.data.id, shortUrl: parsed.data.short_url, status: parsed.data.status };
   }
 
+  /**
+   * Refunds a captured payment (POST /v1/payments/{id}/refund). `idempotencyKey` is sent as X-Refund-Idempotency so a retried call cannot refund twice.
+   * The final outcome arrives by signed webhook (`refund.processed` / `refund.failed`); the status returned here is only the first answer.
+   */
+  async refundPayment(i: RefundInput): Promise<Refund> {
+    if (!/^pay_[A-Za-z0-9]+$/.test(i.paymentId)) throw new RazorpayError(400, 'not a Razorpay payment id');
+    if (!Number.isInteger(i.amountCents) || i.amountCents <= 0) throw new RazorpayError(400, 'refund amount must be a positive whole number of paise');
+    const json = await this.post(`/v1/payments/${i.paymentId}/refund`, { amount: i.amountCents, speed: 'normal', receipt: i.receipt.slice(0, 40), notes: i.notes ?? {} },
+      { 'x-refund-idempotency': i.idempotencyKey });
+    const parsed = refundResponse.safeParse(json);
+    if (!parsed.success) throw new RazorpayError(502, 'unexpected response from Refunds API');
+    return { id: parsed.data.id, status: parsed.data.status, amountCents: parsed.data.amount };
+  }
+
   async cancelPaymentLink(id: string): Promise<void> {
     await this.post(`/v1/payment_links/${encodeURIComponent(id)}/cancel`, {});
   }
 
-  private async post(path: string, body: unknown): Promise<unknown> {
+  private async post(path: string, body: unknown, extraHeaders: Record<string, string> = {}): Promise<unknown> {
     const auth = Buffer.from(`${this.cfg.keyId ?? ''}:${this.cfg.keySecret ?? ''}`).toString('base64');
     const res = await this.fetchFn(`${this.cfg.apiBase.replace(/\/$/, '')}${path}`, {
       method: 'POST',
-      headers: { authorization: `Basic ${auth}`, 'content-type': 'application/json' },
+      headers: { authorization: `Basic ${auth}`, 'content-type': 'application/json', ...extraHeaders },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(15_000),
     });

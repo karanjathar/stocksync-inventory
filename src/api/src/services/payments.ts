@@ -257,6 +257,7 @@ export class PaymentService {
     const parsed = webhookSchema.safeParse(body);
     if (!parsed.success) return; // not an event we understand: acknowledge
     const { event, payload } = parsed.data;
+    if ((event === 'refund.processed' || event === 'refund.failed') && payload.refund) { await this.onRefundEvent(event === 'refund.processed', payload.refund.entity); return; }
     const link = payload.payment_link?.entity;
     if (!link) return;
 
@@ -330,6 +331,37 @@ export class PaymentService {
     }
   }
 
+  /**
+   * `refund.processed` / `refund.failed` (signature-verified and event-id idempotent upstream). Processed: the payment is PROCESSED and a REFUND_DUE
+   * order becomes REFUNDED, telling the customer exactly once (an order staff already marked by hand, or a duplicate payment on an order that stays
+   * PAID, is not announced). Failed: the payment is FAILED and staff are told to refund by hand; the order stays REFUND_DUE.
+   */
+  private async onRefundEvent(processed: boolean, refund: { id: string; payment_id: string }): Promise<void> {
+    const found = await withTx(this.pool, async (c) => {
+      const p = await c.query<{ id: string; order_id: string; refund_status: string | null }>(
+        'SELECT id, order_id, refund_status FROM payments WHERE provider_payment_id = $1 FOR UPDATE', [refund.payment_id]);
+      const payment = p.rows[0];
+      if (!payment) return undefined;
+      if (processed) {
+        await c.query("UPDATE payments SET refund_status = 'PROCESSED', refund_id = $2, refund_error = NULL, updated_at = now() WHERE id = $1", [payment.id, refund.id]);
+        const moved = await c.query("UPDATE orders SET payment_status = 'REFUNDED', updated_at = now() WHERE id = $1 AND payment_status = 'REFUND_DUE' RETURNING id", [payment.order_id]);
+        return { orderId: payment.order_id, announce: Boolean(moved.rowCount) };
+      }
+      await c.query("UPDATE payments SET refund_status = 'FAILED', refund_id = COALESCE(refund_id, $2), refund_error = 'Razorpay reported that the refund failed', updated_at = now() WHERE id = $1", [payment.id, refund.id]);
+      return { orderId: payment.order_id, announce: false };
+    });
+    if (!found) return; // not one of ours: acknowledge
+    const order = (await this.orders.get(found.orderId))!;
+    if (!processed) {
+      await this.alertStaff(`⚠️ The Razorpay refund ${refund.id} for order #${order.number} failed. Refund it by hand in the Razorpay dashboard, then press Mark refunded.`);
+      return;
+    }
+    if (!found.announce) return;
+    this.events.publish({ type: 'payment.updated', orderId: order.id, number: order.number, paymentStatus: 'REFUNDED' });
+    const money = formatMoney(order.totalCents, (await this.settings.get()).currency);
+    await this.sendToCustomer(order, { text: `💸 Your refund of ${money} for order #${order.number} has been issued. It can take a few days to show up in your account.` }, 'refunded');
+  }
+
   private async alertStaff(text: string): Promise<void> {
     const { alertRecipients } = await this.settings.get();
     for (const r of alertRecipients) {
@@ -346,5 +378,6 @@ const webhookSchema = z.object({
   payload: z.object({
     payment_link: z.object({ entity: z.object({ id: z.string(), amount_paid: z.number().optional() }) }).optional(),
     payment: z.object({ entity: z.object({ id: z.string(), amount: z.number().optional() }) }).optional(),
+    refund: z.object({ entity: z.object({ id: z.string(), payment_id: z.string() }) }).optional(),
   }),
 });

@@ -56,6 +56,7 @@
 - phase Phase 12: Operations & release — approved by Claude on 2026-11-26
 - phase Phase 13: Purchase orders — approved by Claude on 2026-11-26
 - phase Phase 14: GST invoicing — approved by Claude on 2026-11-26
+- phase Phase 15: Barcode & stock counts — approved by Claude on 2026-11-26
 
 
 ## Log
@@ -85,6 +86,7 @@
 - **T80** Stock count sessions (2026-11-26): Added stock count sessions: open for a warehouse, upsert counted quantities (last write wins so resends and offline syncs are harmless), live variance while counting, and submit, which sets counted products to their counted quantity through the new StockService.setQuantities (ADJUST movement per difference, reference COUNT-n, none for exact matches, uncounted products untouched) exactly once even under concurrent submits. The system quantity at submit time is stored for the variance report; products with no stock row yet can be counted.
 - **T81** Barcode scanner component and count UI (2026-11-26): Added a Scanner component (USB/Bluetooth scanners and typing via Enter, plus a camera mode using the browser's BarcodeDetector with a per-code cooldown, camera release on stop, and a clear message when permission is refused), a Stock counts page (start a count, each scan adds one, editable quantities, server-computed variances, save, submit with confirmation, cancel; read-only for viewers; unknown barcodes can be attached to a product on the spot), and barcode product lookup in the Inventory stock operation form.
 - **T82** Offline count capture (2026-11-26): Stock counts now work without a connection: counted lines are kept in IndexedDB (one merged entry per count, last quantity wins), a banner shows how many counts are waiting, and they sync oldest first when the connection returns or on demand, stopping on network or server errors and dropping (with a visible message) counts the server no longer accepts. Known products are found from the local list so scanning works offline, submitting offline is refused with a clear message and always flushes the queue first, and the existing service worker already serves the app shell offline (now covered by tests). Reloading the page while offline still needs data from before and is not supported yet.
+- **T83** Razorpay refund client and webhook events (2026-11-26): Added the Razorpay refund client (POST /v1/payments/{id}/refund with amount in paise, normal speed, receipt and an X-Refund-Idempotency key; payment id and amount validated before anything is sent; errors never carry credentials; the idempotency header is from memory of Razorpay's docs and unverified against the live API), migration 009 (refund_id, refund_status, refund_error on payments), and webhook handling: refund.processed marks the payment PROCESSED and moves a REFUND_DUE order to REFUNDED, telling the customer exactly once (replays, repeated events and orders staff already marked are silent), while refund.failed records the failure and alerts staff, leaving the order REFUND_DUE.
 
 
 ## Blocked
