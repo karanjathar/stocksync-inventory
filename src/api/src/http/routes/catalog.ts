@@ -58,7 +58,9 @@ export function productRoutes(c: Container): Router {
     res.json(p);
   });
   r.post('/', write, async (req, res) => {
-    res.status(201).json(await c.repos.products.create(parse(productBase, req.body)));
+    const input = parse(productBase, req.body);
+    await c.plans.assertCanAdd('products');
+    res.status(201).json(await c.repos.products.create(input));
   });
   r.patch('/:id', write, async (req, res) => {
     const p = await c.repos.products.update(idParam(req), parse(productBase.partial(), req.body));

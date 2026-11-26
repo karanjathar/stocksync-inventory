@@ -36,6 +36,8 @@ export class InvoiceService {
     private readonly settings: SettingsService,
     private readonly now: () => Date = () => new Date(),
     private readonly logger?: Logger,
+    /** Runs inside the issuing transaction for each NEW invoice (plan metering); throwing aborts the issue. */
+    private readonly beforeNewInvoice?: (db: pg.PoolClient) => Promise<void>,
   ) {}
 
   async get(id: string): Promise<Invoice | undefined> {
@@ -90,6 +92,7 @@ export class InvoiceService {
         buyer: { name: customer.name, gstin: customer.gstin, stateCode: customer.stateCode },
         order: { number: o.number, createdAt: o.createdAt, channel: o.channel }, lines, totals,
       };
+      await this.beforeNewInvoice?.(c);
       const ins = await c.query<{ id: string }>(
         `INSERT INTO invoices (order_id, fy, seq, number, issued_at, snapshot, taxable_cents, tax_cents, total_cents)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,

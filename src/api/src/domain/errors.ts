@@ -34,3 +34,10 @@ export class InsufficientStockError extends AppError {
     super(409, 'INSUFFICIENT_STOCK', `Insufficient stock${details.sku ? ` for ${details.sku}` : ''}: ${details.available} available, ${details.requested} requested`, details);
   }
 }
+
+/** The business's plan does not allow more of something. Nothing is deleted; the caller gets the numbers to show an upgrade prompt. */
+export class PlanLimitError extends AppError {
+  constructor(details: { metric: string; limit: number; used: number; plan: string }) {
+    super(402, 'PLAN_LIMIT', `Your ${details.plan} plan allows ${details.limit} ${details.metric.replace('_', ' ')}. Upgrade to add more.`, details);
+  }
+}

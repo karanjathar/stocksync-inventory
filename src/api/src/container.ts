@@ -44,6 +44,7 @@ import { PaymentService } from './services/payments.js';
 import { AcsEmailSender, LogEmailSender, type EmailSender } from './services/email.js';
 import { SignupService } from './services/signup.js';
 import { OnboardingService } from './services/demoData.js';
+import { PlanAdmin, PlansService } from './services/plans.js';
 
 export interface ContainerOverrides {
   /** Connection for the platform console (role with no access to business data). */
@@ -89,7 +90,9 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const purchaseOrders = new PurchaseOrdersService(pool, stock);
   const reorder = new ReorderService(pool, purchaseOrders, settings);
   const stockCounts = new StockCountsService(pool, stock);
-  const invoices = new InvoiceService(pool, settings, undefined, logger);
+  const plans = new PlansService(pool);
+  const planAdmin = opts.platformPool ? new PlanAdmin(opts.platformPool) : undefined;
+  const invoices = new InvoiceService(pool, settings, undefined, logger, (db) => plans.consumeOrThrow('invoices', db));
   orders.onStatusChange((order, previous) => invoices.onOrderStatusChange(order, previous));
   const messages = new MessagesRepo(pool);
   const fetchFn = opts.fetch ?? fetch;
@@ -117,7 +120,7 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
       : new MetaPageAdapter(channel, { ...(cfg ? { token: cfg.pageToken } : {}), ...graph }, fetchFn);
     adapterCache.set(key, { sig, adapter });
     return adapter;
-  });
+  }, () => plans.consume('chat_messages'));
   const jobs = new JobQueue(pool, { workerId: `api-${process.pid}-${randomUUID().slice(0, 8)}`, onError: (err, job) => logger.warn({ err: String(err), job: job?.kind, jobId: job?.id }, 'job failed') });
   registerMessageSend(jobs, hub);
   const maintenance = new Maintenance(pool, orders, settings, logger);
@@ -151,7 +154,7 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const images = new ImageStorage(env.AZURE_STORAGE_CONNECTION_STRING, env.AZURE_STORAGE_CONTAINER);
   chatFlow.setPaymentOptions(payments.chatOptions());
   orders.onStatusChange((order, previous) => payments.onOrderStatusChange(order, previous));
-  return { env, pool, logger, repos, auth, platform, signup, onboarding, emailSender, tenants, tenantDirectory, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpayProvider, channelCredentials, payments };
+  return { env, pool, logger, repos, auth, platform, signup, onboarding, plans, planAdmin, emailSender, tenants, tenantDirectory, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpayProvider, channelCredentials, payments };
 }
 
 export type Container = ReturnType<typeof createContainer>;

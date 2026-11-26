@@ -17,7 +17,9 @@ export class ChannelHub implements Messenger {
    * without it the fixed `adapters` are used.
    */
   constructor(adapters: ChannelAdapter[], private readonly log: MessagesRepo, private readonly getSettings?: () => Promise<Settings>,
-    private readonly resolver?: (channel: ChannelName) => Promise<ChannelAdapter>) {
+    private readonly resolver?: (channel: ChannelName) => Promise<ChannelAdapter>,
+    /** Counts one outgoing message against the business's plan; {ok:false} stops the send (the message is stored as failed, never dropped silently). */
+    private readonly quota?: () => Promise<{ ok: true } | { ok: false; limit: number; plan: string }>) {
     this.adapters = new Map(adapters.map((a) => [a.name, a]));
   }
 
@@ -75,6 +77,14 @@ export class ChannelHub implements Messenger {
         return;
       }
       payload = { kind: 'template', ...tpl, notify: payload.notify! };
+    }
+    if (adapter.isConfigured() && this.quota) {
+      const q = await this.quota();
+      if (!q.ok) {
+        await this.log.createOutbound({ channel, to, text, payload, options, status: 'failed',
+          error: { code: 'PLAN_LIMIT', message: `monthly message limit of the ${q.plan} plan reached (${q.limit})` } });
+        return;
+      }
     }
     const id = await this.log.createOutbound({ channel, to, text, payload, options, status: adapter.isConfigured() ? 'queued' : 'skipped' });
     if (!adapter.isConfigured()) return;

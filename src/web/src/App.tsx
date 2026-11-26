@@ -16,6 +16,7 @@ import { PurchaseOrders } from './pages/PurchaseOrders';
 import { Inbox } from './pages/Inbox';
 import { SettingsPage } from './pages/SettingsPage';
 import { Users } from './pages/Users';
+import { Usage } from './pages/Usage';
 import { Shop } from './pages/Shop';
 import { ShopOrder } from './pages/ShopOrder';
 import { Account } from './pages/Account';
@@ -60,6 +61,7 @@ export function App() {
         <Route path="account" element={<Account />} />
         <Route path="settings" element={<RequireAuth role="admin"><SettingsPage /></RequireAuth>} />
         <Route path="users" element={<RequireAuth role="admin"><Users /></RequireAuth>} />
+        <Route path="usage" element={<RequireAuth role="admin"><Usage /></RequireAuth>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -76,7 +76,7 @@ const EXEMPT = new Set([
   'get /orders/:token', 'post /orders/:token/payment-link', 'get /orders/:token/invoice.pdf', 'get /invoices/:id/download.pdf', // unguessable order and signed invoice links (tested in tenantShop)
   'get /s/:slug/manifest.webmanifest', 'get /s/:slug/catalog', 'post /s/:slug/orders',                                           // public shop of ONE business (tenantShop)
   'get /meta/:tenantId', 'post /meta/:tenantId', 'post /telegram/:tenantId', 'post /razorpay/:tenantId',                          // per-business webhooks (tenantChannels)
-  'patch /tenants/:id',                                                                                                           // platform console (tenantAuth)
+  'patch /tenants/:id', 'put /plans/:code',                                                                                                           // platform console (tenantAuth)
   'put /:kind', 'delete /:kind',                                                                                                  // the signed-in business's own credentials
 ]);
 
@@ -104,7 +104,7 @@ describe('guards: the matrix covers the real route table', () => {
   it('every top-level mount in app.ts is accounted for', () => {
     const src = readFileSync(new URL('../src/http/app.ts', import.meta.url), 'utf8');
     const mounts = [...src.matchAll(/api\.use\('\/([a-z-]+)'/g)].map((m) => m[1]!);
-    const known = ['auth', 'signup', 'public', 'platform', 'users', 'categories', 'products', 'warehouses', 'stock', 'suppliers', 'customers', 'settings', 'orders', 'messages', 'channels', 'uploads', 'payments', 'ops', 'channel-config', 'onboarding', 'purchase-orders', 'reorder-suggestions', 'stock-counts'];
+    const known = ['auth', 'signup', 'public', 'platform', 'users', 'categories', 'products', 'warehouses', 'stock', 'suppliers', 'customers', 'settings', 'orders', 'messages', 'channels', 'uploads', 'payments', 'ops', 'channel-config', 'onboarding', 'usage', 'purchase-orders', 'reorder-suggestions', 'stock-counts'];
     expect(mounts.filter((m) => !known.includes(m)), 'a new API area must be added to this suite deliberately').toEqual([]);
   });
 });

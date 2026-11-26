@@ -24,7 +24,9 @@ export function userRoutes(c: Container): Router {
   r.use(requireRole('admin'));
   r.get('/', async (_req, res) => { res.json(await c.repos.users.list()); });
   r.post('/', async (req, res) => {
-    res.status(201).json(await c.auth.createUser(parse(createSchema, req.body)));
+    const input = parse(createSchema, req.body);
+    await c.plans.assertCanAdd('users');
+    res.status(201).json(await c.auth.createUser(input));
   });
   r.patch('/:id', async (req, res) => {
     res.json(await c.auth.updateUser(idParam(req), parse(patchSchema, req.body)));

@@ -52,6 +52,9 @@ export function publicRoutes(c: Container): Router {
     });
   });
 
+  /** Plans and prices for the pricing page and sign-up (no business data). */
+  r.get('/plans', async (_req, res) => { res.set('Cache-Control', 'public, max-age=60').json(await c.plans.listActive()); });
+
   r.get(['/catalog', '/s/:slug/catalog'], slugScope, async (_req, res) => {
     const s = await c.settings.get();
     const products = await c.repos.products.list({ activeOnly: true, limit: 1000 });
