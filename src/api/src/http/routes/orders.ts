@@ -5,6 +5,7 @@ import { NotFoundError } from '../../domain/errors.js';
 import { currentUser, requireRole } from '../middleware/auth.js';
 import { idParam } from '../params.js';
 import { parse } from '../validate.js';
+import { renderInvoicePdf } from '../../services/invoicePdf.js';
 
 const createSchema = z.object({
   customerId: z.string().uuid(),
@@ -34,6 +35,14 @@ export function orderRoutes(c: Container): Router {
   r.post('/:id/payment-link', write, async (req, res) => {
     const { notify } = parse(z.object({ notify: z.boolean().optional() }), req.body ?? {});
     res.json(await c.payments.sendLink(idParam(req), notify ?? false));
+  });
+  // GST invoice (T75/T76): issued on demand for confirmed or fulfilled orders, idempotently.
+  r.get('/:id/invoice', write, async (req, res) => { res.json(await c.invoices.issue(idParam(req))); });
+  r.get('/:id/invoice.pdf', write, async (req, res) => {
+    const invoice = await c.invoices.issue(idParam(req));
+    const pdf = await renderInvoicePdf(invoice);
+    res.set({ 'content-type': 'application/pdf', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff',
+      'content-disposition': `inline; filename="invoice-${invoice.number.replace(/[^A-Za-z0-9-]/g, '-')}.pdf"` }).send(pdf);
   });
   r.post('/:id/refunded', write, async (req, res) => { res.json(await c.payments.markRefunded(idParam(req))); });
   r.post('/:id/fulfill', write, async (req, res) => { res.json(await c.orders.fulfill(idParam(req))); });

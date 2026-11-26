@@ -7,6 +7,7 @@ import type { PaymentMethod } from '../../domain/types.js';
 import { ALLOWED_IMAGE_TYPES } from '../../storage/blob.js';
 import { requireRole } from '../middleware/auth.js';
 import { parse } from '../validate.js';
+import { renderInvoicePdf } from '../../services/invoicePdf.js';
 
 const orderSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -21,6 +22,7 @@ export function publicRoutes(c: Container): Router {
   const r = Router();
   const orderLimiter = rateLimit({ windowMs: 15 * 60_000, limit: c.env.NODE_ENV === 'test' ? 1000 : 10, standardHeaders: true, legacyHeaders: false });
 
+  const invoiceLimiter = rateLimit({ windowMs: 15 * 60_000, limit: c.env.NODE_ENV === 'test' ? 1000 : 60, standardHeaders: true, legacyHeaders: false });
   const payLinkLimiter = rateLimit({ windowMs: 15 * 60_000, limit: c.env.NODE_ENV === 'test' ? 1000 : 30, standardHeaders: true, legacyHeaders: false });
 
   r.get('/catalog', async (_req, res) => {
@@ -102,6 +104,20 @@ export function publicRoutes(c: Container): Router {
       items: order.items.map((i) => ({ name: i.name, quantity: i.quantity })),
       ...(link ? { paymentUrl: link.shortUrl } : {}),
     });
+  });
+
+  /**
+   * The shopper's own GST invoice, found by the same unguessable token. Only for a confirmed or fulfilled order; anything else (unknown token,
+   * unconfirmed, cancelled, invoicing not set up) is a plain 404 so the endpoint reveals nothing.
+   */
+  r.get('/orders/:token/invoice.pdf', invoiceLimiter, async (req, res) => {
+    const token = z.string().uuid().safeParse(req.params.token);
+    const order = token.success ? await c.orders.getByPublicToken(token.data) : undefined;
+    if (!order || (order.status !== 'CONFIRMED' && order.status !== 'FULFILLED')) throw new NotFoundError('Invoice');
+    const invoice = await c.invoices.issue(order.id).catch((err: unknown) => { if (err instanceof ConflictError) throw new NotFoundError('Invoice'); throw err; });
+    const pdf = await renderInvoicePdf(invoice);
+    res.set({ 'content-type': 'application/pdf', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff',
+      'content-disposition': `inline; filename="invoice-${invoice.number.replace(/[^A-Za-z0-9-]/g, '-')}.pdf"` }).send(pdf);
   });
 
   return r;
