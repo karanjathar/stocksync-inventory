@@ -28,9 +28,10 @@ export function platformRoutes(c: Container): Router {
   r.get('/tenants', requirePlatform, async (_req, res) => { res.json(await platform.overview()); });
   r.get('/queue', requirePlatform, async (_req, res) => { res.json(await platform.queueOverview()); });
   r.patch('/tenants/:id', requirePlatform, async (req, res) => {
-    const { status, plan } = parse(z.object({ status: z.enum(['ACTIVE', 'SUSPENDED']).optional(), plan: z.string().regex(/^[A-Z][A-Z0-9_]{1,19}$/).optional() })
-      .refine((v) => v.status !== undefined || v.plan !== undefined, 'status or plan is required'), req.body);
+    const { status, plan, aiEnabled } = parse(z.object({ status: z.enum(['ACTIVE', 'SUSPENDED']).optional(), plan: z.string().regex(/^[A-Z][A-Z0-9_]{1,19}$/).optional(), aiEnabled: z.boolean().optional() })
+      .refine((v) => v.status !== undefined || v.plan !== undefined || v.aiEnabled !== undefined, 'status, plan or aiEnabled is required'), req.body);
     const id = idParam(req);
+    if (aiEnabled !== undefined) { await platform.setAiEnabled(id, aiEnabled); await platform.audit(id, req.platformAdmin!, { action: aiEnabled ? 'PLATFORM ai on' : 'PLATFORM ai off', detail: { values: { aiEnabled } } }); }
     if (plan) { await c.planAdmin!.assign(id, plan); await platform.audit(id, req.platformAdmin!, { action: 'PLATFORM plan change', detail: { values: { plan } } }); }
     if (status) { await platform.setStatus(id, status); await platform.audit(id, req.platformAdmin!, { action: status === 'SUSPENDED' ? 'PLATFORM suspend' : 'PLATFORM unsuspend', detail: { values: { status } } }); }
     res.json((await platform.listTenants()).find((t) => t.id === id));
@@ -40,7 +41,7 @@ export function platformRoutes(c: Container): Router {
   r.put('/plans/:code', requirePlatform, async (req, res) => {
     const code = parse(z.string().regex(/^[A-Z][A-Z0-9_]{1,19}$/), req.params.code);
     const edit = parse(z.object({ name: z.string().trim().min(1).max(60), priceMinor: z.number().int().min(0).max(100_000_000), active: z.boolean(), sort: z.number().int().min(0).max(1000),
-      maxProducts: limit, maxUsers: z.number().int().min(1).nullable(), maxChatMessages: limit, maxInvoices: limit, razorpayPlanId: z.string().regex(/^plan_[A-Za-z0-9]{6,40}$/).nullable(), requestsPerMinute: z.number().int().min(10).max(100_000) }).partial(), req.body);
+      maxProducts: limit, maxUsers: z.number().int().min(1).nullable(), maxChatMessages: limit, maxInvoices: limit, razorpayPlanId: z.string().regex(/^plan_[A-Za-z0-9]{6,40}$/).nullable(), requestsPerMinute: z.number().int().min(10).max(100_000), aiMonthlyUnits: z.number().int().min(0).max(100_000_000_000) }).partial(), req.body);
     res.json(await c.planAdmin!.upsert(code, edit));
   });
   return r;

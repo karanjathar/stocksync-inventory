@@ -48,6 +48,9 @@ import { PlanAdmin, PlansService } from './services/plans.js';
 import { BillingService, BillingWebhooks } from './services/billing.js';
 import { AuditService } from './services/audit.js';
 import { createLogger } from './logger.js';
+import { AnthropicClient } from './ai/client.js';
+import { AiBudget } from './ai/budget.js';
+import { AiGateway } from './ai/gateway.js';
 import { LoginGuard } from './services/loginGuard.js';
 import { PlanRateLimits } from './http/middleware/rateLimit.js';
 import { SessionService } from './services/sessions.js';
@@ -61,6 +64,8 @@ export interface ContainerOverrides {
   fetch?: typeof fetch;
   /** Replaces the channel hub for outbound messages (tests). */
   messenger?: Messenger;
+  /** Replaces the pause between AI retries (tests). */
+  aiWait?: (ms: number) => Promise<void>;
   /** How long a business's plan rate limit is cached (tests set 0). */
   rateLimitCacheMs?: number;
   /** Replaces the email service (tests). */
@@ -101,6 +106,8 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const reorder = new ReorderService(pool, purchaseOrders, settings);
   const stockCounts = new StockCountsService(pool, stock);
   const audit = new AuditService(pool);
+  const aiClient = new AnthropicClient({ apiKey: env.ANTHROPIC_API_KEY, apiBase: env.AI_API_BASE, model: env.AI_MODEL, timeoutMs: env.AI_TIMEOUT_MS, maxAttempts: 3 }, opts.fetch ?? fetch, opts.aiWait);
+  const ai = new AiGateway(pool, aiClient, new AiBudget(pool), env.AI_DISABLED, logger);
   const loginGuard = new LoginGuard(pool);
   const rateLimits = new PlanRateLimits(async () => (await pool.query<{ n: number }>('SELECT p.requests_per_minute AS n FROM plans p JOIN tenants t ON t.plan = p.code WHERE t.id = current_tenant()')).rows[0]?.n ?? 120, opts.rateLimitCacheMs ?? 30_000);
   const sessions = new SessionService(pool, env.JWT_SECRET, runWithTenant);
@@ -173,7 +180,7 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const tenantEraser = opts.platformPool ? new TenantEraser(opts.platformPool, logger, async (tenantId) => { await images.deleteTenantImages(tenantId); }) : undefined;
   chatFlow.setPaymentOptions(payments.chatOptions());
   orders.onStatusChange((order, previous) => payments.onOrderStatusChange(order, previous));
-  return { env, pool, logger, repos, auth, platform, signup, onboarding, plans, planAdmin, audit, sessions, loginGuard, rateLimits, dataRights, tenantEraser, billing, billingWebhooks, subscriptions, emailSender, tenants, tenantDirectory, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpayProvider, channelCredentials, payments };
+  return { env, pool, logger, repos, auth, platform, signup, onboarding, plans, planAdmin, audit, sessions, ai, aiClient, loginGuard, rateLimits, dataRights, tenantEraser, billing, billingWebhooks, subscriptions, emailSender, tenants, tenantDirectory, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpayProvider, channelCredentials, payments };
 }
 
 export type Container = ReturnType<typeof createContainer>;

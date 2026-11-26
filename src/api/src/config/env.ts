@@ -50,6 +50,12 @@ const schema = z.object({
   RAZORPAY_PLATFORM_WEBHOOK_SECRET: optional,
   BILLING_TRIAL_DAYS: z.coerce.number().int().min(0).max(90).default(14),
   BILLING_GRACE_DAYS: z.coerce.number().int().min(0).max(60).default(7),
+  /** Claude API (AI ordering and assistant). Without a key every AI feature is simply off. AI_DISABLED=true is the global kill switch. */
+  ANTHROPIC_API_KEY: optional,
+  AI_MODEL: z.string().min(1).default('claude-haiku-5-5'),
+  AI_API_BASE: z.string().url().default('https://api.anthropic.com'),
+  AI_DISABLED: bool,
+  AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(30_000),
   EMAIL_FROM: z.string().email().default('donotreply@stocksync.example'),
   JWT_SECRET: z.string().min(32, 'must be at least 32 characters'),
   JWT_EXPIRES_IN: z.string().default('12h'),
@@ -87,7 +93,7 @@ const schema = z.object({
         ctx.addIssue({ code: 'custom', path: ['ADMIN_PASSWORD'], message: 'must be a unique password of at least 12 characters on a public deployment' });
       }
     }
-    for (const key of ['RAZORPAY_API_BASE', 'META_GRAPH_BASE'] as const) {
+    for (const key of ['RAZORPAY_API_BASE', 'META_GRAPH_BASE', 'AI_API_BASE'] as const) {
       const url = new URL(env[key]);
       const loopback = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(url.hostname);
       if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {

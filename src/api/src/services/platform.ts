@@ -83,6 +83,11 @@ export class PlatformService {
     return { queue: { pending: n('pending'), running: n('running'), dead: n('dead'), oldestPendingSec: oldest.rows[0]?.age ?? 0 }, workers: workers.rows };
   }
 
+  /** The operator's per-business kill switch for AI. */
+  async setAiEnabled(id: string, enabled: boolean): Promise<void> {
+    if (!(await this.pool.query('UPDATE tenants SET ai_enabled = $2 WHERE id = $1', [id, enabled])).rowCount) throw new NotFoundError('Business');
+  }
+
   async setStatus(id: string, status: Extract<TenantStatus, 'ACTIVE' | 'SUSPENDED'>): Promise<Tenant> {
     const { rows } = await this.pool.query<Tenant>('UPDATE tenants SET status = $2 WHERE id = $1 RETURNING id, slug, name, status, plan, created_at AS "createdAt"', [id, status]);
     if (!rows[0]) throw new NotFoundError('Business');
