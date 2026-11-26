@@ -17,7 +17,10 @@ export class InboxService {
   ) {}
 
   async receive(input: InboundMessage): Promise<void> {
-    let msg = input;
+    // Postgres text cannot hold NUL; a chat message or profile name with one must never turn into a webhook failure the provider retries forever.
+    const clean = (v: string | undefined) => v?.split(String.fromCharCode(0)).join('');
+    let msg: InboundMessage = { ...input, text: clean(input.text) ?? '', from: clean(input.from) ?? input.from,
+      ...(input.action !== undefined ? { action: clean(input.action) ?? '' } : {}), ...(input.senderName !== undefined ? { senderName: clean(input.senderName) ?? '' } : {}) };
     if (msg.action && msg.text === msg.action) {
       // Label-less tap (Telegram callback_query): show staff the option title instead of the raw action id.
       const option = (await this.messages.lastOptions(msg.channel, msg.from)).find((o) => o.id === msg.action);

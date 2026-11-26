@@ -178,3 +178,48 @@ All reproduced before fixing; every fix has a regression test.
 6. **Single-replica realtime** and **JWT in `localStorage`** are unchanged from earlier releases (7.4).
 7. **Bicep probe and termination-grace changes are uncompiled** in this environment. Run `az bicep build --file infra/main.bicep` before deploying.
 8. **Template approval is outside the app.** A rejected or paused template shows up as a failed message with Meta's error code.
+
+---
+
+# 7.R4 Release 4 Audit — Procurement, GST, Barcode & Refunds
+
+**Date:** 2026-11-26 · **Scope:** purchase orders and reorder, GST engine, invoices and PDFs, signed download links, WhatsApp invoice delivery, barcodes, stock counts and offline queue, Razorpay refunds · **Result:** ✅ PASSED — 2 findings fixed (one pre-existing), none open at high or critical.
+**Method:** abuse-case review of every new input and money path; each defect reproduced by a failing test before it was fixed; permanent suite `tests/securityRelease4.test.ts` plus the per-feature suites.
+**Not verified:** anything against the real Razorpay or Meta services (the refund API, the `X-Refund-Idempotency` header and the refund webhook payloads follow Razorpay's documentation as recalled and are untested live; T67 stays blocked on credentials), and the invoice layout against an accountant's expectations. The Bicep changes from Release 3 are still uncompiled.
+
+## 7.R4.1 Automated checks
+| Check | Result |
+|---|---|
+| `npm audit --omit=dev --audit-level=high` (the gate) | ✅ no high or critical (the 3 moderate `applicationinsights` advisories from R3-04 remain) |
+| New dependencies | `pdfkit 0.20.2` (MIT, pinned; 0.21.0 was six days old so not used), `fake-indexeddb 6.2.8` (dev only, test fakes) |
+| Secret scan of tracked source | ✅ none |
+
+## 7.R4.2 Attack classes tested
+| Class | Result |
+|---|---|
+| PO receipt replay, same receipt id on another order, over-receiving, concurrent receipts | ✅ idempotent per order, refused atomically, three parallel receipts: one wins (`purchaseOrders.test.ts`, R4-05) |
+| Negative, zero, fractional or huge quantities on receipts and counts | ✅ 400 |
+| Invoice numbers under 30 concurrent confirmations; regenerating an invoice | ✅ gapless 1..30; snapshot immutable (`invoices.test.ts`) |
+| Invoice IDOR: viewer, anonymous, another shopper's token, an order id used as a token | ✅ 403 / 401 / no data / 404 |
+| Signed invoice links: tampered, expired, pointed at another invoice, wrong key | ✅ all plain 404 (`invoiceDelivery.test.ts`, R4-03) |
+| Refund amount tampering (client-sent amount, payment id, short payment) | ✅ ignored; the amount is what Razorpay captured per our records |
+| Refund double-click, concurrent staff, replayed webhooks | ✅ one refund; customer told once |
+| Hostile names reaching the PDF (PDF operators, JavaScript objects, bidi override, non-Latin text) | ✅ rendered as text inside hex strings, never interpreted |
+| Barcode lookup with SQL-looking, NUL, oversized or malformed codes | ✅ 404, never 500 |
+
+## 7.R4.3 Findings and fixes
+| ID | Severity | Finding | Fix |
+|---|---|---|---|
+| R4-01 | Medium | A `refund.processed` webhook for **less than the captured amount** (staff can issue partial refunds in the Razorpay dashboard) marked the order REFUNDED and told the customer they had been refunded in full | A refund below the captured amount is recorded as incomplete on the payment, the order stays REFUND_DUE, the customer is told nothing, and staff are alerted to refund the rest (`payments.ts onRefundEvent`) |
+| R4-02 | Medium (pre-existing) | A NUL character (U+0000) in any text field made the API answer **500** (Postgres cannot store it). Worse, a chat message or profile name containing one made the inbound webhook fail, so Meta would retry it repeatedly | The error handler maps Postgres 22021 to a clean 400, and inbound chat text, sender and profile names are stripped of NUL before they reach the database (`middleware/errors.ts`, `services/inbox.ts`) |
+
+## 7.R4.4 Accepted risks and recommendations
+1. **Signed invoice links are bearer capabilities for 2 hours.** Anyone holding the link (it travels in a chat message) can download that one invoice, which contains the buyer's name and, for business buyers, GSTIN. They are bound to a single invoice, expire, are checked in constant time, and a voided invoice downloads marked VOID. Shorten `INVOICE_LINK_TTL_MS` if that is too long.
+2. **`GET /api/orders/:id/invoice(.pdf)` issues the invoice on first call** (a GET with a side effect). Safe here because it is idempotent, staff-only and authenticated by a bearer header, not a cookie, so cross-site request forgery does not apply. If cookie sessions are adopted (Release 5), change it to POST.
+3. **Invoice PDFs cannot draw ₹ or Devanagari** and print `?` instead (standard PDF font). Task T87 bundles a Unicode font.
+4. **Tax-exclusive pricing is computed but never issued** (D-017), so an invoice can never disagree with the amount charged.
+5. **The invoice format is unreviewed by an accountant.** Review a sample before relying on it; e-invoicing (IRN/QR) is out of scope.
+6. **Refund idempotency relies on Razorpay honouring `X-Refund-Idempotency`.** Our own claim (one PENDING refund per payment, a 60-second guard after an unknown outcome, one stable key per attempt) means a duplicate refund needs both a Razorpay-side miss and a deliberate staff retry; the first live run (T67) should confirm the header's behaviour.
+7. **A refund whose webhook never arrives** leaves the order REFUND_DUE with a PENDING refund; staff can use Mark refunded after checking the Razorpay dashboard.
+8. **The offline queue lives in the browser's IndexedDB** and is readable by anyone using that device profile; it holds only product ids and quantities, no personal data.
+9. **Barcode lookups are authenticated but not separately rate-limited**; they sit under the general API limiter.

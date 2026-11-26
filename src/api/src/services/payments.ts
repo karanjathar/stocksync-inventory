@@ -380,22 +380,33 @@ export class PaymentService {
    * order becomes REFUNDED, telling the customer exactly once (an order staff already marked by hand, or a duplicate payment on an order that stays
    * PAID, is not announced). Failed: the payment is FAILED and staff are told to refund by hand; the order stays REFUND_DUE.
    */
-  private async onRefundEvent(processed: boolean, refund: { id: string; payment_id: string }): Promise<void> {
+  private async onRefundEvent(processed: boolean, refund: { id: string; payment_id: string; amount?: number }): Promise<void> {
     const found = await withTx(this.pool, async (c) => {
-      const p = await c.query<{ id: string; order_id: string; refund_status: string | null }>(
-        'SELECT id, order_id, refund_status FROM payments WHERE provider_payment_id = $1 FOR UPDATE', [refund.payment_id]);
+      const p = await c.query<{ id: string; order_id: string; refund_status: string | null; expected: number }>(
+        'SELECT id, order_id, refund_status, COALESCE(paid_cents, amount_cents) AS expected FROM payments WHERE provider_payment_id = $1 FOR UPDATE', [refund.payment_id]);
       const payment = p.rows[0];
       if (!payment) return undefined;
+      // A refund of less than what was captured (staff can issue partial refunds in the dashboard) is not a completed refund.
+      if (processed && refund.amount !== undefined && refund.amount < payment.expected) {
+        await c.query("UPDATE payments SET refund_status = 'FAILED', refund_id = $2, refund_error = $3, updated_at = now() WHERE id = $1",
+          [payment.id, refund.id, `Only ${refund.amount} of ${payment.expected} paise was refunded`]);
+        return { orderId: payment.order_id, announce: false, partial: { refunded: refund.amount, expected: payment.expected } };
+      }
       if (processed) {
         await c.query("UPDATE payments SET refund_status = 'PROCESSED', refund_id = $2, refund_error = NULL, updated_at = now() WHERE id = $1", [payment.id, refund.id]);
         const moved = await c.query("UPDATE orders SET payment_status = 'REFUNDED', updated_at = now() WHERE id = $1 AND payment_status = 'REFUND_DUE' RETURNING id", [payment.order_id]);
-        return { orderId: payment.order_id, announce: Boolean(moved.rowCount) };
+        return { orderId: payment.order_id, announce: Boolean(moved.rowCount), partial: undefined };
       }
       await c.query("UPDATE payments SET refund_status = 'FAILED', refund_id = COALESCE(refund_id, $2), refund_error = 'Razorpay reported that the refund failed', updated_at = now() WHERE id = $1", [payment.id, refund.id]);
-      return { orderId: payment.order_id, announce: false };
+      return { orderId: payment.order_id, announce: false, partial: undefined };
     });
     if (!found) return; // not one of ours: acknowledge
     const order = (await this.orders.get(found.orderId))!;
+    if (found.partial) {
+      const cur = (await this.settings.get()).currency;
+      await this.alertStaff(`⚠️ Razorpay refund ${refund.id} for order #${order.number} was only partial (${formatMoney(found.partial.refunded, cur)} of ${formatMoney(found.partial.expected, cur)}). The order is still marked refund due: refund the rest in the Razorpay dashboard, then press Mark refunded.`);
+      return;
+    }
     if (!processed) {
       await this.alertStaff(`⚠️ The Razorpay refund ${refund.id} for order #${order.number} failed. Refund it by hand in the Razorpay dashboard, then press Mark refunded.`);
       return;
@@ -422,6 +433,6 @@ const webhookSchema = z.object({
   payload: z.object({
     payment_link: z.object({ entity: z.object({ id: z.string(), amount_paid: z.number().optional() }) }).optional(),
     payment: z.object({ entity: z.object({ id: z.string(), amount: z.number().optional() }) }).optional(),
-    refund: z.object({ entity: z.object({ id: z.string(), payment_id: z.string() }) }).optional(),
+    refund: z.object({ entity: z.object({ id: z.string(), payment_id: z.string(), amount: z.number().optional() }) }).optional(),
   }),
 });

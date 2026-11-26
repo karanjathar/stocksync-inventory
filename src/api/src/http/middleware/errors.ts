@@ -38,6 +38,9 @@ export function errorHandler(logger?: Logger): ErrorRequestHandler {
       case '23505':
         res.status(409).json({ error: { code: 'CONFLICT', message: 'A record with these unique values already exists' } });
         return;
+      case '22021': // NUL (0x00) or another byte sequence Postgres text cannot hold
+        res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Text contains a character that is not allowed' } });
+        return;
       case '23503':
         res.status(409).json({ error: { code: 'CONFLICT', message: 'Referenced record does not exist or is still in use' } });
         return;
