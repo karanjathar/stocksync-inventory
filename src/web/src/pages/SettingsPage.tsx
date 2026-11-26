@@ -4,6 +4,7 @@ import { useAction, useApi } from '../hooks';
 import { useSettings } from '../settings';
 import { Badge, Card, ErrorBanner, Field, Page } from '../components/ui';
 import { ChannelCredentials } from '../components/ChannelCredentials';
+import { Billing } from './Billing';
 import type { AlertRecipient, ChannelName, ChannelStatus, CustomFieldDef, PaymentsConfig, Settings, Warehouse } from '../api/types';
 
 const CHANNELS: ChannelName[] = ['whatsapp', 'messenger', 'instagram', 'telegram'];
@@ -214,6 +215,7 @@ export function SettingsPage() {
         </Card>
         <div><button className="primary" type="submit" disabled={busy}>Save settings</button></div>
       </form>
+      <Billing />
       <ChannelCredentials />
     </Page>
   );

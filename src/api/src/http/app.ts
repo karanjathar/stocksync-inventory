@@ -12,6 +12,7 @@ import { authRoutes } from './routes/auth.js';
 import { signupRoutes } from './routes/signup.js';
 import { onboardingRoutes } from './routes/onboarding.js';
 import { usageRoutes } from './routes/plans.js';
+import { billingRoutes } from './routes/billing.js';
 import { userRoutes } from './routes/users.js';
 import { stockRoutes } from './routes/stock.js';
 import { settingsRoutes } from './routes/settings.js';
@@ -113,6 +114,7 @@ export function createApp(c: Container, opts: AppOptions = {}): Express {
   api.use('/ops', secure, opsRoutes(c));
   api.use('/onboarding', secure, onboardingRoutes(c));
   api.use('/usage', secure, usageRoutes(c));
+  api.use('/billing', secure, billingRoutes(c));
   api.use('/channel-config', secure, channelConfigRoutes(c));
   api.use('/purchase-orders', secure, purchaseOrderRoutes(c));
   api.use('/reorder-suggestions', secure, reorderRoutes(c));

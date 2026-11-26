@@ -4,6 +4,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Container } from '../../container.js';
 import { parseMetaWebhook, parseWhatsAppStatuses, parseTelegramUpdate, telegramCallbackId } from '../../channels/parse.js';
 import { verifyWebhookSignature } from '../../payments/razorpay.js';
+import { parseSubscriptionEvent } from '../../payments/razorpaySubscriptions.js';
 import { runWithTenant } from '../../db/tenant.js';
 import { NotFoundError } from '../../domain/errors.js';
 
@@ -84,6 +85,16 @@ export function webhookRoutes(c: Container): Router {
     if (!secret) { res.status(503).json(notConfigured); return; }
     if (!verifyWebhookSignature(req.rawBody, req.header('x-razorpay-signature'), secret)) { res.status(401).json(badSignature); return; }
     await c.payments.handleWebhook(req.header('x-razorpay-event-id'), req.rawBody, req.body);
+    res.status(200).json({ ok: true });
+  });
+
+  // Razorpay Subscriptions on the PLATFORM account: plan changes happen only here. Not tied to any business URL; the subscription id finds the business.
+  r.post('/razorpay-billing', async (req, res) => {
+    const secret = c.subscriptions.webhookSecret;
+    if (!secret || !c.billingWebhooks) { res.status(503).json(notConfigured); return; }
+    if (!verifyWebhookSignature(req.rawBody, req.header('x-razorpay-signature'), secret)) { res.status(401).json(badSignature); return; }
+    const ev = parseSubscriptionEvent(req.body);
+    if (ev) await c.billingWebhooks.handle(req.header('x-razorpay-event-id'), req.rawBody, ev); // other event types (payments, refunds of the platform account) are acknowledged and ignored
     res.status(200).json({ ok: true });
   });
 

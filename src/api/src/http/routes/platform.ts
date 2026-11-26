@@ -39,7 +39,7 @@ export function platformRoutes(c: Container): Router {
   r.put('/plans/:code', requirePlatform, async (req, res) => {
     const code = parse(z.string().regex(/^[A-Z][A-Z0-9_]{1,19}$/), req.params.code);
     const edit = parse(z.object({ name: z.string().trim().min(1).max(60), priceMinor: z.number().int().min(0).max(100_000_000), active: z.boolean(), sort: z.number().int().min(0).max(1000),
-      maxProducts: limit, maxUsers: z.number().int().min(1).nullable(), maxChatMessages: limit, maxInvoices: limit }).partial(), req.body);
+      maxProducts: limit, maxUsers: z.number().int().min(1).nullable(), maxChatMessages: limit, maxInvoices: limit, razorpayPlanId: z.string().regex(/^plan_[A-Za-z0-9]{6,40}$/).nullable() }).partial(), req.body);
     res.json(await c.planAdmin!.upsert(code, edit));
   });
   return r;

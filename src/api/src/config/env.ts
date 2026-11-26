@@ -42,6 +42,12 @@ const schema = z.object({
   SIGNUP_ENABLED: bool,
   /** Azure Communication Services Email: endpoint=https://<name>.communication.azure.com/;accesskey=<key>. Without it, emails are only logged. */
   EMAIL_CONNECTION_STRING: optional,
+  /** The PLATFORM's Razorpay account, used to bill businesses for their plan (separate from any business's own payment keys). */
+  RAZORPAY_PLATFORM_KEY_ID: optional,
+  RAZORPAY_PLATFORM_KEY_SECRET: optional,
+  RAZORPAY_PLATFORM_WEBHOOK_SECRET: optional,
+  BILLING_TRIAL_DAYS: z.coerce.number().int().min(0).max(90).default(14),
+  BILLING_GRACE_DAYS: z.coerce.number().int().min(0).max(60).default(7),
   EMAIL_FROM: z.string().email().default('donotreply@stocksync.example'),
   JWT_SECRET: z.string().min(32, 'must be at least 32 characters'),
   JWT_EXPIRES_IN: z.string().default('12h'),

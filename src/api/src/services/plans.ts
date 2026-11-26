@@ -4,13 +4,15 @@ import { NotFoundError, PlanLimitError, ValidationError } from '../domain/errors
 export interface Plan {
   code: string; name: string; priceMinor: number; currency: string; active: boolean; sort: number;
   maxProducts: number | null; maxUsers: number | null; maxChatMessages: number | null; maxInvoices: number | null;
+  /** The plan in the platform's Razorpay account that bills for this one (operator-set; never from a request). */
+  razorpayPlanId: string | null;
 }
 export type Metered = 'chat_messages' | 'invoices';
 export type Counted = 'products' | 'users';
 export interface Usage { plan: Plan; period: string; usage: { products: number; users: number; chatMessages: number; invoices: number } }
 
 const PLAN_SELECT = `SELECT code, name, price_minor AS "priceMinor", currency, active, sort, max_products AS "maxProducts", max_users AS "maxUsers",
-  max_chat_messages AS "maxChatMessages", max_invoices AS "maxInvoices" FROM plans`;
+  max_chat_messages AS "maxChatMessages", max_invoices AS "maxInvoices", razorpay_plan_id AS "razorpayPlanId" FROM plans`;
 const MONTH = (d = new Date()) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 
 /** Plans and what the current business has used of them. Limits only ever stop new records; existing data is never touched. */
@@ -73,9 +75,9 @@ export class PlansService {
 
 export interface PlanEdit {
   name?: string; priceMinor?: number; active?: boolean; sort?: number;
-  maxProducts?: number | null; maxUsers?: number | null; maxChatMessages?: number | null; maxInvoices?: number | null;
+  maxProducts?: number | null; maxUsers?: number | null; maxChatMessages?: number | null; maxInvoices?: number | null; razorpayPlanId?: string | null;
 }
-const COLS: Record<keyof PlanEdit, string> = { name: 'name', priceMinor: 'price_minor', active: 'active', sort: 'sort', maxProducts: 'max_products', maxUsers: 'max_users', maxChatMessages: 'max_chat_messages', maxInvoices: 'max_invoices' };
+const COLS: Record<keyof PlanEdit, string> = { name: 'name', priceMinor: 'price_minor', active: 'active', sort: 'sort', maxProducts: 'max_products', maxUsers: 'max_users', maxChatMessages: 'max_chat_messages', maxInvoices: 'max_invoices', razorpayPlanId: 'razorpay_plan_id' };
 
 /** Platform operator's side: edit plans without a deploy (runs on the platform role, which sees plans and tenants only). */
 export class PlanAdmin {
