@@ -202,3 +202,47 @@ describe('resuming an unpaid online order (T53)', () => {
     expect(await screen.findByRole('heading', { name: 'Corner Shop' })).toBeInTheDocument();
   });
 });
+
+describe('A business\'s own shop (/shop/<name>)', () => {
+  const renderSlug = (slug = 'shop-a') => render(
+    <MemoryRouter initialEntries={[`/shop/${slug}`]}>
+      <Routes>
+        <Route path="/shop/:slug" element={<Shop />} />
+        <Route path="/shop/order/:token" element={<p>Order page for token</p>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  it('loads that business\'s catalogue, orders through its own endpoint, and points the app manifest at it', async () => {
+    const calls = mockApi({ '/public/s/shop-a/catalog': catalog(['COD']), 'POST /public/s/shop-a/orders': { number: 5, status: 'PENDING', totalCents: 1500, paymentMethod: 'COD', token: 'tok-a' } });
+    renderSlug();
+    await fillCheckout();
+    expect(document.querySelector('link[rel="manifest"]')).toHaveAttribute('href', '/api/public/s/shop-a/manifest.webmanifest');
+    fireEvent.click(screen.getByRole('button', { name: /place order/i }));
+    expect(await screen.findByText('Order page for token')).toBeInTheDocument();
+    expect(calls.some((c) => c.path === '/public/catalog')).toBe(false);
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/public/s/shop-a/orders')).toBe(true);
+  });
+
+  it('keeps a separate cart for every business', async () => {
+    mockApi({ '/public/s/shop-a/catalog': catalog(), '/public/s/shop-b/catalog': catalog() });
+    const a = renderSlug('shop-a');
+    fireEvent.click(await screen.findByRole('button', { name: 'Add T-Shirt to cart' }));
+    await waitFor(() => expect(localStorage.getItem('stocksync.cart.shop-a')).toContain('p1'));
+    expect(localStorage.getItem('stocksync.cart.shop-b')).toBeNull();
+    a.unmount();
+    renderSlug('shop-b');
+    await screen.findByRole('button', { name: 'Add T-Shirt to cart' });
+    expect(document.querySelector('p.empty')).toBeInTheDocument(); // business B's cart starts empty
+    expect(localStorage.getItem('stocksync.cart.shop-a')).toContain('p1'); // and A's cart is untouched
+    expect(JSON.parse(localStorage.getItem('stocksync.cart.shop-b') ?? '{}')).toEqual({});
+  });
+
+  it('shows an unknown shop as an error instead of another business\'s products', async () => {
+    mockApi({});
+    renderSlug('nope');
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add T-Shirt to cart' })).not.toBeInTheDocument();
+  });
+});
+

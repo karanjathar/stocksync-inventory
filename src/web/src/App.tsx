@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Navigate, Route, Routes, useLocation } from 'react-router';
+import { Navigate, Route, Routes, useLocation, useParams } from 'react-router';
 import { useAuth } from './auth';
 import { SettingsProvider } from './settings';
 import { Layout } from './components/Layout';
@@ -29,12 +29,19 @@ function RequireAuth({ children, role = 'viewer' }: { children: ReactNode; role?
   return <>{children}</>;
 }
 
+/** One business's shop; remounts when the slug changes so a cart never leaks from one business's shop into another's. */
+function ShopBySlug() {
+  const { slug } = useParams();
+  return <Shop key={slug} />;
+}
+
 export function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/shop" element={<Shop />} />
       <Route path="/shop/order/:token" element={<ShopOrder />} />
+      <Route path="/shop/:slug" element={<ShopBySlug />} />
       <Route element={<RequireAuth><SettingsProvider><Layout /></SettingsProvider></RequireAuth>}>
         <Route index element={<Dashboard />} />
         <Route path="products" element={<Products />} />

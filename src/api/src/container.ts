@@ -9,7 +9,7 @@ import type { Category, Supplier, Warehouse } from './domain/types.js';
 import { AuthService } from './services/auth.js';
 import { PlatformService } from './services/platform.js';
 import { DEFAULT_TENANT_ID } from './db/tenant.js';
-import { TenantsRepo } from './repositories/tenants.js';
+import { TenantDirectory, TenantsRepo } from './repositories/tenants.js';
 import { StockService } from './services/stock.js';
 import { SettingsService } from './services/settings.js';
 import { EventBus } from './realtime/bus.js';
@@ -59,7 +59,9 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
     warehouses: new SimpleRepo<Warehouse>(pool, 'warehouses', { code: 'code', name: 'name', address: 'address' }, 'code', ['code', 'name']),
   };
   const rounds = env.NODE_ENV === 'test' ? 4 : 12;
-  const auth = new AuthService(repos.users, env.JWT_SECRET, env.JWT_EXPIRES_IN, rounds, new TenantsRepo(pool));
+  const tenants = new TenantsRepo(pool);
+  const tenantDirectory = new TenantDirectory(pool);
+  const auth = new AuthService(repos.users, env.JWT_SECRET, env.JWT_EXPIRES_IN, rounds, tenants);
   // The platform console uses its own restricted database role; without that pool its routes answer 501.
   const platform = opts.platformPool ? new PlatformService(opts.platformPool, env.JWT_SECRET, env.JWT_EXPIRES_IN, rounds) : undefined;
   const stock = new StockService(pool, (err) => logger.error({ err }, 'stock observer failed'));
@@ -107,7 +109,7 @@ export function createContainer(opts: { env: Env; pool: pg.Pool } & ContainerOve
   const images = new ImageStorage(env.AZURE_STORAGE_CONNECTION_STRING, env.AZURE_STORAGE_CONTAINER);
   chatFlow.setPaymentOptions(payments.chatOptions());
   orders.onStatusChange((order, previous) => payments.onOrderStatusChange(order, previous));
-  return { env, pool, logger, repos, auth, platform, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpay, payments };
+  return { env, pool, logger, repos, auth, platform, tenants, tenantDirectory, stock, customers, settings, events, orders, alerts, messages, hub, jobs, maintenance, purchaseOrders, reorder, stockCounts, invoices, messenger, bot, inbox, images, carts, chatFlow, razorpay, payments };
 }
 
 export type Container = ReturnType<typeof createContainer>;

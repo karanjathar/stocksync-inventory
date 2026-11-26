@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import type { Container } from '../../container.js';
@@ -7,6 +7,7 @@ import type { PaymentMethod } from '../../domain/types.js';
 import { ALLOWED_IMAGE_TYPES } from '../../storage/blob.js';
 import { requireRole } from '../middleware/auth.js';
 import { parse } from '../validate.js';
+import { runWithTenant } from '../../db/tenant.js';
 import { renderInvoicePdf } from '../../services/invoicePdf.js';
 import { verifyInvoiceSignature } from '../../services/signedUrl.js';
 
@@ -26,7 +27,32 @@ export function publicRoutes(c: Container): Router {
   const invoiceLimiter = rateLimit({ windowMs: 15 * 60_000, limit: c.env.NODE_ENV === 'test' ? 1000 : 60, standardHeaders: true, legacyHeaders: false });
   const payLinkLimiter = rateLimit({ windowMs: 15 * 60_000, limit: c.env.NODE_ENV === 'test' ? 1000 : 30, standardHeaders: true, legacyHeaders: false });
 
-  r.get('/catalog', async (_req, res) => {
+  // Which business does this request belong to? Resolved BEFORE any data is read, and unknown or suspended businesses are a plain 404.
+  const slugScope: RequestHandler = async (req, _res, next) => {
+    const slug = req.params.slug;
+    if (slug === undefined) { next(); return; } // the original single-shop URLs: the default business
+    const tenant = await c.tenantDirectory.bySlug(String(slug));
+    if (!tenant) throw new NotFoundError('Shop');
+    await runWithTenant(tenant.id, async () => { next(); });
+  };
+  const tokenScope: RequestHandler = async (req, _res, next) => {
+    const token = z.string().uuid().safeParse(req.params.token);
+    const tenantId = token.success ? await c.tenantDirectory.ofOrderToken(token.data) : undefined;
+    if (!tenantId) throw new NotFoundError('Order');
+    await runWithTenant(tenantId, async () => { next(); });
+  };
+
+  r.get('/s/:slug/manifest.webmanifest', slugScope, async (req, res) => {
+    const s = await c.settings.get();
+    const slug = String(req.params.slug);
+    res.type('application/manifest+json').set('Cache-Control', 'public, max-age=300').json({
+      name: s.businessName, short_name: s.businessName.slice(0, 12), start_url: `/shop/${slug}`, scope: `/shop/${slug}`, display: 'standalone',
+      background_color: '#ffffff', theme_color: '#0f766e',
+      icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }, { src: '/icon-512.png', sizes: '512x512', type: 'image/png' }, { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }],
+    });
+  });
+
+  r.get(['/catalog', '/s/:slug/catalog'], slugScope, async (_req, res) => {
     const s = await c.settings.get();
     const products = await c.repos.products.list({ activeOnly: true, limit: 1000 });
     const pay = await c.payments.config();
@@ -42,7 +68,7 @@ export function publicRoutes(c: Container): Router {
     });
   });
 
-  r.post('/orders', orderLimiter, async (req, res) => {
+  r.post(['/orders', '/s/:slug/orders'], orderLimiter, slugScope, async (req, res) => {
     const o = parse(orderSchema, req.body);
     // Which payment methods may be used right now (keys configured, enabled in Settings, INR for online).
     const pay = await c.payments.config();
@@ -78,7 +104,7 @@ export function publicRoutes(c: Container): Router {
    * Resume payment: an open link, or a fresh one when the first expired / was abandoned. Authenticated only by the
    * unguessable order token (like the status page); the amount always comes from the order.
    */
-  r.post('/orders/:token/payment-link', payLinkLimiter, async (req, res) => {
+  r.post('/orders/:token/payment-link', payLinkLimiter, tokenScope, async (req, res) => {
     const token = z.string().uuid().safeParse(req.params.token);
     const order = token.success ? await c.orders.getByPublicToken(token.data) : undefined;
     if (!order) throw new NotFoundError('Order');
@@ -91,7 +117,7 @@ export function publicRoutes(c: Container): Router {
   });
 
   /** Shop order-status page: found by the unguessable token, exposes only what the shopper needs. */
-  r.get('/orders/:token', async (req, res) => {
+  r.get('/orders/:token', tokenScope, async (req, res) => {
     const token = z.string().uuid().safeParse(req.params.token);
     const order = token.success ? await c.orders.getByPublicToken(token.data) : undefined;
     if (!order) throw new NotFoundError('Order');
@@ -101,6 +127,7 @@ export function publicRoutes(c: Container): Router {
     const invoice = order.status === 'CONFIRMED' || order.status === 'FULFILLED' ? await c.invoices.getByOrder(order.id) : undefined;
     res.set('Cache-Control', 'no-store');
     res.json({
+      shop: (await c.tenants.current())?.slug,
       invoiceAvailable: invoice?.status === 'ISSUED',
       number: order.number, status: order.status, paymentMethod: order.paymentMethod, paymentStatus: order.paymentStatus,
       totalCents: order.totalCents, currency: s.currency,
@@ -113,7 +140,7 @@ export function publicRoutes(c: Container): Router {
    * The shopper's own GST invoice, found by the same unguessable token. Only for a confirmed or fulfilled order; anything else (unknown token,
    * unconfirmed, cancelled, invoicing not set up) is a plain 404 so the endpoint reveals nothing.
    */
-  r.get('/orders/:token/invoice.pdf', invoiceLimiter, async (req, res) => {
+  r.get('/orders/:token/invoice.pdf', invoiceLimiter, tokenScope, async (req, res) => {
     const token = z.string().uuid().safeParse(req.params.token);
     const order = token.success ? await c.orders.getByPublicToken(token.data) : undefined;
     if (!order || (order.status !== 'CONFIRMED' && order.status !== 'FULFILLED')) throw new NotFoundError('Invoice');
@@ -129,7 +156,9 @@ export function publicRoutes(c: Container): Router {
     const exp = typeof req.query.exp === 'string' ? req.query.exp : '';
     const sig = typeof req.query.sig === 'string' ? req.query.sig : '';
     if (!id.success || !verifyInvoiceSignature(c.env.JWT_SECRET, id.data, exp, sig)) throw new NotFoundError('Invoice');
-    const invoice = await c.invoices.get(id.data);
+    const tenantId = await c.tenantDirectory.ofInvoice(id.data); // the signature is checked first; only then do we look the invoice up
+    if (!tenantId) throw new NotFoundError('Invoice');
+    const invoice = await runWithTenant(tenantId, () => c.invoices.get(id.data));
     if (!invoice) throw new NotFoundError('Invoice');
     const pdf = await renderInvoicePdf(invoice);
     res.set({ 'content-type': 'application/pdf', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff',

@@ -72,7 +72,7 @@ export function ShopOrder() {
   const total = money(order.totalCents, order.currency);
   const payUrl = isSafePaymentUrl(order.paymentUrl) ? order.paymentUrl : undefined;
   return (
-    <Shell>
+    <Shell shop={order.shop}>
       <Card>
         <div className="row">
           <h1 style={{ fontSize: '1.4rem' }}>Order #{order.number}</h1>
@@ -98,10 +98,10 @@ export function ShopOrder() {
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ children, shop }: { children: React.ReactNode; shop?: string }) {
   return (
     <div>
-      <header className="shop-head"><h1 style={{ fontSize: 'clamp(1.1rem, 4vw, 1.5rem)' }}>Your order</h1><span className="spacer" /><Link to="/shop">← Back to shop</Link></header>
+      <header className="shop-head"><h1 style={{ fontSize: 'clamp(1.1rem, 4vw, 1.5rem)' }}>Your order</h1><span className="spacer" /><Link to={shop && shop !== 'default' ? `/shop/${shop}` : '/shop'}>← Back to shop</Link></header>
       <div className="shop-layout" style={{ gridTemplateColumns: '1fr', maxWidth: 640 }}><div className="grid">{children}</div></div>
     </div>
   );

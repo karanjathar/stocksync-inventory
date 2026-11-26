@@ -1,33 +1,37 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useParams } from 'react-router';
 import { api, ApiError, errorText } from '../api/client';
 import { money, whatsappLink } from '../format';
 import { Badge, Empty, ErrorBanner, Field } from '../components/ui';
 import { isSafePaymentUrl, redirectTo } from '../redirect';
 import type { PaymentMethod, PlacedOrder, PublicCatalog, PublicOrderStatus, PublicProduct } from '../api/types';
 
+// Every business has its own cart and "resume payment" memory, so a shopper using two shops never mixes them.
+const keyFor = (name: string, slug?: string) => (slug ? `${name}.${slug}` : name);
 const CART_KEY = 'stocksync.cart';
 const LAST_ONLINE_KEY = 'stocksync.lastOnlineOrder'; // the shopper may back out of the payment page; let them resume
 type Cart = Record<string, number>;
 
-function loadCart(): Cart {
-  try { return JSON.parse(localStorage.getItem(CART_KEY) ?? '{}') as Cart; } catch { return {}; }
+function loadCart(slug?: string): Cart {
+  try { return JSON.parse(localStorage.getItem(keyFor(CART_KEY, slug)) ?? '{}') as Cart; } catch { return {}; }
 }
 
-function readLastOnline(): { token: string } | null {
+function readLastOnline(slug?: string): { token: string } | null {
   try {
-    const v = JSON.parse(localStorage.getItem(LAST_ONLINE_KEY) ?? 'null') as { token?: unknown } | null;
+    const v = JSON.parse(localStorage.getItem(keyFor(LAST_ONLINE_KEY, slug)) ?? 'null') as { token?: unknown } | null;
     return v && typeof v.token === 'string' ? { token: v.token } : null;
   } catch { return null; }
 }
-const forgetLastOnline = () => { try { localStorage.removeItem(LAST_ONLINE_KEY); } catch { /* ignore */ } };
+const forgetLastOnline = (slug?: string) => { try { localStorage.removeItem(keyFor(LAST_ONLINE_KEY, slug)); } catch { /* ignore */ } };
 
 /** Public storefront: browse, cart, checkout on the website or hand the cart to WhatsApp. */
 export function Shop() {
+  const { slug } = useParams(); // /shop/<slug> is one business's shop; plain /shop is the original single shop
+  const base = slug ? `/public/s/${encodeURIComponent(slug)}` : '/public';
   const [catalog, setCatalog] = useState<PublicCatalog | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [cart, setCart] = useState<Cart>(loadCart);
+  const [cart, setCart] = useState<Cart>(() => loadCart(slug));
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
@@ -36,21 +40,28 @@ export function Shop() {
   const [resume, setResume] = useState<{ token: string; number: number } | null>(null);
 
   useEffect(() => {
-    api<PublicCatalog>('/public/catalog').then(setCatalog, (e: unknown) => setError(errorText(e)));
-  }, []);
+    api<PublicCatalog>(`${base}/catalog`).then(setCatalog, (e: unknown) => setError(errorText(e)));
+  }, [base]);
+  useEffect(() => { // installable app per business: its own name, icon colours and start page
+    if (!slug) return;
+    const link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]') ?? document.head.appendChild(Object.assign(document.createElement('link'), { rel: 'manifest' }));
+    const previous = link.getAttribute('href');
+    link.setAttribute('href', `/api/public/s/${encodeURIComponent(slug)}/manifest.webmanifest`);
+    return () => { if (previous) link.setAttribute('href', previous); else link.remove(); };
+  }, [slug]);
   useEffect(() => {
-    const last = readLastOnline();
+    const last = readLastOnline(slug);
     if (!last) return;
     api<PublicOrderStatus>(`/public/orders/${encodeURIComponent(last.token)}`).then((o) => {
       if (o.paymentMethod === 'ONLINE' && o.paymentStatus === 'UNPAID' && o.status !== 'CANCELLED') setResume({ token: last.token, number: o.number });
-      else forgetLastOnline(); // paid or cancelled: nothing left to resume
+      else forgetLastOnline(slug); // paid or cancelled: nothing left to resume
     }, (err: unknown) => {
-      if (err instanceof ApiError && err.status === 404) forgetLastOnline(); // unknown order; other errors are temporary
+      if (err instanceof ApiError && err.status === 404) forgetLastOnline(slug); // unknown order; other errors are temporary
     });
-  }, []);
+  }, [slug]);
   useEffect(() => {
-    try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch { /* ignore */ }
-  }, [cart]);
+    try { localStorage.setItem(keyFor(CART_KEY, slug), JSON.stringify(cart)); } catch { /* ignore */ }
+  }, [cart, slug]);
   useEffect(() => { if (catalog) document.title = catalog.settings.businessName; }, [catalog]);
 
   const byId = useMemo(() => new Map(catalog?.products.map((p) => [p.id, p]) ?? []), [catalog]);
@@ -84,12 +95,12 @@ export function Shop() {
     setBusy(true);
     setError(null);
     try {
-      const res = await api<PlacedOrder>('/public/orders', {
+      const res = await api<PlacedOrder>(`${base}/orders`, {
         body: { name: name.trim(), phone: phone.trim(), paymentMethod: method, items: lines.map((l) => ({ productId: l.product.id, quantity: l.qty })) },
       });
       setCart({}); // the order exists now; the cart is only emptied after the server accepted it
       if (res.paymentMethod === 'ONLINE') {
-        try { localStorage.setItem(LAST_ONLINE_KEY, JSON.stringify({ token: res.token })); } catch { /* storage unavailable */ }
+        try { localStorage.setItem(keyFor(LAST_ONLINE_KEY, slug), JSON.stringify({ token: res.token })); } catch { /* storage unavailable */ }
       }
       if (res.paymentUrl && isSafePaymentUrl(res.paymentUrl)) redirectTo(res.paymentUrl);
       else navigate(`/shop/order/${res.token}`);

@@ -31,6 +31,8 @@ export interface PublicOrderStatus {
   items: { name: string; quantity: number }[];
   paymentUrl?: string;
   invoiceAvailable?: boolean;
+  /** Slug of the business the order belongs to (for the link back to its shop). */
+  shop?: string;
 }
 
 export interface PaymentsConfig { razorpayConfigured: boolean; onlineAvailable: boolean; codEnabled: boolean; reason?: string }

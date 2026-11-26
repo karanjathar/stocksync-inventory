@@ -169,3 +169,17 @@ describe('invoice link (T78)', () => {
   });
 });
 
+describe('back to the right shop (T93)', () => {
+  it('links back to the business the order belongs to', async () => {
+    mockApi({ '/public/orders/tok-1': { ...base, paymentMethod: 'COD', shop: 'shop-a' } });
+    renderOrder();
+    expect(await screen.findByRole('link', { name: /back to shop/i })).toHaveAttribute('href', '/shop/shop-a');
+  });
+
+  it('the original single shop keeps the plain /shop link', async () => {
+    mockApi({ '/public/orders/tok-1': { ...base, paymentMethod: 'COD', shop: 'default' } });
+    renderOrder();
+    expect(await screen.findByRole('link', { name: /back to shop/i })).toHaveAttribute('href', '/shop');
+  });
+});
+
