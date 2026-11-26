@@ -34,7 +34,7 @@ describe('migrations 003–004 on an existing Release 1 database (T29, T58)', ()
     // Release 1/2 rows: outbound messages were logged as 'ok' (T59 normalises them to 'sent').
     await pool.query("INSERT INTO channel_messages (channel, direction, external_user, text, status) VALUES ('whatsapp','out','91999','legacy','ok'), ('whatsapp','in','91999','hello','ok')");
 
-    expect(await migrate(pool)).toEqual(['003_payments_chat.sql', '004_refunded.sql', '005_outbox_jobs.sql']);
+    expect(await migrate(pool)).toEqual(['003_payments_chat.sql', '004_refunded.sql', '005_outbox_jobs.sql', '006_purchase_orders.sql']);
     expect(await migrate(pool)).toEqual([]);
 
     const { rows } = await pool.query<{ payment_method: string; payment_status: string; public_token: string }>('SELECT payment_method, payment_status, public_token FROM orders ORDER BY number');
@@ -83,3 +83,32 @@ describe('migration 005 outbox and jobs (T59)', () => {
     await q("INSERT INTO maintenance_runs (task, ran_at, result) VALUES ('prune', now(), '{}')");
   });
 });
+
+describe('migration 006 purchase orders (T69)', () => {
+  it('stores POs with lines and rejects invalid states', async () => {
+    const q = (sql: string, args: unknown[] = []) => pool.query(sql, args);
+    const sup = (await q("INSERT INTO suppliers (name) VALUES ('Acme') RETURNING id")).rows[0].id as string;
+    const wh = (await q("INSERT INTO warehouses (code, name) VALUES ('M6', 'Main') RETURNING id")).rows[0].id as string;
+    const p1 = (await q("INSERT INTO products (sku, name, price_cents) VALUES ('PO-1', 'One', 100) RETURNING id")).rows[0].id as string;
+    const po = (await q('INSERT INTO purchase_orders (supplier_id, warehouse_id) VALUES ($1, $2) RETURNING id, number, status', [sup, wh])).rows[0];
+    expect(po.status).toBe('DRAFT');
+    expect(po.number).toBeGreaterThan(0);
+
+    const line = (qty: number, received = 0, cost = 50, product = p1) =>
+      q('INSERT INTO purchase_order_lines (po_id, product_id, quantity, received_quantity, unit_cost_cents) VALUES ($1, $2, $3, $4, $5)', [po.id, product, qty, received, cost]);
+    await expect(line(0)).rejects.toMatchObject({ code: '23514' });          // quantity > 0
+    await expect(line(5, 6)).rejects.toMatchObject({ code: '23514' });       // received <= ordered
+    await expect(line(5, 0, -1)).rejects.toMatchObject({ code: '23514' });   // cost >= 0
+    await line(5);
+    await expect(line(7)).rejects.toMatchObject({ code: '23505' });          // one line per product
+    await expect(q("UPDATE purchase_orders SET status = 'LOST' WHERE id = $1", [po.id])).rejects.toMatchObject({ code: '23514' });
+
+    await q("INSERT INTO purchase_receipts (po_id, receipt_id) VALUES ($1, 'r1')", [po.id]);
+    await expect(q("INSERT INTO purchase_receipts (po_id, receipt_id) VALUES ($1, 'r1')", [po.id])).rejects.toMatchObject({ code: '23505' });
+    await q("INSERT INTO purchase_receipts (po_id, receipt_id) VALUES ($1, 'r2')", [po.id]);
+    // deleting a PO removes its lines and receipts
+    await q('DELETE FROM purchase_orders WHERE id = $1', [po.id]);
+    expect((await q('SELECT 1 FROM purchase_order_lines WHERE po_id = $1', [po.id])).rowCount).toBe(0);
+  });
+});
+

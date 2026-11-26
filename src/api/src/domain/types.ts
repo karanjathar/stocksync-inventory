@@ -54,3 +54,10 @@ export interface Payment { id: string; orderId: string; provider: 'razorpay'; pr
   status: 'CREATED' | 'PAID' | 'EXPIRED' | 'CANCELLED'; amountCents: number; currency: string; shortUrl: string;
   providerPaymentId: string | null; expiresAt: string; createdAt: string }
 export interface PaymentSettings { onlineEnabled: boolean; codEnabled: boolean; linkExpiryMinutes: number }
+
+// ---- Release 4: purchase orders (docs/3_SCHEMAS.md 3.19) ----
+export type PurchaseOrderStatus = 'DRAFT' | 'SENT' | 'PARTIALLY_RECEIVED' | 'RECEIVED' | 'CANCELLED';
+export interface PurchaseOrderLine { productId: string; sku: string; name: string; quantity: number; receivedQuantity: number; unitCostCents: number }
+export interface PurchaseOrder { id: string; number: number; supplierId: string; supplierName: string; warehouseId: string; status: PurchaseOrderStatus;
+  notes: string; lines: PurchaseOrderLine[]; totalCents: number; createdAt: string; updatedAt: string }
+

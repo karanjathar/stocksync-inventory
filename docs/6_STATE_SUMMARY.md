@@ -51,6 +51,7 @@
 - phase Phase 9: Hardening & release — approved by Claude on 2026-11-06
 - phase Phase 10: Durable messaging — approved by Claude on 2026-11-26
 - phase Phase 11: WhatsApp templates & maintenance — approved by Claude on 2026-11-26
+- phase Phase 12: Operations & release — approved by Claude on 2026-11-26
 
 
 ## Log
@@ -82,6 +83,7 @@
 - **T65** Inbox delivery UI, retry and Settings for templates and maintenance (2026-11-26): Inbox now shows per-message delivery state (sending, sent, delivered, read, not sent) live via SSE, and failed messages show the provider reason with a Retry button backed by POST /api/messages/:id/retry (409 unless failed, atomic with its job so double-clicks are safe). Settings gained WhatsApp template mapping per event and Maintenance (unpaid-order TTL, chat retention) sections, tolerant of servers that do not send the new fields yet.
 - **T66** Readiness, ops status and graceful shutdown (2026-11-26): Added /readyz (database, migrations applied, this replica's worker heartbeat; 503 naming the failing check, no error details) while /healthz stays a cheap liveness probe, an admin-only GET /api/ops/status (queue depth, failed messages in 24h, last maintenance runs) with a System health card on the dashboard, and an ordered graceful shutdown (stop HTTP, scheduler, drain jobs, close the pool within 25s) that is unit-tested. Bicep startup/readiness probes now use /readyz and the container gets a 30s termination grace period; the Bicep change could not be compiled here (no az CLI), so it is unverified.
 - **T68** Security review and release docs for Release 3 (2026-11-26): Release 3 security review: added a regression suite (template-parameter sanitising, cross-channel and forged receipts, bounded retries, retry hammering) and documented the results in 7_SECURITY_AUDIT.md section 7.R3. Found and fixed one real defect (R3-01: newlines or tabs in a customer's name made WhatsApp template sends fail permanently), accepted a new moderate advisory chain in applicationinsights, and recorded that real-service verification (T67) and the Bicep probe change remain unverified. README, DEPLOYMENT_GUIDE (template setup, receipts, cleanup, health) and PRD updated; no new env vars.
+- **T69** Migration 006 and purchase order types (2026-11-26): Added migration 006 (purchase_orders, purchase_order_lines, purchase_receipts) with DB-level guards: quantity > 0, received <= ordered, non-negative cost, one line per product, valid statuses and an idempotency key per receive call. Added the PurchaseOrder types.
 
 
 ## Blocked
