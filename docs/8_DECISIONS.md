@@ -62,3 +62,8 @@ Decision: the order stays REFUND_DUE until Razorpay's signed `refund.processed` 
 
 ## D-016 Barcode scanning is progressive (2026-11-26)
 Decision: use the browser `BarcodeDetector` API when present and otherwise a text input that also accepts USB/Bluetooth scanners (keyboard wedge); no heavy WASM scanner dependency in v1.
+
+## D-017 Tax-exclusive pricing is computed but not issued yet (2026-11-26)
+Context: with exclusive prices the invoice total (taxable + tax) would exceed the order total the customer was actually charged, because checkout, payment links and chat carts all charge the stored price.
+Decision: `computeInvoice` supports both modes (tested), but the invoice service (T75) refuses to issue when `gst.pricesIncludeTax` is false and says why; the Settings UI (T78) does not offer the switch. Supporting exclusive pricing means adding tax on top at checkout everywhere, which is a separate, larger change.
+Consequences: invoices can never disagree with the amount paid; shops that quote prices before tax must wait for that follow-up.
