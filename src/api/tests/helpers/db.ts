@@ -18,3 +18,13 @@ export async function freshDb(): Promise<pg.Pool> {
   await owner.end();
   return createPool({ connectionString: TEST_DATABASE_URL, ssl: false, appRole: 'stocksync_app', fallbackTenantId: tenantId });
 }
+
+/** Adds another business (tenant) to the test database. Tenants are platform-level, so this uses the owner connection, not the app role. */
+export async function addTenant(slug: string, name = slug): Promise<string> {
+  const owner = new pg.Pool({ connectionString: TEST_DATABASE_URL });
+  try {
+    return (await owner.query<{ id: string }>('INSERT INTO tenants (slug, name) VALUES ($1, $2) RETURNING id', [slug, name])).rows[0]!.id;
+  } finally {
+    await owner.end();
+  }
+}

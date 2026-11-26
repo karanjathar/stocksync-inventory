@@ -59,7 +59,7 @@ export class Maintenance {
 
   private async record(task: string, result: object): Promise<void> {
     await this.pool.query(
-      'INSERT INTO maintenance_runs (task, ran_at, result) VALUES ($1, now(), $2) ON CONFLICT (task) DO UPDATE SET ran_at = now(), result = EXCLUDED.result',
+      'INSERT INTO maintenance_runs (task, ran_at, result) VALUES ($1, now(), $2) ON CONFLICT (tenant_id, task) DO UPDATE SET ran_at = now(), result = EXCLUDED.result',
       [task, JSON.stringify(result)]);
   }
 }

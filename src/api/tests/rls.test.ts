@@ -130,7 +130,7 @@ describe('concurrency and transactions', () => {
 });
 
 describe('guard: every table is either tenant-scoped with RLS or explicitly platform-level', () => {
-  const PLATFORM_TABLES = ['schema_migrations', 'jobs', 'worker_heartbeats', 'maintenance_runs', 'tenants'];
+  const PLATFORM_TABLES = ['schema_migrations', 'jobs', 'worker_heartbeats', 'tenants'];
   it('every table with a tenant_id column has row-level security and a policy', async () => {
     const { rows } = await owner.query(`
       SELECT c.relname, c.relrowsecurity, (SELECT count(*)::int FROM pg_policy p WHERE p.polrelid = c.oid) AS policies
